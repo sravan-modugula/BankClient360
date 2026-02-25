@@ -757,7 +757,7 @@ export default function CustomerDashboard() {
             </PermissionGuard>
           )}
 
-          {selectedCustomer && activeTab === 'accountSummary' && selectedDetailAccountId && (
+          {selectedCustomer && activeTab === 'accountSummary' && (
             <PermissionGuard
               permissionCode="accounts.view"
               fallback={
@@ -772,18 +772,43 @@ export default function CustomerDashboard() {
                 </Box>
               }
             >
-              {/* Client Info Bar */}
-              <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Client: {customerDetails?.name || selectedCustomer?.name || '—'} | CIF: {customerDetails?.cifNumber || 'N/A'} | Household: N/A
-                </Typography>
-              </Box>
+              {selectedDetailAccountId ? (
+                <>
+                  {/* Client Info Bar */}
+                  <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Client: {customerDetails?.name || selectedCustomer?.name || '—'} | CIF: {customerDetails?.cifNumber || 'N/A'} | Household: N/A
+                    </Typography>
+                  </Box>
 
-              {/* Account Detail inline */}
-              <AccountDetailOption2
-                accountId={String(selectedDetailAccountId)}
-                onBack={() => setActiveTab('client')}
-              />
+                  {/* Account Detail inline */}
+                  <AccountDetailOption2
+                    accountId={String(selectedDetailAccountId)}
+                    onBack={() => setActiveTab('client')}
+                  />
+                </>
+              ) : (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                  <Card variant="outlined" sx={{ maxWidth: 500, textAlign: 'center', p: 4 }}>
+                    <CardContent>
+                      <AccountBalance sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                      <Typography variant="h5" gutterBottom>
+                        No Account Selected
+                      </Typography>
+                      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                        Select an account from the Client tab's account list to view detailed account information.
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        startIcon={<ArrowBack />}
+                        onClick={() => setActiveTab('client')}
+                      >
+                        GO TO CLIENT TAB
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Box>
+              )}
             </PermissionGuard>
           )}
         </Container>

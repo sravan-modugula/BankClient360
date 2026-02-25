@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Card,
@@ -21,8 +22,8 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   useTheme,
-  IconButton,
-  Tooltip
+  Tooltip,
+  CircularProgress
 } from '@mui/material';
 import {
   ArrowBack,
@@ -31,14 +32,15 @@ import {
   TrendingUp,
   TrendingDown,
   Search,
-  FilterList,
   Print,
   Download,
   CheckCircle,
+  Cancel,
   Schedule,
   AccountBalanceWallet,
   Visibility,
-  MoreVert
+  AccountBalance,
+  Savings
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
 
@@ -48,74 +50,41 @@ interface AccountDetailOption2Props {
   params?: Record<string, string>;
 }
 
-const mockAccount = {
-  accountId: 12345,
-  accountNumber: '****4521',
-  fullAccountNumber: '1234567894521',
-  accountType: 'checking',
-  productName: 'Premium Checking',
-  productCode: 'CHK-PREM-001',
-  jackHenryId: 'JH-789456',
-  status: 'active',
-  currentBalance: 5432.18,
-  availableBalance: 5200.00,
-  pendingBalance: 232.18,
-  interestRate: 0.0005,
-  ytdInterest: 12.45,
-  openedDate: '2018-01-15',
-  lastActivity: '2024-12-10',
-  branch: 'Main Street #101',
-  branchPhone: '(555) 123-4567',
-  statementCycle: 'Monthly - 15th',
-  averageBalance: 4850.00
-};
-
-const mockDebitCards = [
-  { cardNumber: '****1234', status: 'active', expiry: '12/26', dailyLimit: 1000, brand: 'VISA' },
-  { cardNumber: '****5678', status: 'active', expiry: '08/25', dailyLimit: 500, brand: 'VISA' }
-];
-
-const mockOwnership = {
-  name: 'John Smith',
-  role: 'Primary',
-  percentage: 100,
-  signingAuthority: true,
-  canViewStatements: true,
-  canTransact: true
-};
-
-const mockTransactions = [
-  { date: '2024-12-10', description: 'Amazon.com', category: 'Shopping', amount: -45.99 },
-  { date: '2024-12-09', description: 'ACME Corp Payroll', category: 'Payroll', amount: 2500.00 },
-  { date: '2024-12-08', description: 'City Electric Co', category: 'Utilities', amount: -125.00 },
-  { date: '2024-12-07', description: 'ATM Withdrawal #4521', category: 'Cash', amount: -200.00 },
-  { date: '2024-12-05', description: 'Transfer from Savings', category: 'Transfer', amount: 500.00 },
-  { date: '2024-12-04', description: 'Netflix Subscription', category: 'Entertainment', amount: -15.99 },
-  { date: '2024-12-03', description: 'Gas Station', category: 'Auto', amount: -52.30 },
-  { date: '2024-12-02', description: 'Grocery Mart', category: 'Groceries', amount: -127.45 }
-];
-
-const mockBalanceHistory = [
-  { month: 'Jan', balance: 4200 },
-  { month: 'Feb', balance: 4500 },
-  { month: 'Mar', balance: 4100 },
-  { month: 'Apr', balance: 4800 },
-  { month: 'May', balance: 5100 },
-  { month: 'Jun', balance: 4900 },
-  { month: 'Jul', balance: 5200 },
-  { month: 'Aug', balance: 5000 },
-  { month: 'Sep', balance: 5300 },
-  { month: 'Oct', balance: 5100 },
-  { month: 'Nov', balance: 5400 },
-  { month: 'Dec', balance: 5432 }
-];
-
 export default function AccountDetailOption2({ accountId, onBack, params }: AccountDetailOption2Props) {
   const theme = useTheme();
   const [, setLocation] = useLocation();
   const { formatCurrency, formatDate, formatPercentage } = useDateFormatter();
   const [txFilter, setTxFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch real account data
+  const { data: account, isLoading: accountLoading } = useQuery<any>({
+    queryKey: [`/api/accounts/${accountId}`],
+    enabled: !!accountId
+  });
+
+  // Fetch account owners
+  const { data: owners = [] } = useQuery<any[]>({
+    queryKey: [`/api/accounts/${accountId}/owners`],
+    enabled: !!accountId
+  });
+
+  // Fetch debit cards
+  const { data: cardsData } = useQuery<{ cards: any[] }>({
+    queryKey: ['/api/accounts', accountId, 'debit-cards'],
+    enabled: !!accountId
+  });
+
+  // Fetch transactions
+  const { data: txData } = useQuery<{ transactions: any[] }>({
+    queryKey: [`/api/accounts/${accountId}/transactions`],
+    enabled: !!accountId
+  });
+
+  const debitCards = cardsData?.cards || [];
+  const transactions = txData?.transactions || [];
+
+  const primaryOwner = owners.find((o: any) => o.isPrimaryOwner) || owners[0];
 
   const handleBack = () => {
     if (onBack) {
@@ -125,15 +94,57 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
     }
   };
 
-  const filteredTransactions = mockTransactions.filter(tx => {
-    if (txFilter === 'deposits' && tx.amount < 0) return false;
-    if (txFilter === 'withdrawals' && tx.amount > 0) return false;
-    if (txFilter === 'transfers' && tx.category !== 'Transfer') return false;
-    if (searchQuery && !tx.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+  const filteredTransactions = transactions.filter((tx: any) => {
+    const amount = parseFloat(tx.amount);
+    if (txFilter === 'deposits' && amount < 0) return false;
+    if (txFilter === 'withdrawals' && amount > 0) return false;
+    if (searchQuery && !(tx.description || tx.merchantName || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
 
-  const maxBalance = Math.max(...mockBalanceHistory.map(b => b.balance));
+  const getAccountIcon = (type: string) => {
+    switch (type?.toLowerCase()) {
+      case 'checking':
+      case 'business_checking':
+        return <Home sx={{ fontSize: 48 }} />;
+      case 'savings':
+        return <Savings sx={{ fontSize: 48 }} />;
+      case 'credit_card':
+        return <CreditCard sx={{ fontSize: 48 }} />;
+      default:
+        return <AccountBalance sx={{ fontSize: 48 }} />;
+    }
+  };
+
+  const getProductName = (acct: any) => {
+    if (acct?.accountSubtype) {
+      return acct.accountSubtype.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+    }
+    if (acct?.accountType) {
+      return acct.accountType.charAt(0).toUpperCase() + acct.accountType.slice(1).replace(/_/g, ' ');
+    }
+    return 'Account';
+  };
+
+  if (accountLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!account) {
+    return (
+      <Box sx={{ textAlign: 'center', py: 8 }}>
+        <Typography variant="h6" color="text.secondary">Account not found</Typography>
+      </Box>
+    );
+  }
+
+  const balance = parseFloat(account.balance) || 0;
+  const availableBalance = parseFloat(account.availableBalance) || 0;
+  const pendingBalance = Math.abs(balance - availableBalance);
 
   return (
     <Box sx={{ p: 3, maxWidth: 1400, margin: '0 auto' }}>
@@ -158,18 +169,18 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <CardContent sx={{ p: 4 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Home sx={{ fontSize: 48 }} />
+              {getAccountIcon(account.accountType)}
               <Box>
                 <Typography variant="h4" fontWeight={500}>
-                  {mockAccount.productName}
+                  {getProductName(account)}
                 </Typography>
                 <Typography variant="body1" sx={{ opacity: 0.9 }}>
-                  Account: {mockAccount.accountNumber} | Product: {mockAccount.productCode} | JH ID: {mockAccount.jackHenryId}
+                  Account: ****{account.accountNumber?.slice(-4)} | Product: {account.productCode || '—'} | JH ID: {account.jackHenryAccountId || '—'}
                 </Typography>
               </Box>
             </Box>
-            <Chip 
-              label={mockAccount.status.toUpperCase()} 
+            <Chip
+              label={(account.accountStatus || 'unknown').toUpperCase()}
               sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 500 }}
               icon={<CheckCircle sx={{ color: 'white !important' }} />}
             />
@@ -180,7 +191,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>CURRENT BALANCE</Typography>
                 <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                  {formatCurrency(mockAccount.currentBalance)}
+                  {formatCurrency(balance)}
                 </Typography>
               </Box>
             </Grid>
@@ -188,7 +199,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>AVAILABLE</Typography>
                 <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                  {formatCurrency(mockAccount.availableBalance)}
+                  {formatCurrency(availableBalance)}
                 </Typography>
               </Box>
             </Grid>
@@ -196,15 +207,15 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>PENDING</Typography>
                 <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                  {formatCurrency(mockAccount.pendingBalance)}
+                  {formatCurrency(pendingBalance)}
                 </Typography>
               </Box>
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>YTD INTEREST</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>INTEREST RATE</Typography>
                 <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                  {formatCurrency(mockAccount.ytdInterest)}
+                  {account.interestRate ? formatPercentage(account.interestRate) : '—'}
                 </Typography>
               </Box>
             </Grid>
@@ -225,28 +236,39 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Account Type</Typography>
-                  <Typography variant="body2" fontWeight={500}>{mockAccount.accountType.charAt(0).toUpperCase() + mockAccount.accountType.slice(1)}</Typography>
+                  <Typography variant="body2" fontWeight={500}>
+                    {account.accountType?.charAt(0).toUpperCase() + account.accountType?.slice(1).replace(/_/g, ' ')}
+                  </Typography>
                 </Box>
                 <Divider />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Branch</Typography>
-                  <Typography variant="body2" fontWeight={500}>{mockAccount.branch}</Typography>
+                  <Typography variant="body2" fontWeight={500}>{account.branchId ? `Branch #${account.branchId}` : '—'}</Typography>
                 </Box>
                 <Divider />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Opened</Typography>
-                  <Typography variant="body2" fontWeight={500}>{formatDate(mockAccount.openedDate)}</Typography>
+                  <Typography variant="body2" fontWeight={500}>{account.openedDate ? formatDate(account.openedDate) : '—'}</Typography>
                 </Box>
                 <Divider />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Statement Cycle</Typography>
-                  <Typography variant="body2" fontWeight={500}>{mockAccount.statementCycle}</Typography>
+                  <Typography variant="body2" fontWeight={500}>{account.statementCycle || account.statementCodeDesc || '—'}</Typography>
                 </Box>
                 <Divider />
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Interest Rate</Typography>
-                  <Typography variant="body2" fontWeight={500}>{formatPercentage(mockAccount.interestRate)}</Typography>
+                  <Typography variant="body2" fontWeight={500}>{account.interestRate ? formatPercentage(account.interestRate) : '—'}</Typography>
                 </Box>
+                {account.averageBalance && (
+                  <>
+                    <Divider />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">Avg Balance</Typography>
+                      <Typography variant="body2" fontWeight={500}>{formatCurrency(account.averageBalance)}</Typography>
+                    </Box>
+                  </>
+                )}
               </Box>
             </CardContent>
           </Card>
@@ -260,29 +282,35 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 <Visibility fontSize="small" color="primary" />
                 Ownership & Access
               </Typography>
-              <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1, mb: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="body1" fontWeight={500}>{mockOwnership.name}</Typography>
-                  <Chip label={mockOwnership.role} size="small" color="primary" />
-                </Box>
-                <Typography variant="body2" color="text.secondary">
-                  {mockOwnership.percentage}% Ownership
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircle fontSize="small" color="success" />
-                  <Typography variant="body2">Signing Authority</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircle fontSize="small" color="success" />
-                  <Typography variant="body2">View Statements</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircle fontSize="small" color="success" />
-                  <Typography variant="body2">Transact</Typography>
-                </Box>
-              </Box>
+              {primaryOwner ? (
+                <>
+                  <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1, mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body1" fontWeight={500}>{primaryOwner.customerName || '—'}</Typography>
+                      <Chip label={primaryOwner.ownershipType?.replace(/_/g, ' ') || 'Owner'} size="small" color="primary" />
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      {primaryOwner.ownershipPercentage ? `${parseFloat(primaryOwner.ownershipPercentage)}% Ownership` : '—'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {primaryOwner.signingAuthority ? <CheckCircle fontSize="small" color="success" /> : <Cancel fontSize="small" color="disabled" />}
+                      <Typography variant="body2">Signing Authority</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {primaryOwner.canViewStatements ? <CheckCircle fontSize="small" color="success" /> : <Cancel fontSize="small" color="disabled" />}
+                      <Typography variant="body2">View Statements</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {primaryOwner.canMakeTransactions ? <CheckCircle fontSize="small" color="success" /> : <Cancel fontSize="small" color="disabled" />}
+                      <Typography variant="body2">Transact</Typography>
+                    </Box>
+                  </Box>
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No ownership data available</Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -293,76 +321,46 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
             <CardContent>
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CreditCard fontSize="small" color="primary" />
-                Linked Cards ({mockDebitCards.length})
+                Linked Cards ({debitCards.length})
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {mockDebitCards.map((card, idx) => (
-                  <Box 
-                    key={idx} 
-                    sx={{ 
-                      bgcolor: 'action.hover', 
-                      p: 2, 
-                      borderRadius: 1,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                        {card.brand} {card.cardNumber}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Exp: {card.expiry} | Limit: {formatCurrency(card.dailyLimit)}/day
-                      </Typography>
+              {debitCards.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {debitCards.map((card: any) => (
+                    <Box
+                      key={card.cardId}
+                      sx={{
+                        bgcolor: 'action.hover',
+                        p: 2,
+                        borderRadius: 1,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Box>
+                        <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
+                          {card.cardBrand || 'CARD'} ****{card.lastFourDigits}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Exp: {card.expiryMonth}/{card.expiryYear}
+                          {card.limitProfile ? ` | Limit: ${formatCurrency(card.limitProfile.dailyPurchaseLimit)}/day` : ''}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        label={card.cardStatus}
+                        size="small"
+                        color={card.cardStatus === 'active' ? 'success' : 'default'}
+                      />
                     </Box>
-                    <Chip 
-                      label={card.status} 
-                      size="small" 
-                      color={card.status === 'active' ? 'success' : 'default'}
-                    />
-                  </Box>
-                ))}
-              </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No linked cards</Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>
       </Grid>
-
-      {/* Balance Trend Card */}
-      <Card elevation={1} sx={{ mb: 3 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <TrendingUp fontSize="small" color="primary" />
-              12-Month Balance Trend
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Avg: {formatCurrency(mockAccount.averageBalance)}
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 120 }}>
-            {mockBalanceHistory.map((item, idx) => (
-              <Tooltip key={idx} title={`${item.month}: ${formatCurrency(item.balance)}`}>
-                <Box sx={{ flex: 1, textAlign: 'center' }}>
-                  <Box
-                    sx={{
-                      height: `${(item.balance / maxBalance) * 100}px`,
-                      bgcolor: idx === mockBalanceHistory.length - 1 ? 'primary.main' : 'primary.light',
-                      borderRadius: '4px 4px 0 0',
-                      transition: 'all 0.3s',
-                      '&:hover': { bgcolor: 'primary.dark' }
-                    }}
-                  />
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '10px' }}>
-                    {item.month}
-                  </Typography>
-                </Box>
-              </Tooltip>
-            ))}
-          </Box>
-        </CardContent>
-      </Card>
 
       {/* Transactions Card with Filtering */}
       <Card elevation={1}>
@@ -370,7 +368,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
             <Typography variant="subtitle1" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Schedule fontSize="small" color="primary" />
-              Recent Transactions
+              Recent Transactions ({transactions.length})
             </Typography>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
               <TextField
@@ -411,40 +409,49 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredTransactions.map((tx, idx) => (
-                  <TableRow key={idx} hover>
-                    <TableCell>{formatDate(tx.date)}</TableCell>
-                    <TableCell>{tx.description}</TableCell>
-                    <TableCell>
-                      <Chip label={tx.category} size="small" variant="outlined" />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: tx.amount >= 0 ? 'success.main' : 'text.primary',
-                          fontWeight: tx.amount >= 0 ? 600 : 400,
-                          fontFamily: 'Roboto Mono',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          gap: 0.5
-                        }}
-                      >
-                        {tx.amount >= 0 && <TrendingUp fontSize="small" />}
-                        {tx.amount < 0 && <TrendingDown fontSize="small" color="action" />}
-                        {formatCurrency(Math.abs(tx.amount))}
-                      </Typography>
+                {filteredTransactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                      <Typography variant="body2" color="text.secondary">No transactions found</Typography>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  filteredTransactions.slice(0, 20).map((tx: any, idx: number) => {
+                    const amount = parseFloat(tx.amount);
+                    return (
+                      <TableRow key={tx.transactionId || idx} hover>
+                        <TableCell>{formatDate(tx.transactionDate)}</TableCell>
+                        <TableCell>{tx.description || tx.merchantName || '—'}</TableCell>
+                        <TableCell>
+                          {tx.transactionType ? (
+                            <Chip label={tx.transactionType} size="small" variant="outlined" />
+                          ) : '—'}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: amount >= 0 ? 'success.main' : 'text.primary',
+                              fontWeight: amount >= 0 ? 600 : 400,
+                              fontFamily: 'Roboto Mono',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'flex-end',
+                              gap: 0.5
+                            }}
+                          >
+                            {amount >= 0 && <TrendingUp fontSize="small" />}
+                            {amount < 0 && <TrendingDown fontSize="small" color="action" />}
+                            {formatCurrency(Math.abs(amount))}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </TableContainer>
-          
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <Button variant="text" size="small">View All Transactions</Button>
-          </Box>
         </CardContent>
       </Card>
     </Box>
