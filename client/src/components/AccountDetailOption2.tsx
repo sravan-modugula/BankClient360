@@ -145,7 +145,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
           variant="text"
           data-testid="btn-back"
         >
-          Back to Customer Dashboard
+          BACK TO CLIENT
         </Button>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button startIcon={<Print />} variant="outlined" size="small">Print</Button>

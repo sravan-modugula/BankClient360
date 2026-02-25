@@ -18,8 +18,7 @@ import {
   Button,
   Card,
   CardContent,
-  CircularProgress,
-  Divider
+  CircularProgress
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { 
@@ -33,13 +32,14 @@ import {
   ArrowBack,
   Lock as LockIcon,
   Login as LoginIcon,
-  Science
+  Summarize
 } from '@mui/icons-material';
 
 import clientIQLogo from '@assets/ClientIQ Gold Logo_1761713299490.png';
 import CustomerSearch from './CustomerSearch';
 import CustomerOverview from './CustomerOverview';
 import AccountSummaryTableVersion from './AccountSummaryTableVersion';
+import AccountDetailOption2 from './AccountDetailOption2';
 import HouseholdRelationships from './HouseholdRelationships';
 import ContactInformation from './ContactInformation';
 import Officers from './Officers';
@@ -59,32 +59,10 @@ import { useSearchParam } from '@/hooks/useSearchParams';
 import { navigateToCustomer, navigateToHousehold } from '@/lib/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Color scheme options for A/B testing
-const COLOR_SCHEMES = {
-  gray: {
-    name: 'Current Gray',
-    background: 'hsl(0, 0%, 100%)',
-    paper: 'hsl(0, 0%, 100%)',
-    card: 'hsl(0, 0%, 100%)'
-  },
-  white: {
-    name: 'Pure White',
-    background: 'hsl(0, 0%, 100%)',
-    paper: 'hsl(0, 0%, 100%)',
-    card: 'hsl(0, 0%, 100%)'
-  },
-  banking: {
-    name: 'Light Blue Banking',
-    background: 'hsl(0, 0%, 100%)',
-    paper: 'hsl(0, 0%, 100%)',
-    card: 'hsl(0, 0%, 100%)'
-  }
-};
-
 export default function CustomerDashboard() {
   const [darkMode, setDarkMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'household' | 'client' | 'accounts'>('client');
-  const [colorScheme, setColorScheme] = useState<keyof typeof COLOR_SCHEMES>('gray');
+  const [activeTab, setActiveTab] = useState<'household' | 'client' | 'accounts' | 'accountSummary'>('client');
+  const [selectedDetailAccountId, setSelectedDetailAccountId] = useState<number | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [selectedAccountLabel, setSelectedAccountLabel] = useState<string>('All Accounts');
   const [adminMenuAnchor, setAdminMenuAnchor] = useState<null | HTMLElement>(null);
@@ -130,23 +108,11 @@ export default function CustomerDashboard() {
   useEffect(() => {
     if (activeTab === 'household' && !hasHouseholdPermission) {
       setActiveTab('client');
-    } else if (activeTab === 'accounts' && !hasAccountsPermission) {
+    } else if ((activeTab === 'accounts' || activeTab === 'accountSummary') && !hasAccountsPermission) {
       setActiveTab('client');
     }
   }, [activeTab, hasHouseholdPermission, hasAccountsPermission]);
 
-  // Update CSS variables dynamically for A/B testing
-  useEffect(() => {
-    const root = document.documentElement;
-    const scheme = COLOR_SCHEMES[colorScheme];
-    
-    // Convert HSL to the format used in CSS variables (without hsl wrapper)
-    const bgHSL = scheme.background.match(/hsl\(([^)]+)\)/)?.[1] || '0 0% 98%';
-    const cardHSL = scheme.card.match(/hsl\(([^)]+)\)/)?.[1] || '0 0% 96%';
-    
-    root.style.setProperty('--background', bgHSL);
-    root.style.setProperty('--card', cardHSL);
-  }, [colorScheme]);
 
 
   // todo: remove mock functionality
@@ -456,13 +422,18 @@ export default function CustomerDashboard() {
 
   // Auto-switch from accounts tab if employee restriction applies
   useEffect(() => {
-    if (activeTab === 'accounts' && accountsRestrictedDueToEmployee) {
+    if ((activeTab === 'accounts' || activeTab === 'accountSummary') && accountsRestrictedDueToEmployee) {
       setActiveTab('client');
     }
   }, [activeTab, accountsRestrictedDueToEmployee]);
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: 'household' | 'client' | 'accounts') => {
+  const handleTabChange = (event: React.SyntheticEvent, newValue: 'household' | 'client' | 'accounts' | 'accountSummary') => {
     setActiveTab(newValue);
+  };
+
+  const handleViewAccountDetail = (accountId: number) => {
+    setSelectedDetailAccountId(accountId);
+    setActiveTab('accountSummary');
   };
 
   if (authLoading) {
@@ -579,11 +550,20 @@ export default function CustomerDashboard() {
                 sx={{ color: 'secondary.main' }}
               />
               {hasAccountsPermission && !accountsRestrictedDueToEmployee && (
-                <Tab 
-                  icon={<AccountBalance />} 
-                  label="Accounts" 
+                <Tab
+                  icon={<AccountBalance />}
+                  label="Accounts"
                   value="accounts"
                   data-testid="tab-accounts"
+                  sx={{ color: 'secondary.main' }}
+                />
+              )}
+              {hasAccountsPermission && !accountsRestrictedDueToEmployee && (
+                <Tab
+                  icon={<Summarize />}
+                  label="Account Summary"
+                  value="accountSummary"
+                  data-testid="tab-account-summary"
                   sx={{ color: 'secondary.main' }}
                 />
               )}
@@ -737,6 +717,7 @@ export default function CustomerDashboard() {
               {/* Account List */}
               <AccountList
                 customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0}
+                onViewAccountDetail={handleViewAccountDetail}
               />
             </>
           )}
@@ -775,113 +756,39 @@ export default function CustomerDashboard() {
               </Box>
             </PermissionGuard>
           )}
+
+          {selectedCustomer && activeTab === 'accountSummary' && selectedDetailAccountId && (
+            <PermissionGuard
+              permissionCode="accounts.view"
+              fallback={
+                <Box sx={{ textAlign: 'center', py: 8 }}>
+                  <AccountBalance sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                  <Typography variant="h5" color="text.secondary" gutterBottom>
+                    Access Restricted
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    You do not have permission to view account details.
+                  </Typography>
+                </Box>
+              }
+            >
+              {/* Client Info Bar */}
+              <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Client: {customerDetails?.name || selectedCustomer?.name || '—'} | CIF: {customerDetails?.cifNumber || 'N/A'} | Household: N/A
+                </Typography>
+              </Box>
+
+              {/* Account Detail inline */}
+              <AccountDetailOption2
+                accountId={String(selectedDetailAccountId)}
+                onBack={() => setActiveTab('client')}
+              />
+            </PermissionGuard>
+          )}
         </Container>
 
       </Box>
-
-        {/* A/B Testing Floating Menu */}
-        <Box
-          sx={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            zIndex: 1000
-          }}
-        >
-          <Paper
-            elevation={4}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              bgcolor: 'background.paper'
-            }}
-          >
-            <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, color: 'primary.main' }}>
-              <Science fontSize="small" />
-              A/B Testing - Account Details
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-              Layout Options (Checking)
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => setLocation('/account/option1')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Option 1: Executive Summary
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => setLocation('/account/option2')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Option 2: Hybrid
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => setLocation('/account/option3')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Option 3: Card-Based
-              </Button>
-            </Box>
-            <Divider sx={{ my: 1 }} />
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-              By Account Type
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                color="secondary"
-                onClick={() => setLocation('/account/savings')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Savings
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="secondary"
-                onClick={() => setLocation('/account/cd')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Certificate of Deposit
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="secondary"
-                onClick={() => setLocation('/account/credit-card')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Credit Card
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="secondary"
-                onClick={() => setLocation('/account/mortgage')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                Mortgage
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="secondary"
-                onClick={() => setLocation('/account/heloc')}
-                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
-              >
-                HELOC
-              </Button>
-            </Box>
-          </Paper>
-        </Box>
     </ThemeProvider>
   );
 }

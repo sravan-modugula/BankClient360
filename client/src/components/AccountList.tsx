@@ -34,12 +34,14 @@ interface AccountListProps {
   customerId: number;
   onAccountSelect?: (accountId: number | null, accountLabel: string) => void;
   selectedAccountId?: number | null;
+  onViewAccountDetail?: (accountId: number) => void;
 }
 
-export default function AccountList({ 
-  customerId, 
+export default function AccountList({
+  customerId,
   onAccountSelect,
-  selectedAccountId = null 
+  selectedAccountId = null,
+  onViewAccountDetail
 }: AccountListProps) {
   const theme = useTheme();
   const [, setLocation] = useLocation();
@@ -117,9 +119,13 @@ export default function AccountList({
     return sum + safeParseBalance(account.balance);
   }, 0);
 
-  // Handle row click - navigate to account details page
+  // Handle row click - navigate to account details page or call callback
   const handleRowClick = (account: Account) => {
-    setLocation(`/account/${account.accountId}`);
+    if (onViewAccountDetail) {
+      onViewAccountDetail(account.accountId);
+    } else {
+      setLocation(`/account/${account.accountId}`);
+    }
   };
 
   // Pagination handlers
