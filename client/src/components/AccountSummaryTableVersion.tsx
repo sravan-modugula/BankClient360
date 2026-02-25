@@ -1,4 +1,5 @@
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
+import { useLocation } from 'wouter';
 import {
   Card,
   CardContent,
@@ -21,13 +22,15 @@ import {
   Collapse,
   Grid,
   Link,
-  Divider
+  Divider,
+  Button
 } from '@mui/material';
 import {
   Search,
   ExpandMore,
   ExpandLess,
   AccountBalance,
+  OpenInNew,
   Home,
   Savings,
   CreditCard,
@@ -82,6 +85,7 @@ export default function AccountSummaryTableVersion({
   selectedAccountId = null,
   onAccountSelect
 }: AccountSummaryTableVersionProps) {
+  const [, setLocation] = useLocation();
   const [accountTypeFilter, setAccountTypeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -403,6 +407,19 @@ export default function AccountSummaryTableVersion({
                               getProductName={getProductName}
                               onOpenCardModal={handleOpenCardModal}
                             />
+                            <Box sx={{ mt: 2, pt: 1, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'flex-end' }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                endIcon={<OpenInNew fontSize="small" />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLocation(`/account/${account.accountId}`);
+                                }}
+                              >
+                                View Account Details
+                              </Button>
+                            </Box>
                           </Box>
                         </Collapse>
                       </TableCell>

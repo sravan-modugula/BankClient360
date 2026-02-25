@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import {
   Box,
   Card,
@@ -41,6 +42,7 @@ export default function AccountList({
   selectedAccountId = null 
 }: AccountListProps) {
   const theme = useTheme();
+  const [, setLocation] = useLocation();
   const { formatCurrency } = useDateFormatter();
   const canViewBalances = useHasPermission('account.view.balances');
 
@@ -115,12 +117,9 @@ export default function AccountList({
     return sum + safeParseBalance(account.balance);
   }, 0);
 
-  // Handle row click - select account to filter transactions
+  // Handle row click - navigate to account details page
   const handleRowClick = (account: Account) => {
-    if (onAccountSelect) {
-      const label = `${getAccountTypeLabel(account.accountType, account.accountSubtype)} ${maskAccountNumber(account.accountNumber)}`;
-      onAccountSelect(account.accountId, label);
-    }
+    setLocation(`/account/${account.accountId}`);
   };
 
   // Pagination handlers
