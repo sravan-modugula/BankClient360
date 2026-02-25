@@ -18,7 +18,8 @@ import {
   Button,
   Card,
   CardContent,
-  CircularProgress
+  CircularProgress,
+  Divider
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { 
@@ -31,7 +32,8 @@ import {
   Settings,
   ArrowBack,
   Lock as LockIcon,
-  Login as LoginIcon
+  Login as LoginIcon,
+  Science
 } from '@mui/icons-material';
 
 import clientIQLogo from '@assets/ClientIQ Gold Logo_1761713299490.png';
@@ -776,6 +778,110 @@ export default function CustomerDashboard() {
         </Container>
 
       </Box>
+
+        {/* A/B Testing Floating Menu */}
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 1000
+          }}
+        >
+          <Paper
+            elevation={4}
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: 'background.paper'
+            }}
+          >
+            <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, color: 'primary.main' }}>
+              <Science fontSize="small" />
+              A/B Testing - Account Details
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+              Layout Options (Checking)
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setLocation('/account/option1')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Option 1: Executive Summary
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setLocation('/account/option2')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Option 2: Hybrid
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setLocation('/account/option3')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Option 3: Card-Based
+              </Button>
+            </Box>
+            <Divider sx={{ my: 1 }} />
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+              By Account Type
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={() => setLocation('/account/savings')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Savings
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={() => setLocation('/account/cd')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Certificate of Deposit
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={() => setLocation('/account/credit-card')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Credit Card
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={() => setLocation('/account/mortgage')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                Mortgage
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={() => setLocation('/account/heloc')}
+                sx={{ justifyContent: 'flex-start', fontSize: '0.7rem' }}
+              >
+                HELOC
+              </Button>
+            </Box>
+          </Paper>
+        </Box>
     </ThemeProvider>
   );
 }
