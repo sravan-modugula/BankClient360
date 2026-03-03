@@ -23,7 +23,8 @@ import {
   ToggleButton,
   useTheme,
   Tooltip,
-  CircularProgress
+  CircularProgress,
+  Link
 } from '@mui/material';
 import {
   ArrowBack,
@@ -43,6 +44,9 @@ import {
   Savings
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
+import DebitCardDetailModal from './DebitCardDetailModal';
+import { CARD_STATUS_COLORS, getCardStatusLabel, getCardBrandConfig, formatCardNumber } from '@/lib/debitCardConstants';
+import type { DebitCardWithLimitProfile } from '@shared/schema';
 
 interface AccountDetailOption2Props {
   accountId?: string;
@@ -56,6 +60,8 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   const { formatCurrency, formatDate, formatPercentage } = useDateFormatter();
   const [txFilter, setTxFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [cardModalOpen, setCardModalOpen] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<DebitCardWithLimitProfile | null>(null);
 
   // Fetch real account data
   const { data: account, isLoading: accountLoading } = useQuery<any>({
@@ -325,34 +331,48 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
               </Typography>
               {debitCards.length > 0 ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {debitCards.map((card: any) => (
-                    <Box
-                      key={card.cardId}
-                      sx={{
-                        bgcolor: 'action.hover',
-                        p: 2,
-                        borderRadius: 1,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <Box>
-                        <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                          {card.cardBrand || 'CARD'} ****{card.lastFourDigits}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Exp: {card.expiryMonth}/{card.expiryYear}
-                          {card.limitProfile ? ` | Limit: ${formatCurrency(card.limitProfile.dailyPurchaseLimit)}/day` : ''}
-                        </Typography>
+                  {debitCards.map((card: any) => {
+                    const brandConfig = getCardBrandConfig(card.cardBrand);
+                    const statusConfig = CARD_STATUS_COLORS[card.cardStatus as keyof typeof CARD_STATUS_COLORS] || CARD_STATUS_COLORS.active;
+                    return (
+                      <Box
+                        key={card.cardId}
+                        sx={{
+                          bgcolor: 'action.hover',
+                          p: 2,
+                          borderRadius: 1,
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Box>
+                            <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'Roboto Mono', color: brandConfig.color }}>
+                              {brandConfig.name} {formatCardNumber(card.lastFourDigits)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Exp: {card.expiryMonth}/{card.expiryYear}
+                              {card.limitProfile ? ` | Limit: ${formatCurrency(card.limitProfile.dailyPurchaseLimit)}/day` : ''}
+                            </Typography>
+                          </Box>
+                          <Chip
+                            label={getCardStatusLabel(card.cardStatus)}
+                            size="small"
+                            color={statusConfig.chip}
+                          />
+                        </Box>
+                        <Link
+                          component="button"
+                          variant="caption"
+                          onClick={() => {
+                            setSelectedCard(card);
+                            setCardModalOpen(true);
+                          }}
+                          sx={{ mt: 0.5, display: 'inline-block' }}
+                        >
+                          View Limits & Details →
+                        </Link>
                       </Box>
-                      <Chip
-                        label={card.cardStatus}
-                        size="small"
-                        color={card.cardStatus === 'active' ? 'success' : 'default'}
-                      />
-                    </Box>
-                  ))}
+                    );
+                  })}
                 </Box>
               ) : (
                 <Typography variant="body2" color="text.secondary">No linked cards</Typography>
@@ -454,6 +474,13 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
           </TableContainer>
         </CardContent>
       </Card>
+
+      <DebitCardDetailModal
+        open={cardModalOpen}
+        onClose={() => { setCardModalOpen(false); setSelectedCard(null); }}
+        card={selectedCard}
+        accountNumber={account?.accountNumber}
+      />
     </Box>
   );
 }
