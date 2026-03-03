@@ -17,13 +17,7 @@ import {
   Paper,
   Divider,
   Grid,
-  TextField,
-  InputAdornment,
-  ToggleButtonGroup,
-  ToggleButton,
   useTheme,
-  Tooltip,
-  CircularProgress,
   Link
 } from '@mui/material';
 import {
@@ -32,16 +26,10 @@ import {
   CreditCard,
   TrendingUp,
   TrendingDown,
-  Search,
   Print,
   Download,
   CheckCircle,
-  Cancel,
-  Schedule,
-  AccountBalanceWallet,
-  Visibility,
-  AccountBalance,
-  Savings
+  Info
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import DebitCardDetailModal from './DebitCardDetailModal';
@@ -58,8 +46,6 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   const theme = useTheme();
   const [, setLocation] = useLocation();
   const { formatCurrency, formatDate, formatPercentage } = useDateFormatter();
-  const [txFilter, setTxFilter] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<DebitCardWithLimitProfile | null>(null);
 
@@ -90,35 +76,11 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   const debitCards = cardsData?.cards || [];
   const transactions = txData?.transactions || [];
 
-  const primaryOwner = owners.find((o: any) => o.isPrimaryOwner) || owners[0];
-
   const handleBack = () => {
     if (onBack) {
       onBack();
     } else {
       setLocation('/');
-    }
-  };
-
-  const filteredTransactions = transactions.filter((tx: any) => {
-    const amount = parseFloat(tx.amount);
-    if (txFilter === 'deposits' && amount < 0) return false;
-    if (txFilter === 'withdrawals' && amount > 0) return false;
-    if (searchQuery && !(tx.description || tx.merchantName || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
-  });
-
-  const getAccountIcon = (type: string) => {
-    switch (type?.toLowerCase()) {
-      case 'checking':
-      case 'business_checking':
-        return <Home sx={{ fontSize: 48 }} />;
-      case 'savings':
-        return <Savings sx={{ fontSize: 48 }} />;
-      case 'credit_card':
-        return <CreditCard sx={{ fontSize: 48 }} />;
-      default:
-        return <AccountBalance sx={{ fontSize: 48 }} />;
     }
   };
 
@@ -135,7 +97,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   if (accountLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        <CircularProgress />
+        <Typography color="text.secondary">Loading...</Typography>
       </Box>
     );
   }
@@ -150,7 +112,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
 
   const balance = parseFloat(account.balance) || 0;
   const availableBalance = parseFloat(account.availableBalance) || 0;
-  const pendingBalance = Math.abs(balance - availableBalance);
+  const collectedBalance = Math.abs(balance - availableBalance);
 
   return (
     <Box sx={{ p: 3, maxWidth: 1400, margin: '0 auto' }}>
@@ -175,7 +137,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <CardContent sx={{ p: 4 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {getAccountIcon(account.accountType)}
+              <Home sx={{ fontSize: 48 }} />
               <Box>
                 <Typography variant="h4" fontWeight={500}>
                   {getProductName(account)}
@@ -195,7 +157,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
           <Grid container spacing={3}>
             <Grid size={{ xs: 6, md: 3 }}>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>CURRENT BALANCE</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>CURRENT LEDGER BALANCE</Typography>
                 <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
                   {formatCurrency(balance)}
                 </Typography>
@@ -211,16 +173,16 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>PENDING</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>COLLECTED</Typography>
                 <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                  {formatCurrency(pendingBalance)}
+                  {formatCurrency(collectedBalance)}
                 </Typography>
               </Box>
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>INTEREST RATE</Typography>
-                <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
+                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>RATE</Typography>
+                <Typography variant="h4" fontWeight={500}>
                   {account.interestRate ? formatPercentage(account.interestRate) : '—'}
                 </Typography>
               </Box>
@@ -229,214 +191,207 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         </CardContent>
       </Card>
 
-      {/* Modular Cards Row */}
+      {/* Row 1: Account Information + Balance History */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
-        {/* Account Details Card */}
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card elevation={1} sx={{ height: '100%' }}>
+        {/* Account Information */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card elevation={2} sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <AccountBalanceWallet fontSize="small" color="primary" />
-                Account Details
+              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                Account Information
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="text.secondary">Account Type</Typography>
-                  <Typography variant="body2" fontWeight={500}>
-                    {account.accountType?.charAt(0).toUpperCase() + account.accountType?.slice(1).replace(/_/g, ' ')}
-                  </Typography>
-                </Box>
-                <Divider />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="text.secondary">Branch</Typography>
-                  <Typography variant="body2" fontWeight={500}>{account.branchId ? `Branch #${account.branchId}` : '—'}</Typography>
-                </Box>
-                <Divider />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Divider sx={{ mb: 2 }} />
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Opened</Typography>
-                  <Typography variant="body2" fontWeight={500}>{account.openedDate ? formatDate(account.openedDate) : '—'}</Typography>
-                </Box>
-                <Divider />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="body1">{account.openedDate ? formatDate(account.openedDate) : '—'}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant="body2" color="text.secondary">Branch</Typography>
+                  <Typography variant="body1">{account.branchId ? `Branch #${account.branchId}` : 'N/A'}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Statement Cycle</Typography>
-                  <Typography variant="body2" fontWeight={500}>{account.statementCycle || account.statementCodeDesc || '—'}</Typography>
-                </Box>
-                <Divider />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="text.secondary">Interest Rate</Typography>
-                  <Typography variant="body2" fontWeight={500}>{account.interestRate ? formatPercentage(account.interestRate) : '—'}</Typography>
-                </Box>
-                {account.averageBalance && (
-                  <>
-                    <Divider />
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body2" color="text.secondary">Avg Balance</Typography>
-                      <Typography variant="body2" fontWeight={500}>{formatCurrency(account.averageBalance)}</Typography>
-                    </Box>
-                  </>
-                )}
+                  <Typography variant="body1">{account.statementCycle || account.statementCodeDesc || 'N/A'}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant="body2" color="text.secondary">Last Activity</Typography>
+                  <Typography variant="body1">{account.lastTransactionDate ? formatDate(account.lastTransactionDate) : 'N/A'}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant="body2" color="text.secondary">Average Balance</Typography>
+                  <Typography variant="body1">{account.averageBalance ? formatCurrency(account.averageBalance) : 'N/A'}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant="body2" color="text.secondary">YTD Interest</Typography>
+                  <Typography variant="body1">N/A</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant="body2" color="text.secondary">Product Code</Typography>
+                  <Typography variant="body1">{account.productCode || 'N/A'}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant="body2" color="text.secondary">Product Statement Desc</Typography>
+                  <Typography variant="body1">{account.statementCodeDesc || 'N/A'}</Typography>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Balance History */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card elevation={2} sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Balance History (12 Months)
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 4 }}>
+                <Info sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Balance history not available
+                </Typography>
+                <Typography variant="body1" sx={{ fontFamily: 'Roboto Mono' }}>
+                  Current Balance: {formatCurrency(balance)}
+                </Typography>
               </Box>
             </CardContent>
           </Card>
         </Grid>
+      </Grid>
 
-        {/* Ownership Card */}
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card elevation={1} sx={{ height: '100%' }}>
+      {/* Row 2: Debit Cards + Account Ownership */}
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        {/* Debit Cards */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card elevation={2} sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Visibility fontSize="small" color="primary" />
-                Ownership & Access
-              </Typography>
-              {primaryOwner ? (
-                <>
-                  <Box sx={{ bgcolor: 'action.hover', p: 2, borderRadius: 1, mb: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body1" fontWeight={500}>{primaryOwner.customerName || '—'}</Typography>
-                      <Chip label={primaryOwner.ownershipType?.replace(/_/g, ' ') || 'Owner'} size="small" color="primary" />
-                    </Box>
-                    <Typography variant="body2" color="text.secondary">
-                      {primaryOwner.ownershipPercentage ? `${parseFloat(primaryOwner.ownershipPercentage)}% Ownership` : '—'}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {primaryOwner.signingAuthority ? <CheckCircle fontSize="small" color="success" /> : <Cancel fontSize="small" color="disabled" />}
-                      <Typography variant="body2">Signing Authority</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {primaryOwner.canViewStatements ? <CheckCircle fontSize="small" color="success" /> : <Cancel fontSize="small" color="disabled" />}
-                      <Typography variant="body2">View Statements</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {primaryOwner.canMakeTransactions ? <CheckCircle fontSize="small" color="success" /> : <Cancel fontSize="small" color="disabled" />}
-                      <Typography variant="body2">Transact</Typography>
-                    </Box>
-                  </Box>
-                </>
-              ) : (
-                <Typography variant="body2" color="text.secondary">No ownership data available</Typography>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Debit Cards Card */}
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card elevation={1} sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CreditCard fontSize="small" color="primary" />
-                Linked Cards ({debitCards.length})
+                Debit Cards ({debitCards.length})
               </Typography>
+              <Divider sx={{ mb: 2 }} />
               {debitCards.length > 0 ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {debitCards.map((card: any) => {
                     const brandConfig = getCardBrandConfig(card.cardBrand);
                     const statusConfig = CARD_STATUS_COLORS[card.cardStatus as keyof typeof CARD_STATUS_COLORS] || CARD_STATUS_COLORS.active;
                     return (
-                      <Box
-                        key={card.cardId}
-                        sx={{
-                          bgcolor: 'action.hover',
-                          p: 2,
-                          borderRadius: 1,
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Box>
-                            <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'Roboto Mono', color: brandConfig.color }}>
-                              {brandConfig.name} {formatCardNumber(card.lastFourDigits)}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Exp: {card.expiryMonth}/{card.expiryYear}
-                              {card.limitProfile ? ` | Limit: ${formatCurrency(card.limitProfile.dailyPurchaseLimit)}/day` : ''}
-                            </Typography>
-                          </Box>
+                      <Box key={card.cardId}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                          <Typography
+                            variant="body2"
+                            component="span"
+                            fontWeight="400"
+                            sx={{ color: brandConfig.color }}
+                          >
+                            {brandConfig.name}
+                          </Typography>
+                          <Typography variant="body2" component="span" fontFamily="Roboto Mono">
+                            {formatCardNumber(card.lastFourDigits)}
+                          </Typography>
                           <Chip
                             label={getCardStatusLabel(card.cardStatus)}
                             size="small"
                             color={statusConfig.chip}
+                            sx={{ height: 20 }}
                           />
+                          {card.limitProfile?.profileName && (
+                            <Chip
+                              label={card.limitProfile.profileName}
+                              size="small"
+                              variant="outlined"
+                              sx={{ height: 20 }}
+                            />
+                          )}
+                          <Link
+                            component="button"
+                            variant="body2"
+                            onClick={() => {
+                              setSelectedCard(card);
+                              setCardModalOpen(true);
+                            }}
+                            sx={{ ml: 'auto', textDecoration: 'none' }}
+                          >
+                            View Limits & Details →
+                          </Link>
                         </Box>
-                        <Link
-                          component="button"
-                          variant="caption"
-                          onClick={() => {
-                            setSelectedCard(card);
-                            setCardModalOpen(true);
-                          }}
-                          sx={{ mt: 0.5, display: 'inline-block' }}
-                        >
-                          View Limits & Details →
-                        </Link>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                          {card.cardholderName || '—'} | Expires {card.expiryMonth}/{card.expiryYear}
+                        </Typography>
                       </Box>
                     );
                   })}
                 </Box>
               ) : (
-                <Typography variant="body2" color="text.secondary">No linked cards</Typography>
+                <Typography variant="body2" color="text.secondary">No debit cards linked to this account</Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Account Ownership */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card elevation={2} sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Account Ownership
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              {owners.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {owners.map((owner: any, idx: number) => (
+                    <Box key={owner.ownerId || idx}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="body1" fontWeight={500}>
+                          {owner.customerName || '—'}
+                        </Typography>
+                        {owner.isPrimaryOwner && (
+                          <Chip label="Primary" size="small" color="primary" sx={{ height: 20 }} />
+                        )}
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Ownership: {owner.ownershipPercentage ? `${parseFloat(owner.ownershipPercentage)}%` : 'N/A'} | Signing Authority: {owner.signingAuthority ? 'Yes' : 'No'}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No ownership data available</Typography>
               )}
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* Transactions Card with Filtering */}
-      <Card elevation={1}>
+      {/* Recent Transactions */}
+      <Card elevation={2}>
         <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
-            <Typography variant="subtitle1" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Schedule fontSize="small" color="primary" />
-              Recent Transactions ({transactions.length})
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              <TextField
-                size="small"
-                placeholder="Search transactions..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Search fontSize="small" />
-                    </InputAdornment>
-                  )
-                }}
-                sx={{ minWidth: 200 }}
-              />
-              <ToggleButtonGroup
-                size="small"
-                value={txFilter}
-                exclusive
-                onChange={(_, val) => val && setTxFilter(val)}
-              >
-                <ToggleButton value="all">All</ToggleButton>
-                <ToggleButton value="deposits">Deposits</ToggleButton>
-                <ToggleButton value="withdrawals">Withdrawals</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="h6">Recent Transactions</Typography>
+            <Button variant="text" size="small">View All</Button>
           </Box>
-
-          <TableContainer>
+          <Divider sx={{ mb: 2 }} />
+          <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Description</TableCell>
-                  <TableCell>Category</TableCell>
-                  <TableCell align="right">Amount</TableCell>
+                  <TableCell sx={{ fontWeight: 500 }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 500 }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 500 }}>Type</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 500 }}>Amount</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredTransactions.length === 0 ? (
+                {transactions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
                       <Typography variant="body2" color="text.secondary">No transactions found</Typography>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTransactions.slice(0, 20).map((tx: any, idx: number) => {
+                  transactions.slice(0, 20).map((tx: any, idx: number) => {
                     const amount = parseFloat(tx.amount);
                     return (
                       <TableRow key={tx.transactionId || idx} hover>
