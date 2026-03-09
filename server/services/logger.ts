@@ -4,7 +4,25 @@
  * Drop-in replacement for pino — same API surface used by all consumers.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { isDev, LOG_LEVEL } from './loggerConfig';
+
+// ── File Writer ───────────────────────────────────────────────────────
+
+export class FileWriter {
+  private stream: fs.WriteStream;
+
+  constructor(filePath: string) {
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    this.stream = fs.createWriteStream(filePath, { flags: 'a' });
+  }
+
+  write(line: string): void {
+    this.stream.write(line + '\n');
+  }
+}
 
 // ── PII Masking (unchanged) ────────────────────────────────────────────
 
@@ -97,14 +115,16 @@ function flattenKV(obj: Record<string, unknown>): string {
 class ConsoleLogger {
   private threshold: number;
   private context: Record<string, unknown>;
+  private fileWriter?: FileWriter;
 
-  constructor(context: Record<string, unknown> = {}, level?: string) {
+  constructor(context: Record<string, unknown> = {}, level?: string, fileWriter?: FileWriter) {
     this.context = context;
     this.threshold = LEVELS[level || LOG_LEVEL] ?? LEVELS.info;
+    this.fileWriter = fileWriter;
   }
 
   child(bindings: Record<string, unknown>): ConsoleLogger {
-    return new ConsoleLogger({ ...this.context, ...bindings });
+    return new ConsoleLogger({ ...this.context, ...bindings }, undefined, this.fileWriter);
   }
 
   debug(objOrMsg: unknown, msg?: string): void { this.log(10, objOrMsg, msg); }
@@ -155,6 +175,16 @@ class ConsoleLogger {
     } else {
       console.log(line);
     }
+
+    if (this.fileWriter) {
+      const levelName = Object.entries(LEVELS).find(([, v]) => v === level)?.[0] || 'info';
+      this.fileWriter.write(JSON.stringify({
+        level: levelName,
+        time: new Date().toISOString(),
+        ...data,
+        msg: message,
+      }));
+    }
   }
 
   private writeProd(level: number, message: string, data: Record<string, unknown>): void {
@@ -172,15 +202,25 @@ class ConsoleLogger {
     } else {
       console.log(line);
     }
+
+    if (this.fileWriter) {
+      this.fileWriter.write(line);
+    }
   }
 }
 
 // ── Exports (same shape as before) ────────────────────────────────────
 
-const logger = new ConsoleLogger({
-  service: 'bankclient360',
-  environment: process.env.NODE_ENV || 'development',
-});
+const serverFileWriter = new FileWriter('logs/server.log');
+
+const logger = new ConsoleLogger(
+  {
+    service: 'bankclient360',
+    environment: process.env.NODE_ENV || 'development',
+  },
+  undefined,
+  serverFileWriter,
+);
 
 export function createChildLogger(context: {
   correlationId?: string;
