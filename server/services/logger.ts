@@ -11,16 +11,21 @@ import { isDev, LOG_LEVEL } from './loggerConfig';
 // ── File Writer ───────────────────────────────────────────────────────
 
 export class FileWriter {
-  private stream: fs.WriteStream;
+  private stream: fs.WriteStream | null = null;
 
   constructor(filePath: string) {
-    const dir = path.dirname(filePath);
-    fs.mkdirSync(dir, { recursive: true });
-    this.stream = fs.createWriteStream(filePath, { flags: 'a' });
+    try {
+      const resolved = path.resolve(process.cwd(), filePath);
+      const dir = path.dirname(resolved);
+      fs.mkdirSync(dir, { recursive: true });
+      this.stream = fs.createWriteStream(resolved, { flags: 'a' });
+    } catch {
+      console.error(`[FileWriter] Failed to open ${filePath} — file logging disabled`);
+    }
   }
 
   write(line: string): void {
-    this.stream.write(line + '\n');
+    this.stream?.write(line + '\n');
   }
 }
 
