@@ -8,6 +8,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { isDev, LOG_LEVEL } from './loggerConfig';
 
+// ── App Root (reliable under Windows services) ───────────────────────
+
+function findAppRoot(): string {
+  let dir = import.meta.dirname;
+  for (let i = 0; i < 5; i++) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    dir = path.dirname(dir);
+  }
+  return process.cwd();
+}
+
+const APP_ROOT = findAppRoot();
+
 // ── File Writer ───────────────────────────────────────────────────────
 
 export class FileWriter {
@@ -15,7 +28,7 @@ export class FileWriter {
 
   constructor(filePath: string) {
     try {
-      const resolved = path.resolve(process.cwd(), filePath);
+      const resolved = path.resolve(APP_ROOT, filePath);
       const dir = path.dirname(resolved);
       fs.mkdirSync(dir, { recursive: true });
       this.stream = fs.createWriteStream(resolved, { flags: 'a' });
