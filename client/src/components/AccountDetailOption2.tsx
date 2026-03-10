@@ -243,7 +243,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         {/* Balance History */}
         <Grid size={{ xs: 12, md: 6 }}>
           <Card elevation={2} sx={{ height: '100%' }}>
-            <CardContent>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               {['checking', 'savings', 'money_market', 'cd', 'business_checking'].includes(account.accountType) ? (
                 <AccountBalanceTrends accountId={accountId!} currentBalance={balance} />
               ) : (

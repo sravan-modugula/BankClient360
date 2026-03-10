@@ -603,9 +603,9 @@ export async function getAccountBalanceHistorySqlServer(
       const acctRequest = pool.request();
       acctRequest.input('acctId', sql.BigInt, accountId);
       const acctResult = await acctRequest.query(`
-        SELECT current_ledger_balance FROM account WHERE account_id = @acctId
+        SELECT balance FROM account WHERE account_id = @acctId
       `);
-      const currentBal = Number(acctResult.recordset?.[0]?.current_ledger_balance) || 0;
+      const currentBal = Number(acctResult.recordset?.[0]?.balance) || 0;
       if (currentBal !== 0) {
         trendData[trendData.length - 1].balance = currentBal;
       }
