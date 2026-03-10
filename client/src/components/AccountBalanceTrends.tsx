@@ -48,24 +48,32 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
     enabled: !!accountId
   });
 
+  // Patch chart data: if all API balances are 0 but we know the current balance, use it
+  const patchedTrendData = (() => {
+    if (!data?.trendData || data.trendData.length === 0) return [];
+    const trendData = data.trendData.map(d => ({ ...d }));
+    if (currentBalance && currentBalance > 0 && trendData.every(d => d.balance === 0)) {
+      trendData[trendData.length - 1].balance = currentBalance;
+    }
+    return trendData;
+  })();
+
   const getTrendData = () => {
-    if (!data?.trendData) return [];
-    const trendData = [...data.trendData];
     switch (timeRange) {
       case 'monthly':
-        return trendData.slice(-2);
+        return patchedTrendData.slice(-2);
       case 'quarterly':
-        return trendData.slice(-3);
+        return patchedTrendData.slice(-3);
       case 'ytd':
       default:
-        return trendData;
+        return patchedTrendData;
     }
   };
 
   const calculateGrowth = () => {
-    if (!data?.trendData || data.trendData.length < 2) return 0;
-    const current = data.trendData[data.trendData.length - 1].balance;
-    const previous = data.trendData[data.trendData.length - 2].balance;
+    if (patchedTrendData.length < 2) return 0;
+    const current = patchedTrendData[patchedTrendData.length - 1].balance;
+    const previous = patchedTrendData[patchedTrendData.length - 2].balance;
     if (previous === 0) return current > 0 ? 100 : 0;
     return ((current - previous) / previous) * 100;
   };
@@ -129,7 +137,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
             <YAxis
               tick={{ fontSize: 10 }}
               stroke={theme.palette.text.secondary}
-              tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+              tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : `$${value.toFixed(0)}`}
             />
             <Tooltip
               formatter={(value: number) => [formatCurrency(value), 'Balance']}
