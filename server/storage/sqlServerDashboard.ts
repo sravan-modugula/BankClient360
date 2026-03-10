@@ -589,7 +589,7 @@ export async function getAccountBalanceHistorySqlServer(
       ORDER BY month ASC
     `);
 
-    return result.recordset.map((row: any) => {
+    const trendData = result.recordset.map((row: any) => {
       const monthDate = new Date(row.month);
       return {
         month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
@@ -597,6 +597,21 @@ export async function getAccountBalanceHistorySqlServer(
         balance: Number(row.balance) || 0
       };
     });
+
+    // If all balances are 0, fall back to the account's current balance for the latest month
+    if (trendData.length > 0 && trendData.every(d => d.balance === 0)) {
+      const acctRequest = pool.request();
+      acctRequest.input('acctId', sql.BigInt, accountId);
+      const acctResult = await acctRequest.query(`
+        SELECT current_ledger_balance FROM account WHERE account_id = @acctId
+      `);
+      const currentBal = Number(acctResult.recordset?.[0]?.current_ledger_balance) || 0;
+      if (currentBal !== 0) {
+        trendData[trendData.length - 1].balance = currentBal;
+      }
+    }
+
+    return trendData;
   } catch (error) {
     fileLogger.error({ err: error }, 'Get account balance history error');
     throw error;

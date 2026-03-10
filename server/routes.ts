@@ -1605,6 +1605,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       });
 
+      // If all balances are 0, fall back to the account's current balance for the latest month
+      if (trendData.length > 0 && trendData.every((d: any) => d.balance === 0)) {
+        const acctResult = await db.execute(sql`
+          SELECT current_ledger_balance FROM account WHERE account_id = ${accountId}
+        `);
+        const currentBal = Number((acctResult as any).rows?.[0]?.current_ledger_balance) || 0;
+        if (currentBal !== 0) {
+          trendData[trendData.length - 1].balance = currentBal;
+        }
+      }
+
       res.json({ trendData });
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error fetching account balance history');

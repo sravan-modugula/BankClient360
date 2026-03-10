@@ -53,7 +53,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
     const trendData = [...data.trendData];
     switch (timeRange) {
       case 'monthly':
-        return trendData.slice(-1);
+        return trendData.slice(-2);
       case 'quarterly':
         return trendData.slice(-3);
       case 'ytd':
