@@ -777,7 +777,7 @@ export default function CustomerDashboard() {
                   {/* Client Info Bar */}
                   <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
                     <Typography variant="body2" color="text.secondary">
-                      Client: {customerDetails?.name || selectedCustomer?.name || '—'} | CIF: {customerDetails?.cifNumber || 'N/A'} | Household: N/A
+                      Household: {customerHouseholds[0]?.householdName || 'N/A'} | Client: {customerDetails?.name || selectedCustomer?.name || '—'} | CIF: {customerDetails?.cifNumber || 'N/A'}
                     </Typography>
                   </Box>
 
