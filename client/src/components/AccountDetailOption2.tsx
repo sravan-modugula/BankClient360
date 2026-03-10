@@ -33,6 +33,7 @@ import {
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import DebitCardDetailModal from './DebitCardDetailModal';
+import AccountBalanceTrends from './AccountBalanceTrends';
 import { CARD_STATUS_COLORS, getCardStatusLabel, getCardBrandConfig, formatCardNumber } from '@/lib/debitCardConstants';
 import type { DebitCardWithLimitProfile } from '@shared/schema';
 
@@ -243,19 +244,25 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <Grid size={{ xs: 12, md: 6 }}>
           <Card elevation={2} sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Balance History (12 Months)
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 4 }}>
-                <Info sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Balance history not available
-                </Typography>
-                <Typography variant="body1" sx={{ fontFamily: 'Roboto Mono' }}>
-                  Current Balance: {formatCurrency(balance)}
-                </Typography>
-              </Box>
+              {['checking', 'savings', 'money_market', 'cd', 'business_checking'].includes(account.accountType) ? (
+                <AccountBalanceTrends accountId={accountId!} currentBalance={balance} />
+              ) : (
+                <>
+                  <Typography variant="h6" gutterBottom>
+                    Balance History (12 Months)
+                  </Typography>
+                  <Divider sx={{ mb: 2 }} />
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 4 }}>
+                    <Info sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Balance history not available
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontFamily: 'Roboto Mono' }}>
+                      Current Balance: {formatCurrency(balance)}
+                    </Typography>
+                  </Box>
+                </>
+              )}
             </CardContent>
           </Card>
         </Grid>

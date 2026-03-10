@@ -5,6 +5,9 @@
 
 import sql from 'mssql';
 import type { FinancialTransaction } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-transaction' });
 
 /**
  * Get transactions with filters
@@ -82,7 +85,7 @@ export async function getTransactionsSqlServer(
 
     return result.recordset.map(mapTransactionFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get transactions error:', error);
+    fileLogger.error({ err: error }, 'Get transactions error');
     throw error;
   }
 }
@@ -148,7 +151,7 @@ export async function getTransactionCountSqlServer(
 
     return result.recordset[0].total || 0;
   } catch (error) {
-    console.error('[SQL Server] Get transaction count error:', error);
+    fileLogger.error({ err: error }, 'Get transaction count error');
     throw error;
   }
 }
@@ -201,7 +204,7 @@ export async function getTransactionCategoriesSqlServer(
       description: row.description
     }));
   } catch (error) {
-    console.error('[SQL Server] Get transaction categories error:', error);
+    fileLogger.error({ err: error }, 'Get transaction categories error');
     throw error;
   }
 }

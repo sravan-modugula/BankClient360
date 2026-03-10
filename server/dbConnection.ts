@@ -9,6 +9,9 @@ import { drizzle as pgDrizzle } from 'drizzle-orm/neon-serverless';
 import sql from 'mssql';
 import ws from 'ws';
 import * as schema from '@shared/schema';
+import logger from './services/logger';
+
+const dbLogger = logger.child({ module: 'database' });
 
 // PostgreSQL connection (Neon serverless)
 let pgPool: PgPool | null = null;
@@ -31,7 +34,7 @@ function initPostgreSQL() {
   pgPool = new PgPool({ connectionString: process.env.DATABASE_URL });
   pgDb = pgDrizzle({ client: pgPool, schema });
 
-  console.log('[Database] PostgreSQL connection initialized');
+  dbLogger.info('PostgreSQL connection initialized');
   return pgDb;
 }
 
@@ -63,7 +66,7 @@ async function initSQLServer(): Promise<sql.ConnectionPool> {
   };
 
   mssqlPool = await new sql.ConnectionPool(config).connect();
-  console.log('[Database] SQL Server connection initialized');
+  dbLogger.info('SQL Server connection initialized');
   return mssqlPool;
 }
 
@@ -107,13 +110,13 @@ export async function closeDatabaseConnections() {
     await pgPool.end();
     pgPool = null;
     pgDb = null;
-    console.log('[Database] PostgreSQL connection closed');
+    dbLogger.info('PostgreSQL connection closed');
   }
 
   if (mssqlPool) {
     await mssqlPool.close();
     mssqlPool = null;
-    console.log('[Database] SQL Server connection closed');
+    dbLogger.info('SQL Server connection closed');
   }
 }
 

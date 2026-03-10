@@ -5,6 +5,9 @@
 
 import sql from 'mssql';
 import type { SearchCustomerParams, CustomerSearchResult, CustomerWithDetails } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-customer-search' });
 
 /**
  * Search customers using SQL Server
@@ -130,7 +133,7 @@ export async function searchCustomersSqlServer(
       hasMore
     };
   } catch (error) {
-    console.error('[SQL Server] Customer search error:', error);
+    fileLogger.error({ err: error }, 'Customer search error');
     throw new Error(`SQL Server customer search failed: ${error}`);
   }
 }
@@ -215,7 +218,7 @@ export async function getCustomerByIdSqlServer(
 
     return result.recordset[0] as CustomerWithDetails;
   } catch (error) {
-    console.error('[SQL Server] Get customer by ID error:', error);
+    fileLogger.error({ err: error }, 'Get customer by ID error');
     throw new Error(`SQL Server get customer failed: ${error}`);
   }
 }

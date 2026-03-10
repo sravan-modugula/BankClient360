@@ -841,6 +841,50 @@ export const roleChangeRequest = pgTable("role_change_request", {
 }));
 
 // ==================================================================================
+// AUDIT EVENT TABLE
+// ==================================================================================
+
+export const auditEvent = pgTable("audit_event", {
+  eventId: bigserial("event_id", { mode: "number" }).primaryKey(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull(),
+  correlationId: uuid("correlation_id"),
+  // Actor
+  employeeId: bigint("employee_id", { mode: "number" }).references(() => employee.employeeId),
+  sessionId: varchar("session_id", { length: 255 }),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: varchar("user_agent", { length: 500 }),
+  // Action
+  action: varchar("action", { length: 500 }).notNull(),
+  outcome: varchar("outcome", { length: 20 }).notNull(),
+  // Resource
+  resourceType: varchar("resource_type", { length: 50 }),
+  resourceId: varchar("resource_id", { length: 100 }),
+  resourceName: varchar("resource_name", { length: 200 }),
+  // Context
+  metadata: jsonb("metadata"),
+  source: varchar("source", { length: 10 }).notNull(), // 'server' | 'client'
+  module: varchar("module", { length: 100 }),
+  // Timestamps
+  occurredAt: timestamp("occurred_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  eventTypeIdx: index("idx_audit_event_type").on(table.eventType),
+  categoryIdx: index("idx_audit_event_category").on(table.category),
+  employeeOccurredIdx: index("idx_audit_event_employee_occurred").on(table.employeeId, table.occurredAt),
+  correlationIdx: index("idx_audit_event_correlation").on(table.correlationId),
+  resourceIdx: index("idx_audit_event_resource").on(table.resourceType, table.resourceId),
+  occurredAtIdx: index("idx_audit_event_occurred_at").on(table.occurredAt),
+  severityOccurredIdx: index("idx_audit_event_severity_occurred").on(table.severity, table.occurredAt),
+}));
+
+export const insertAuditEventSchema = createInsertSchema(auditEvent).omit({
+  eventId: true,
+  createdAt: true,
+});
+
+// ==================================================================================
 // ZOD SCHEMAS FOR VALIDATION
 // ==================================================================================
 
@@ -1519,3 +1563,7 @@ export type UpsertSsoUserRequest = z.infer<typeof upsertSsoUserSchema>;
 // User management table types
 export type EmployeeStatusHistory = typeof employeeStatusHistory.$inferSelect;
 export type RoleChangeRequest = typeof roleChangeRequest.$inferSelect;
+
+// Audit event types
+export type AuditEventRow = typeof auditEvent.$inferSelect;
+export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;

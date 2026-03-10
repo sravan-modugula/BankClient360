@@ -5,6 +5,9 @@
 
 import sql from 'mssql';
 import type { ContactInfo, Address, InsertContactInfo, InsertAddress } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-contact' });
 
 /**
  * Get customer contacts
@@ -29,7 +32,7 @@ export async function getCustomerContactsSqlServer(
 
     return result.recordset.map(mapContactFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get customer contacts error:', error);
+    fileLogger.error({ err: error }, 'Get customer contacts error');
     throw error;
   }
 }
@@ -105,7 +108,7 @@ export async function addCustomerContactSqlServer(
     return mapContactFromDb(newContact);
   } catch (error) {
     await transaction.rollback();
-    console.error('[SQL Server] Add customer contact error:', error);
+    fileLogger.error({ err: error }, 'Add customer contact error');
     throw error;
   }
 }
@@ -165,7 +168,7 @@ export async function updateContactSqlServer(
 
     return mapContactFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update contact error:', error);
+    fileLogger.error({ err: error }, 'Update contact error');
     throw error;
   }
 }
@@ -193,7 +196,7 @@ export async function deactivateCustomerContactSqlServer(
 
     return (result.rowsAffected[0] || 0) > 0;
   } catch (error) {
-    console.error('[SQL Server] Deactivate customer contact error:', error);
+    fileLogger.error({ err: error }, 'Deactivate customer contact error');
     throw error;
   }
 }
@@ -221,7 +224,7 @@ export async function getCustomerAddressesSqlServer(
 
     return result.recordset.map(mapAddressFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get customer addresses error:', error);
+    fileLogger.error({ err: error }, 'Get customer addresses error');
     throw error;
   }
 }
@@ -300,7 +303,7 @@ export async function addCustomerAddressSqlServer(
     return mapAddressFromDb(newAddress);
   } catch (error) {
     await transaction.rollback();
-    console.error('[SQL Server] Add customer address error:', error);
+    fileLogger.error({ err: error }, 'Add customer address error');
     throw error;
   }
 }
@@ -376,7 +379,7 @@ export async function updateAddressSqlServer(
 
     return mapAddressFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update address error:', error);
+    fileLogger.error({ err: error }, 'Update address error');
     throw error;
   }
 }
@@ -404,7 +407,7 @@ export async function deactivateCustomerAddressSqlServer(
 
     return (result.rowsAffected[0] || 0) > 0;
   } catch (error) {
-    console.error('[SQL Server] Deactivate customer address error:', error);
+    fileLogger.error({ err: error }, 'Deactivate customer address error');
     throw error;
   }
 }

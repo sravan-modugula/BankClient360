@@ -4,13 +4,16 @@
  */
 
 import sql from 'mssql';
-import type { 
-  Customer, 
-  InsertCustomer, 
+import type {
+  Customer,
+  InsertCustomer,
   CustomerWithDetails,
   ContactInfo,
   Address
 } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-customer' });
 
 /**
  * Get customer by ID
@@ -33,7 +36,7 @@ export async function getCustomerByIdSqlServer(
 
     return mapCustomerFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get customer by ID error:', error);
+    fileLogger.error({ err: error }, 'Get customer by ID error');
     throw error;
   }
 }
@@ -144,7 +147,7 @@ export async function getCustomerWithDetailsSqlServer(
       branchCode: result.recordset[0].branch_code
     } as CustomerWithDetails;
   } catch (error) {
-    console.error('[SQL Server] Get customer with details error:', error);
+    fileLogger.error({ err: error }, 'Get customer with details error');
     throw error;
   }
 }
@@ -203,7 +206,7 @@ export async function createCustomerSqlServer(
 
     return mapCustomerFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Create customer error:', error);
+    fileLogger.error({ err: error }, 'Create customer error');
     throw error;
   }
 }
@@ -266,7 +269,7 @@ export async function updateCustomerSqlServer(
 
     return mapCustomerFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update customer error:', error);
+    fileLogger.error({ err: error }, 'Update customer error');
     throw error;
   }
 }
@@ -351,7 +354,7 @@ export async function getCustomerByTaxIdSqlServer(
 
     return mapCustomerFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get customer by tax ID error:', error);
+    fileLogger.error({ err: error }, 'Get customer by tax ID error');
     throw error;
   }
 }
@@ -378,7 +381,7 @@ export async function getCustomerByCifNumberSqlServer(
 
     return mapCustomerFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get customer by CIF error:', error);
+    fileLogger.error({ err: error }, 'Get customer by CIF error');
     throw error;
   }
 }
@@ -405,7 +408,7 @@ export async function getCustomerByGovernmentIdSqlServer(
 
     return mapCustomerFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get customer by government ID error:', error);
+    fileLogger.error({ err: error }, 'Get customer by government ID error');
     throw error;
   }
 }

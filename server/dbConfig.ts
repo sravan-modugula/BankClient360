@@ -44,4 +44,9 @@ export const isPostgreSQL = () => DB_DIALECT === 'postgresql';
  */
 export const isSQLServer = () => DB_DIALECT === 'mssql';
 
-console.log(`[Database] Detected dialect: ${DB_DIALECT}`);
+// Note: logger is imported lazily to avoid circular dependency (logger depends on config indirectly)
+import('./services/logger').then(({ default: logger }) => {
+  logger.info({ module: 'database', dialect: DB_DIALECT }, `Detected dialect: ${DB_DIALECT}`);
+}).catch(() => {
+  // Fallback if logger not yet available during bootstrap
+});

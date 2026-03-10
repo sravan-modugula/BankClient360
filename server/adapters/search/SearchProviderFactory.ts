@@ -1,6 +1,9 @@
 import type { ISearchProvider } from './ISearchProvider';
 import { PostgresSearchProvider } from './PostgresSearchProvider';
 import { SqlServerSearchProvider } from './SqlServerSearchProvider';
+import logger from '../../services/logger';
+
+const fileLogger = logger.child({ module: 'search-provider-factory' });
 
 /**
  * Database vendor type
@@ -41,7 +44,7 @@ export class SearchProviderFactory {
     }
 
     // Default to PostgreSQL if unable to detect
-    console.warn('Unable to detect database vendor, defaulting to PostgreSQL. Set DB_VENDOR environment variable to specify explicitly.');
+    fileLogger.warn('Unable to detect database vendor, defaulting to PostgreSQL. Set DB_VENDOR environment variable to specify explicitly.');
     return 'postgres';
   }
 
@@ -58,12 +61,12 @@ export class SearchProviderFactory {
 
     switch (vendor) {
       case 'sqlserver':
-        console.log('[SearchProvider] Using SQL Server search provider');
+        fileLogger.info('Using SQL Server search provider');
         this.provider = new SqlServerSearchProvider();
         break;
       case 'postgres':
       default:
-        console.log('[SearchProvider] Using PostgreSQL search provider');
+        fileLogger.info('Using PostgreSQL search provider');
         this.provider = new PostgresSearchProvider();
         break;
     }

@@ -4,97 +4,120 @@ import { db } from '../db';
 import { employeeRole, role } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { permissionService } from '../services/permissionService';
+import logger from '../services/logger';
+import { emitAuditEvent } from '../services/auditService';
+import { AuditEventType } from '../../shared/auditEvents';
+
+const authLogger = logger.child({ module: 'auth' });
 
 // Check if SAML is enabled via environment variable
 const isSamlEnabled = () => {
-  return process.env.SAML_ENABLED === 'true' && 
-         process.env.SAML_IDP_LOGIN_URL && 
+  return process.env.SAML_ENABLED === 'true' &&
+         process.env.SAML_IDP_LOGIN_URL &&
          process.env.SAML_ENTRYPOINT;
 };
 
 export function createAuthRoutes() {
   const router = Router();
-  
+
   /**
    * Login endpoint - Redirects to IdP or returns info for development
-   * In production with SAML enabled: redirects to SAML_IDP_LOGIN_URL
-   * In development: returns a message indicating dev mode
    */
   router.get('/login', (req, res) => {
     if (isSamlEnabled() && process.env.SAML_IDP_LOGIN_URL) {
-      console.log('[Auth] Redirecting to SAML IdP:', process.env.SAML_IDP_LOGIN_URL);
+      authLogger.info('Redirecting to SAML IdP');
+      emitAuditEvent({
+        eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
+        action: 'SAML login redirect initiated',
+        outcome: 'success',
+        actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+        correlationId: req.correlationId,
+        module: 'auth',
+      });
       return res.redirect(process.env.SAML_IDP_LOGIN_URL);
     }
-    
-    // Development mode - no SAML configured
-    console.log('[Auth] SAML not configured, returning dev mode response');
+
+    authLogger.info('SAML not configured, returning dev mode response');
     return res.status(200).json({
       message: 'Development mode - SAML not configured',
       samlEnabled: false,
       hint: 'Set SAML_ENABLED=true and configure SAML_IDP_LOGIN_URL for production SSO'
     });
   });
-  
+
   /**
    * Logout endpoint - Destroys session and redirects to home
    */
   router.post('/logout', (req, res) => {
     const employeeId = req.session?.employeeId;
-    console.log('[Auth] Logout requested for employee:', employeeId);
-    
+    authLogger.info({ employeeId }, 'Logout requested');
+
+    emitAuditEvent({
+      eventType: AuditEventType.AUTH_LOGOUT,
+      action: 'User logout',
+      outcome: 'success',
+      actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+      correlationId: req.correlationId,
+      module: 'auth',
+    });
+
     req.session.destroy((err) => {
       if (err) {
-        console.error('[Auth] Session destruction error:', err);
+        authLogger.error({ err }, 'Session destruction error');
         return res.status(500).json({ error: 'Failed to logout' });
       }
-      
-      // Clear session cookie
+
       res.clearCookie('connect.sid');
-      
-      console.log('[Auth] Session destroyed successfully');
+      authLogger.info({ employeeId }, 'Session destroyed successfully');
       return res.json({ success: true, message: 'Logged out successfully' });
     });
   });
-  
+
   /**
    * Get current authentication status
    */
   router.get('/status', (req, res) => {
     const isAuthenticated = !!req.session?.employeeId;
-    
+
     res.json({
       isAuthenticated,
       employeeId: req.session?.employeeId || null,
       samlEnabled: isSamlEnabled()
     });
   });
-  
+
   /**
    * SAML Login - Initiate SSO
-   * Redirects user to RSA IdP for authentication
    */
-  router.get('/saml/login', 
-    passport.authenticate('saml', { 
+  router.get('/saml/login',
+    passport.authenticate('saml', {
       failureRedirect: '/login-error',
-      session: false 
+      session: false
     })
   );
-  
+
   /**
    * Assertion Consumer Service (ACS) - Receive SAML Response
-   * This endpoint receives the SAML response from RSA IdP after authentication
    */
   router.post('/saml/acs',
-    passport.authenticate('saml', { 
+    passport.authenticate('saml', {
       failureRedirect: '/login-error',
-      session: false 
+      session: false
     }),
     async (req, res) => {
       try {
-        console.log('[SAML ACS] Processing authentication callback for employee:', req.user?.employeeId);
+        authLogger.info({ employeeId: req.user?.employeeId }, 'Processing SAML ACS callback');
 
         if (!req.user) {
-          console.error('[SAML ACS] No user object in request');
+          authLogger.error('No user object in SAML ACS request');
+          emitAuditEvent({
+            eventType: AuditEventType.AUTH_LOGIN_FAILED,
+            action: 'SAML ACS: no user object',
+            outcome: 'failure',
+            actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+            correlationId: req.correlationId,
+            module: 'auth',
+          });
           return res.redirect('/login-error');
         }
 
@@ -107,7 +130,7 @@ export function createAuthRoutes() {
         req.session.department = req.user.department;
         req.session.samlRoleKey = req.user.samlRoleKey;
         req.session.lastActivity = new Date();
-        
+
         // Fetch user roles
         const userRoles = await db
           .select({
@@ -121,134 +144,158 @@ export function createAuthRoutes() {
               eq(employeeRole.isActive, true)
             )
           );
-        
+
         req.session.roles = userRoles.map(r => r.roleName);
-        
+
         // Fetch user permissions
         const userPermissions = await permissionService.getUserPermissions(req.user.employeeId);
         req.session.permissions = userPermissions.permissions.map((p: any) => p.permissionKey);
-        
-        console.log('[SAML ACS] Session created:', {
+
+        authLogger.info({
           employeeId: req.user.employeeId,
           roles: req.session.roles,
           permissionCount: req.session.permissions?.length || 0
+        }, 'SAML ACS session created');
+
+        emitAuditEvent({
+          eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
+          action: 'SAML login success',
+          outcome: 'success',
+          actor: {
+            employeeId: req.user.employeeId,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+          },
+          correlationId: req.correlationId,
+          metadata: {
+            roles: req.session.roles,
+            permissionCount: req.session.permissions?.length || 0,
+          },
+          module: 'auth',
         });
-        
+
         // Regenerate session ID for security
         req.session.regenerate((err) => {
           if (err) {
-            console.error('[SAML ACS] Session regeneration error:', err);
+            authLogger.error({ err }, 'SAML ACS session regeneration error');
           }
-          
-          console.log('[SAML ACS] Redirecting to application home');
+
+          authLogger.info('SAML ACS redirecting to application home');
           res.redirect('/');
         });
-        
+
       } catch (error) {
-        console.error('[SAML ACS] Error processing authentication callback:', error);
+        authLogger.error({ err: error }, 'Error processing SAML ACS callback');
+        emitAuditEvent({
+          eventType: AuditEventType.AUTH_LOGIN_FAILED,
+          action: 'SAML ACS processing error',
+          outcome: 'error',
+          actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+          correlationId: req.correlationId,
+          metadata: { error: (error as Error).message },
+          module: 'auth',
+        });
         res.redirect('/login-error');
       }
     }
   );
-  
+
   /**
    * SAML Metadata - Expose SP metadata for IdP configuration
-   * Share this URL with your RSA SAML administrator
    */
   router.get('/saml/metadata', (req, res) => {
     try {
       const strategy = (passport as any)._strategy('saml');
-      
+
       if (!strategy || typeof strategy.generateServiceProviderMetadata !== 'function') {
-        console.error('[SAML Metadata] Strategy not configured properly');
+        authLogger.error('SAML strategy not configured properly');
         return res.status(500).send('SAML strategy not configured');
       }
-      
+
       const metadata = strategy.generateServiceProviderMetadata();
-      
-      console.log('[SAML Metadata] Generated metadata:', {
-        length: metadata.length,
-        preview: metadata.substring(0, 100)
-      });
-      
+      authLogger.debug({ metadataLength: metadata.length }, 'Generated SAML metadata');
+
       res.type('application/xml');
       res.send(metadata);
     } catch (error) {
-      console.error('[SAML Metadata] Error generating metadata:', error);
+      authLogger.error({ err: error }, 'Error generating SAML metadata');
       res.status(500).send('Error generating metadata');
     }
   });
-  
+
   /**
    * SAML Logout - SP-initiated logout
-   * Destroys session and redirects to IdP logout
    */
   router.get('/saml/logout', (req, res) => {
     const employeeId = req.session?.employeeId;
-    console.log('[SAML Logout] Initiating logout for employee:', employeeId);
-    
+    authLogger.info({ employeeId }, 'Initiating SAML logout');
+
+    emitAuditEvent({
+      eventType: AuditEventType.AUTH_LOGOUT,
+      action: 'SAML logout initiated',
+      outcome: 'success',
+      actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+      correlationId: req.correlationId,
+      module: 'auth',
+    });
+
     try {
       const strategy = (passport as any)._strategy('saml');
-      
+
       if (!strategy || typeof strategy.logout !== 'function') {
-        console.warn('[SAML Logout] Strategy does not support logout, destroying session only');
-        
-        // Destroy session
+        authLogger.warn('SAML strategy does not support logout, destroying session only');
+
         req.session.destroy((err) => {
           if (err) {
-            console.error('[SAML Logout] Session destruction error:', err);
+            authLogger.error({ err }, 'SAML logout session destruction error');
           }
           res.redirect('/logged-out');
         });
         return;
       }
-      
+
       strategy.logout(req, (err: any, requestUrl: string) => {
         if (err) {
-          console.error('[SAML Logout] Error generating logout request:', err);
-          
-          // Destroy session anyway
+          authLogger.error({ err }, 'Error generating SAML logout request');
+
           req.session.destroy((destroyErr) => {
             if (destroyErr) {
-              console.error('[SAML Logout] Session destruction error:', destroyErr);
+              authLogger.error({ err: destroyErr }, 'SAML logout session destruction error');
             }
             res.redirect('/logged-out');
           });
           return;
         }
-        
-        // Destroy session
+
         req.session.destroy((destroyErr) => {
           if (destroyErr) {
-            console.error('[SAML Logout] Session destruction error:', destroyErr);
+            authLogger.error({ err: destroyErr }, 'SAML logout session destruction error');
           }
-          
-          console.log('[SAML Logout] Redirecting to IdP logout:', requestUrl);
-          // Redirect to IdP logout
+
+          authLogger.info('Redirecting to IdP logout');
           res.redirect(requestUrl);
         });
       });
     } catch (error) {
-      console.error('[SAML Logout] Unexpected error:', error);
-      
-      // Destroy session
+      authLogger.error({ err: error }, 'SAML logout unexpected error');
+
       req.session.destroy((err) => {
         if (err) {
-          console.error('[SAML Logout] Session destruction error:', err);
+          authLogger.error({ err }, 'SAML logout session destruction error');
         }
         res.redirect('/logged-out');
       });
     }
   });
-  
+
   /**
    * Logout callback - IdP redirects here after logout
    */
   router.get('/saml/logout/callback', (req, res) => {
-    console.log('[SAML Logout Callback] IdP logout completed');
+    authLogger.info('IdP logout completed');
     res.redirect('/logged-out');
   });
-  
+
   /**
    * Login error page
    */
@@ -258,7 +305,7 @@ export function createAuthRoutes() {
       message: 'Unable to authenticate with SAML. Please contact your administrator.'
     });
   });
-  
+
   /**
    * Logged out page
    */
@@ -267,6 +314,6 @@ export function createAuthRoutes() {
       message: 'You have been logged out successfully'
     });
   });
-  
+
   return router;
 }

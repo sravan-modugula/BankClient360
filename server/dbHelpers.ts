@@ -134,4 +134,7 @@ export function booleanFalse(): SQL {
   }
 }
 
-console.log('[DB Helpers] Initialized for dialect:', DB_DIALECT);
+// Logger imported lazily to avoid circular dependency
+import('./services/logger').then(({ default: log }) => {
+  log.debug({ module: 'db-helpers', dialect: DB_DIALECT }, `DB Helpers initialized for dialect: ${DB_DIALECT}`);
+}).catch(() => {});

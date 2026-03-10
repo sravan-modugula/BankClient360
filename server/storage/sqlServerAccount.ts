@@ -4,14 +4,17 @@
  */
 
 import sql from 'mssql';
-import type { 
-  Account, 
+import type {
+  Account,
   InsertAccount,
   AccountOwnership,
   FinancialTransaction,
   DebitCardWithLimitProfile,
   AccountSicCode
 } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-account' });
 
 /**
  * Get account by ID
@@ -34,7 +37,7 @@ export async function getAccountSqlServer(
 
     return mapAccountFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get account error:', error);
+    fileLogger.error({ err: error }, 'Get account error');
     throw error;
   }
 }
@@ -61,7 +64,7 @@ export async function getCustomerAccountsSqlServer(
 
     return result.recordset.map(mapAccountFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get customer accounts error:', error);
+    fileLogger.error({ err: error }, 'Get customer accounts error');
     throw error;
   }
 }
@@ -87,7 +90,7 @@ export async function getHouseholdAccountsSqlServer(
 
     return result.recordset.map(mapAccountFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get household accounts error:', error);
+    fileLogger.error({ err: error }, 'Get household accounts error');
     throw error;
   }
 }
@@ -118,7 +121,7 @@ export async function getAccountOwnersSqlServer(
       customerName: row.customer_name
     }));
   } catch (error) {
-    console.error('[SQL Server] Get account owners error:', error);
+    fileLogger.error({ err: error }, 'Get account owners error');
     throw error;
   }
 }
@@ -149,7 +152,7 @@ export async function getAccountBalanceSqlServer(
       availableBalance: parseFloat(result.recordset[0].available_balance) || 0
     };
   } catch (error) {
-    console.error('[SQL Server] Get account balance error:', error);
+    fileLogger.error({ err: error }, 'Get account balance error');
     throw error;
   }
 }
@@ -193,7 +196,7 @@ export async function createAccountSqlServer(
 
     return mapAccountFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Create account error:', error);
+    fileLogger.error({ err: error }, 'Create account error');
     throw error;
   }
 }
@@ -244,7 +247,7 @@ export async function updateAccountSqlServer(
 
     return mapAccountFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update account error:', error);
+    fileLogger.error({ err: error }, 'Update account error');
     throw error;
   }
 }
@@ -273,7 +276,7 @@ export async function closeAccountSqlServer(
 
     return mapAccountFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Close account error:', error);
+    fileLogger.error({ err: error }, 'Close account error');
     throw error;
   }
 }
@@ -300,7 +303,7 @@ export async function getRecentTransactionsSqlServer(
 
     return result.recordset.map(mapTransactionFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get recent transactions error:', error);
+    fileLogger.error({ err: error }, 'Get recent transactions error');
     throw error;
   }
 }
@@ -456,7 +459,7 @@ export async function getAccountDebitCardsSqlServer(
       } : null
     }));
   } catch (error) {
-    console.error('[SQL Server] Get account debit cards error:', error);
+    fileLogger.error({ err: error }, 'Get account debit cards error');
     throw error;
   }
 }
@@ -496,7 +499,7 @@ export async function getAccountSicCodesWithDescriptionsSqlServer(
       endDate: row.end_date
     }));
   } catch (error) {
-    console.error('[SQL Server] Get account SIC codes error:', error);
+    fileLogger.error({ err: error }, 'Get account SIC codes error');
     throw error;
   }
 }
@@ -509,7 +512,7 @@ export async function getCustomerDepositAccountsSqlServer(
   customerId: number
 ): Promise<Account[]> {
   try {
-    console.log(`[SQL Server] getCustomerDepositAccountsSqlServer called for customerId: ${customerId}`);
+    fileLogger.debug({ customerId }, 'getCustomerDepositAccountsSqlServer called');
     
     const request = pool.request();
     request.input('customerId', sql.BigInt, customerId);
@@ -525,11 +528,11 @@ export async function getCustomerDepositAccountsSqlServer(
       ORDER BY a.account_type, a.account_number
     `);
 
-    console.log(`[SQL Server] Found ${result.recordset.length} deposit accounts for customerId ${customerId}`);
+    fileLogger.debug({ customerId, count: result.recordset.length }, 'Found deposit accounts');
     
     return result.recordset.map(mapAccountFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get customer deposit accounts error:', error);
+    fileLogger.error({ err: error }, 'Get customer deposit accounts error');
     throw error;
   }
 }
@@ -570,7 +573,7 @@ export async function addAccountOwnerSqlServer(
 
     return mapAccountOwnershipFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Add account owner error:', error);
+    fileLogger.error({ err: error }, 'Add account owner error');
     throw error;
   }
 }
@@ -641,7 +644,7 @@ export async function updateOwnershipSqlServer(
 
     return mapAccountOwnershipFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update ownership error:', error);
+    fileLogger.error({ err: error }, 'Update ownership error');
     throw error;
   }
 }
@@ -666,7 +669,7 @@ export async function removeOwnershipSqlServer(
 
     return result.recordset.length > 0;
   } catch (error) {
-    console.error('[SQL Server] Remove ownership error:', error);
+    fileLogger.error({ err: error }, 'Remove ownership error');
     throw error;
   }
 }

@@ -5,6 +5,9 @@
 
 import sql from 'mssql';
 import type { Employee, InsertEmployee } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-employee' });
 
 /**
  * Get employee by ID
@@ -27,7 +30,7 @@ export async function getEmployeeSqlServer(
 
     return mapEmployeeFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get employee error:', error);
+    fileLogger.error({ err: error }, 'Get employee error');
     throw error;
   }
 }
@@ -64,7 +67,7 @@ export async function getEmployeesSqlServer(
 
     return result.recordset.map(mapEmployeeFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get employees error:', error);
+    fileLogger.error({ err: error }, 'Get employees error');
     throw error;
   }
 }
@@ -106,7 +109,7 @@ export async function createEmployeeSqlServer(
 
     return mapEmployeeFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Create employee error:', error);
+    fileLogger.error({ err: error }, 'Create employee error');
     throw error;
   }
 }
@@ -177,7 +180,7 @@ export async function updateEmployeeSqlServer(
 
     return mapEmployeeFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update employee error:', error);
+    fileLogger.error({ err: error }, 'Update employee error');
     throw error;
   }
 }

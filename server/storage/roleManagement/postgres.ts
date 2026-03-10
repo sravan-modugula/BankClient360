@@ -5,6 +5,9 @@
 
 import { eq, and, or, desc, sql, isNull, inArray, like, ilike } from "drizzle-orm";
 import { db } from "../../db";
+import logger from '../../services/logger';
+
+const fileLogger = logger.child({ module: 'postgres-role-management' });
 import {
   privilegeLevel,
   role,
@@ -242,7 +245,7 @@ export class PostgresRoleManagementStore implements IRoleManagementStore {
         deniedAt: new Date()
       });
     } catch (error) {
-      console.error('Failed to log permission denial:', error);
+      fileLogger.error({ err: error }, 'Failed to log permission denial');
     }
   }
   

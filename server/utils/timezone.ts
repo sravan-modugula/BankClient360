@@ -4,6 +4,9 @@
  */
 
 import { DateFormatter } from '@shared/utils/timezone';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'timezone' });
 
 // Set the default timezone for the Node.js process
 // This affects all date operations on the server
@@ -17,8 +20,8 @@ export function initializeServerTimezone(): void {
   process.env.TZ = 'America/Los_Angeles';
   
   // Log the timezone setting for debugging
-  console.log(`[Timezone] Server timezone set to: ${process.env.TZ}`);
-  console.log(`[Timezone] Current PST time: ${DateFormatter.formatDateTimeWithTZ(new Date())}`);
+  fileLogger.debug({ tz: process.env.TZ }, 'Server timezone set');
+  fileLogger.debug({ pstTime: DateFormatter.formatDateTimeWithTZ(new Date()) }, 'Current PST time');
 }
 
 // Re-export DateFormatter for use in server routes

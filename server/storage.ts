@@ -5,6 +5,9 @@ import { caseInsensitiveLike } from "./dbHelpers";
 import { SearchProviderFactory } from "./adapters/search";
 import type { ISearchProvider } from "./adapters/search";
 import { analyzeQuery, mergeResults } from "./adapters/search/queryStrategy";
+import logger from './services/logger';
+
+const fileLogger = logger.child({ module: 'storage' });
 import { 
   type Customer, 
   type InsertCustomer, 
@@ -321,7 +324,7 @@ export class DatabaseStorage implements IBankingStorage {
 
   constructor() {
     this.searchProvider = SearchProviderFactory.getProvider();
-    console.log(`[Storage] Using ${this.searchProvider.getVendor()} search provider`);
+    fileLogger.info({ vendor: this.searchProvider.getVendor() }, 'Search provider initialized');
   }
 
   // Person/Customer operations

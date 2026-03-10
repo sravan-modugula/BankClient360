@@ -5,6 +5,9 @@
 
 import sql from 'mssql';
 import { CODE_TO_ACTIVITY, createDefaultActivity } from '../../shared/constants';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-dashboard' });
 
 /**
  * Get customer officers with full employee details
@@ -54,7 +57,7 @@ export async function getCustomerOfficersWithDetailsSqlServer(
       assignedAt: row.assigned_at
     }));
   } catch (error) {
-    console.error('[SQL Server] Get customer officers error:', error);
+    fileLogger.error({ err: error }, 'Get customer officers error');
     throw error;
   }
 }
@@ -124,7 +127,7 @@ export async function getClientEngagementSqlServer(
       thirtyDayActivity: activityByCategory
     };
   } catch (error) {
-    console.error('[SQL Server] Get client engagement error:', error);
+    fileLogger.error({ err: error }, 'Get client engagement error');
     throw error;
   }
 }
@@ -236,7 +239,7 @@ export async function getRelationshipSummarySqlServer(
       }
     };
   } catch (error) {
-    console.error('[SQL Server] Get relationship summary error:', error);
+    fileLogger.error({ err: error }, 'Get relationship summary error');
     throw error;
   }
 }
@@ -273,7 +276,7 @@ export async function getDepositAccountAnalyticsSqlServer(
   }>;
 }> {
   try {
-    console.log(`[SQL Server] getDepositAccountAnalyticsSqlServer called for customerId: ${customerId}`);
+    fileLogger.debug({ customerId }, 'getDepositAccountAnalyticsSqlServer called');
     
     const request = pool.request();
     request.input('customerId', sql.BigInt, customerId);
@@ -292,10 +295,10 @@ export async function getDepositAccountAnalyticsSqlServer(
     const accounts = accountsResult.recordset;
     const accountIds = accounts.map(a => a.account_id);
     
-    console.log(`[SQL Server] Found ${accounts.length} deposit accounts for customerId ${customerId}: ${JSON.stringify(accountIds)}`);
+    fileLogger.debug({ customerId, count: accounts.length, accountIds }, 'Found deposit accounts');
 
     if (accountIds.length === 0) {
-      console.log(`[SQL Server] No deposit accounts found for customerId ${customerId}, returning empty result`);
+      fileLogger.debug({ customerId }, 'No deposit accounts found, returning empty result');
       return {
         totalBalance: 0,
         accounts: [],
@@ -526,7 +529,76 @@ export async function getDepositAccountAnalyticsSqlServer(
       recentTransactions
     };
   } catch (error) {
-    console.error('[SQL Server] Get deposit analytics error:', error);
+    fileLogger.error({ err: error }, 'Get deposit analytics error');
+    throw error;
+  }
+}
+
+/**
+ * Get 12-month balance history for a single account
+ */
+export async function getAccountBalanceHistorySqlServer(
+  pool: sql.ConnectionPool,
+  accountId: number
+): Promise<Array<{ month: string; date: string; balance: number }>> {
+  try {
+    const request = pool.request();
+    request.input('accountId', sql.BigInt, accountId);
+
+    const result = await request.query(`
+      WITH month_series AS (
+        SELECT DATEADD(month, n, DATEADD(month, -11, DATEADD(day, 1-DAY(GETDATE()), GETDATE()))) as month
+        FROM (
+          SELECT 0 as n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
+          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
+          SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
+        ) numbers
+      ),
+      account_monthly_balances AS (
+        SELECT DISTINCT
+          ft.account_id,
+          DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date) as month,
+          FIRST_VALUE(ft.ledger_balance_after) OVER (
+            PARTITION BY ft.account_id, DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date)
+            ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
+          ) as ledger_balance_after
+        FROM financial_transaction ft
+        WHERE ft.account_id = @accountId
+          AND ft.transaction_date >= DATEADD(month, -12, GETDATE())
+      ),
+      filled_balances AS (
+        SELECT
+          ms.month,
+          COALESCE(
+            amb.ledger_balance_after,
+            (
+              SELECT TOP 1 amb2.ledger_balance_after
+              FROM account_monthly_balances amb2
+              WHERE amb2.month < ms.month
+              ORDER BY amb2.month DESC
+            )
+          ) as balance
+        FROM month_series ms
+        LEFT JOIN account_monthly_balances amb
+          ON amb.month = ms.month
+      )
+      SELECT
+        month,
+        COALESCE(balance, 0) as balance
+      FROM filled_balances
+      ORDER BY month ASC
+    `);
+
+    return result.recordset.map((row: any) => {
+      const monthDate = new Date(row.month);
+      return {
+        month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
+        date: monthDate.toISOString(),
+        balance: Number(row.balance) || 0
+      };
+    });
+  } catch (error) {
+    fileLogger.error({ err: error }, 'Get account balance history error');
     throw error;
   }
 }
@@ -564,7 +636,7 @@ export async function getContactHistorySqlServer(
       employeeName: row.employee_name || 'Unknown Employee'
     }));
   } catch (error) {
-    console.error('[SQL Server] Get contact history error:', error);
+    fileLogger.error({ err: error }, 'Get contact history error');
     throw error;
   }
 }

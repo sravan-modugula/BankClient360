@@ -1,4 +1,6 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { eventTracker } from "./eventTracker";
+import { AuditEventType } from "@shared/auditEvents";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -7,17 +9,37 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+function trackApiError(method: string, url: string, status: number, durationMs: number) {
+  if (status >= 400) {
+    eventTracker.track(AuditEventType.ERR_API, {
+      action: `API error: ${method} ${url} → ${status}`,
+      outcome: 'error',
+      metadata: { method, url, status, durationMs },
+      module: 'api-client',
+    });
+  }
+}
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const correlationId = crypto.randomUUID();
+  const start = Date.now();
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      "x-correlation-id": correlationId,
+    },
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
+
+  const duration = Date.now() - start;
+  trackApiError(method, url, res.status, duration);
 
   await throwIfResNotOk(res);
   return res;
@@ -29,9 +51,19 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const correlationId = crypto.randomUUID();
+    const start = Date.now();
+    const url = queryKey.join("/") as string;
+
+    const res = await fetch(url, {
       credentials: "include",
+      headers: {
+        "x-correlation-id": correlationId,
+      },
     });
+
+    const duration = Date.now() - start;
+    trackApiError("GET", url, res.status, duration);
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

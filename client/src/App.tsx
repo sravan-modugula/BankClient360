@@ -6,6 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Box, ThemeProvider } from "@mui/material";
 import { lightTheme } from "@/lib/theme";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { EventTrackingProvider } from "@/contexts/EventTrackingContext";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useNavigationTracking } from "@/hooks/useNavigationTracking";
 import TopBar from "@/components/TopBar";
 import CustomerDashboard from "@/components/CustomerDashboard";
 import UserManagement from "@/pages/UserManagement";
@@ -16,6 +19,8 @@ import AccountDetailOption2 from "@/components/AccountDetailOption2";
 import NotFound from "@/pages/not-found";
 
 function Router() {
+  useNavigationTracking();
+
   return (
     <Switch>
       <Route path="/" component={CustomerDashboard} />
@@ -34,17 +39,21 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <ThemeProvider theme={lightTheme}>
-          <TooltipProvider>
-            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-              <TopBar />
-              <Box component="main" sx={{ flexGrow: 1, bgcolor: 'background.default' }}>
-                <Router />
-              </Box>
-            </Box>
-            <Toaster />
-          </TooltipProvider>
-        </ThemeProvider>
+        <EventTrackingProvider>
+          <ThemeProvider theme={lightTheme}>
+            <TooltipProvider>
+              <ErrorBoundary module="app-root">
+                <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+                  <TopBar />
+                  <Box component="main" sx={{ flexGrow: 1, bgcolor: 'background.default' }}>
+                    <Router />
+                  </Box>
+                </Box>
+              </ErrorBoundary>
+              <Toaster />
+            </TooltipProvider>
+          </ThemeProvider>
+        </EventTrackingProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

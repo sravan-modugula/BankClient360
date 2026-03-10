@@ -4,6 +4,9 @@
  */
 
 import sql from 'mssql';
+import logger from '../../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-role-management' });
 import type {
   Role,
   Permission,
@@ -124,7 +127,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         roles
       };
     } catch (error) {
-      console.error('[SQL Server] Get user permissions error:', error);
+      fileLogger.error({ err: error }, 'Get user permissions error');
       throw error;
     }
   }
@@ -260,7 +263,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         )
       `);
     } catch (error) {
-      console.error('[SQL Server] Failed to log permission denial:', error);
+      fileLogger.error({ err: error }, 'Failed to log permission denial');
     }
   }
   
@@ -300,7 +303,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         createdBy: r.createdBy
       }));
     } catch (error) {
-      console.error('[SQL Server] Get all roles error:', error);
+      fileLogger.error({ err: error }, 'Get all roles error');
       throw error;
     }
   }
@@ -343,7 +346,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         createdBy: r.createdBy
       }));
     } catch (error) {
-      console.error('[SQL Server] Get employee roles error:', error);
+      fileLogger.error({ err: error }, 'Get employee roles error');
       throw error;
     }
   }
@@ -367,7 +370,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
       
       return result.recordset.map(r => ({ permissionCode: r.permissionCode }));
     } catch (error) {
-      console.error('[SQL Server] Get role permissions error:', error);
+      fileLogger.error({ err: error }, 'Get role permissions error');
       throw error;
     }
   }
@@ -387,7 +390,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
       
       return result.recordset.map(r => ({ permissionCode: r.permissionCode }));
     } catch (error) {
-      console.error('[SQL Server] Get privilege level permissions error:', error);
+      fileLogger.error({ err: error }, 'Get privilege level permissions error');
       throw error;
     }
   }
@@ -424,7 +427,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         try {
           conditions = JSON.parse(row.conditions);
         } catch (e) {
-          console.error('[SQL Server] Failed to parse permission conditions JSON:', e);
+          fileLogger.error({ err: e }, 'Failed to parse permission conditions JSON');
         }
       }
       
@@ -440,7 +443,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         createdAt: row.createdAt
       };
     } catch (error) {
-      console.error('[SQL Server] Get permission by code error:', error);
+      fileLogger.error({ err: error }, 'Get permission by code error');
       throw error;
     }
   }
@@ -578,7 +581,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         };
       });
     } catch (error) {
-      console.error('[SQL Server] List users error:', error);
+      fileLogger.error({ err: error }, 'List users error');
       throw error;
     }
   }
@@ -613,7 +616,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         email: r.email
       }));
     } catch (error) {
-      console.error('[SQL Server] Get level 4 users error:', error);
+      fileLogger.error({ err: error }, 'Get level 4 users error');
       throw error;
     }
   }
@@ -690,7 +693,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
       
       return roleSourceByUser;
     } catch (error) {
-      console.error('[SQL Server] Get role assignment sources error:', error);
+      fileLogger.error({ err: error }, 'Get role assignment sources error');
       throw error;
     }
   }
@@ -714,7 +717,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
       
       return result.recordset.length > 0;
     } catch (error) {
-      console.error('[SQL Server] Has active role error:', error);
+      fileLogger.error({ err: error }, 'Has active role error');
       throw error;
     }
   }

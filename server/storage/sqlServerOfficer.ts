@@ -6,6 +6,9 @@
 
 import sql from 'mssql';
 import type { CustomerOfficerAssignment, InsertCustomerOfficerAssignment } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-officer' });
 
 /**
  * Get all officers assigned to a customer
@@ -35,7 +38,7 @@ export async function getCustomerOfficersSqlServer(
 
     return result.recordset.map(mapOfficerAssignmentFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get customer officers error:', error);
+    fileLogger.error({ err: error }, 'Get customer officers error');
     throw error;
   }
 }
@@ -68,7 +71,7 @@ export async function getOfficerCustomersSqlServer(
 
     return result.recordset.map(mapOfficerAssignmentFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get officer customers error:', error);
+    fileLogger.error({ err: error }, 'Get officer customers error');
     throw error;
   }
 }
@@ -122,7 +125,7 @@ export async function getCustomerOfficersWithDetailsSqlServer(
       assignedAt: row.assigned_at
     }));
   } catch (error) {
-    console.error('[SQL Server] Get customer officers with details error:', error);
+    fileLogger.error({ err: error }, 'Get customer officers with details error');
     throw error;
   }
 }
@@ -179,7 +182,7 @@ export async function addCustomerOfficerSqlServer(
       throw err;
     }
 
-    console.error('[SQL Server] Add customer officer error:', error);
+    fileLogger.error({ err: error }, 'Add customer officer error');
     throw error;
   }
 }
@@ -228,7 +231,7 @@ export async function updateCustomerOfficerSqlServer(
       throw err;
     }
 
-    console.error('[SQL Server] Update customer officer error:', error);
+    fileLogger.error({ err: error }, 'Update customer officer error');
     throw error;
   }
 }
@@ -255,7 +258,7 @@ export async function removeCustomerOfficerSqlServer(
 
     return result.recordset.length > 0;
   } catch (error) {
-    console.error('[SQL Server] Remove customer officer error:', error);
+    fileLogger.error({ err: error }, 'Remove customer officer error');
     throw error;
   }
 }

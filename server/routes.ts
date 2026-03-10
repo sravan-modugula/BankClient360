@@ -36,9 +36,59 @@ import {
   type ContactHistoryDTO as ContactHistoryType
 } from "@shared/contracts";
 import { DateFormatter } from "@shared/utils/timezone";
+import { routeAuditMiddleware } from "./middleware/routeAudit";
+import { auditService, emitAuditEvent } from "./services/auditService";
+import logger from "./services/logger";
+import { AuditEventType, AuditCategory, AuditSeverity, EVENT_CLASSIFICATION } from "@shared/auditEvents";
+import type { ClientAuditEvent } from "@shared/auditEvents";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
+  // Route audit middleware — automatically emits audit events for all /api routes
+  app.use('/api', routeAuditMiddleware);
+
+  // ==================================================================================
+  // CLIENT EVENT BATCH ENDPOINT
+  // ==================================================================================
+
+  app.post("/api/events/batch", (req, res) => {
+    const events = req.body;
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ error: "Expected non-empty array of events" });
+    }
+
+    // Cap at 100 events per batch
+    const batch = events.slice(0, 100) as ClientAuditEvent[];
+
+    for (const clientEvent of batch) {
+      if (!clientEvent.eventType || !clientEvent.action) continue;
+
+      const classification = EVENT_CLASSIFICATION[clientEvent.eventType as AuditEventType];
+      if (!classification) continue;
+
+      auditService.recordEvent({
+        eventType: clientEvent.eventType as AuditEventType,
+        category: classification.category,
+        severity: classification.severity,
+        timestamp: clientEvent.timestamp || new Date().toISOString(),
+        correlationId: req.correlationId,
+        actor: {
+          employeeId: req.employeeId,
+          ipAddress: req.ip || req.socket?.remoteAddress,
+          userAgent: req.headers['user-agent'],
+        },
+        action: clientEvent.action,
+        outcome: clientEvent.outcome || 'success',
+        resource: clientEvent.resource,
+        metadata: clientEvent.metadata,
+        source: 'client',
+        module: clientEvent.module,
+      });
+    }
+
+    res.json({ accepted: batch.length });
+  });
+
   // ==================================================================================
   // PERSON/CUSTOMER API ROUTES
   // ==================================================================================
@@ -73,27 +123,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (useUnifiedSearch) {
         const result = await storage.searchEntities(validation.data);
-        console.log("Unified search completed:", { 
-          count: result.data.length, 
+        logger.debug({
+          module: 'routes',
+          count: result.data.length,
           detectedType: result.diagnostics.detectedType,
           hasMore: result.page.hasMore,
           entityTypes: result.data.reduce((acc, item) => {
             acc[item.entityType] = (acc[item.entityType] || 0) + 1;
             return acc;
           }, {} as Record<string, number>)
-        });
+        }, 'Unified search completed');
         res.json(result);
       } else {
         const result = await storage.smartSearchCustomers(validation.data);
-        console.log("Smart search completed:", { 
-          count: result.data.length, 
+        logger.debug({
+          module: 'routes',
+          count: result.data.length,
           detectedType: result.diagnostics.detectedType,
-          hasMore: result.page.hasMore 
-        });
+          hasMore: result.page.hasMore
+        }, 'Smart search completed');
         res.json(result);
       }
     } catch (error) {
-      console.error("Error in smart search:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error in smart search');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -115,27 +167,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (useUnifiedSearch) {
         const result = await storage.searchEntities(validation.data);
-        console.log("Advanced unified search completed:", { 
-          count: result.data.length, 
+        logger.debug({
+          module: 'routes',
+          count: result.data.length,
           detectedType: result.diagnostics.detectedType,
           fieldsUsed: result.diagnostics.fieldsUsed,
           entityTypes: result.data.reduce((acc, item) => {
             acc[item.entityType] = (acc[item.entityType] || 0) + 1;
             return acc;
           }, {} as Record<string, number>)
-        });
+        }, 'Advanced unified search completed');
         res.json(result);
       } else {
         const result = await storage.smartSearchCustomers(validation.data);
-        console.log("Advanced search completed:", { 
-          count: result.data.length, 
+        logger.debug({
+          module: 'routes',
+          count: result.data.length,
           detectedType: result.diagnostics.detectedType,
           fieldsUsed: result.diagnostics.fieldsUsed
-        });
+        }, 'Advanced search completed');
         res.json(result);
       }
     } catch (error) {
-      console.error("Error in advanced search:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error in advanced search');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -234,7 +288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Validate the core DTO part
           CustomerDTO.parse(personDTO);
         } catch (validationError) {
-          console.error('Person DTO validation failed:', validationError instanceof Error ? validationError.message : 'Unknown error');
+          logger.error({ err: validationError instanceof Error ? validationError : new Error('Unknown error'), module: 'routes' }, 'Person DTO validation failed');
           return res.status(500).json({ 
             code: "DTO_VALIDATION_FAILED",
             message: "Internal data contract violation",
@@ -246,7 +300,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(extendedResponse);
     } catch (error) {
-      console.error("Error fetching person:", error instanceof Error ? error.message : String(error));
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal server error",
@@ -278,7 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(response);
     } catch (error) {
-      console.error("Error fetching customer details:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching customer details');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -326,7 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(201).json(sanitizedPerson);
     } catch (error) {
-      console.error("Error creating person:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error creating person');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -388,7 +442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(sanitizedPerson);
     } catch (error) {
-      console.error("Error updating person:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error updating person');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -420,7 +474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(sanitizedPerson);
     } catch (error) {
-      console.error("Error fetching person by tax ID:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person by tax ID');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -452,7 +506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(sanitizedPerson);
     } catch (error) {
-      console.error("Error fetching person by CIF number:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person by CIF number');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -484,7 +538,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(sanitizedPerson);
     } catch (error) {
-      console.error("Error fetching person by government ID:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person by government ID');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -539,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           ContactDTO.array().parse(allContactDTOs);
         } catch (validationError) {
-          console.error('Contact DTO validation failed:', validationError);
+          logger.error({ err: validationError, module: 'routes' }, 'Contact DTO validation failed');
           return res.status(500).json({ 
             code: "DTO_VALIDATION_FAILED",
             message: "Internal data contract violation",
@@ -551,7 +605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(allContactDTOs);
     } catch (error) {
-      console.error("Error fetching person contacts:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person contacts');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal server error",
@@ -586,7 +640,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const contact = await storage.addCustomerContact(customerId, validation.data);
       res.status(201).json(contact);
     } catch (error) {
-      console.error("Error adding person contact:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error adding person contact');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -612,7 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const addresses = await storage.getCustomerAddresses(customerId);
       res.json(addresses);
     } catch (error) {
-      console.error("Error fetching person addresses:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person addresses');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -642,7 +696,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const address = await storage.addCustomerAddress(customerId, validation.data);
       res.status(201).json(address);
     } catch (error) {
-      console.error("Error adding person address:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error adding person address');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -685,7 +739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Return empty array with 200 OK if no officers assigned (valid state)
       res.json(officerDTOs);
     } catch (error) {
-      console.error("Error fetching customer officers:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching customer officers');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal server error",
@@ -731,7 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignment = await storage.addCustomerOfficer(validation.data);
       res.status(201).json(assignment);
     } catch (error: any) {
-      console.error("Error adding customer officer:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error adding customer officer');
       
       // Handle unique constraint violations (duplicate assignment)
       if (error?.code === '23505' || error?.message?.includes('duplicate')) {
@@ -787,7 +841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(updated);
     } catch (error: any) {
-      console.error("Error updating customer officer:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error updating customer officer');
       
       // Handle filtered unique constraint violation (multiple primary officers)
       if (error?.message?.includes('unq_customer_primary_officer')) {
@@ -819,7 +873,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(204).send();
     } catch (error) {
-      console.error("Error removing customer officer:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error removing customer officer');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -839,7 +893,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customers = await storage.getOfficerCustomers(officerCode);
       res.json(customers);
     } catch (error) {
-      console.error("Error fetching officer customers:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching officer customers');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -865,7 +919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sicCodes = await storage.getCustomerSicCodes(customerId);
       res.json(sicCodes);
     } catch (error) {
-      console.error("Error fetching customer SIC codes:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching customer SIC codes');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -899,7 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignment = await storage.addCustomerSicCode(validation.data);
       res.status(201).json(assignment);
     } catch (error: any) {
-      console.error("Error adding customer SIC code:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error adding customer SIC code');
       
       // Handle unique constraint violations (duplicate assignment)
       if (error?.code === '23505' || error?.message?.includes('duplicate')) {
@@ -943,7 +997,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(204).send();
     } catch (error) {
-      console.error("Error removing customer SIC code:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error removing customer SIC code');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -969,7 +1023,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const households = await storage.getCustomerHouseholds(customerId);
       res.json(households);
     } catch (error) {
-      console.error("Error fetching person households:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person households');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -988,7 +1042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const household = await storage.createHousehold(validation.data);
       res.status(201).json(household);
     } catch (error) {
-      console.error("Error creating household:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error creating household');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1008,7 +1062,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(household);
     } catch (error) {
-      console.error("Error fetching household:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching household');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1030,7 +1084,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const members = await storage.getHouseholdMembers(householdId);
       res.json(members);
     } catch (error) {
-      console.error("Error fetching household members:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching household members');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1061,7 +1115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(allAccounts);
     } catch (error) {
-      console.error("Error fetching household accounts:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching household accounts');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1084,7 +1138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const subsidiaries = await storage.getSubsidiaryHouseholds(householdId);
       res.json(subsidiaries);
     } catch (error) {
-      console.error("Error fetching subsidiary households:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching subsidiary households');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1108,7 +1162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const members = await storage.getHouseholdMembers(householdId);
       res.json(members);
     } catch (error) {
-      console.error("Error fetching customer household members:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching customer household members');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1147,7 +1201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const membership = await storage.addHouseholdMember(validation.data);
       res.status(201).json(membership);
     } catch (error) {
-      console.error("Error adding household member:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error adding household member');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1187,7 +1241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const accounts = await storage.getCustomerAccounts(customerId);
       res.json(accounts);
     } catch (error) {
-      console.error("Error fetching person accounts:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person accounts');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1480,7 +1534,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recentTransactions
       });
     } catch (error) {
-      console.error("Error fetching deposit analytics:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching deposit analytics');
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/accounts/:id/balance-history - Get 12-month balance history for a single account
+  app.get("/api/accounts/:id/balance-history", async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.id);
+      if (isNaN(accountId)) {
+        return res.status(400).json({ error: "Invalid account ID" });
+      }
+
+      if (isSQLServer()) {
+        const { getMssqlPool } = await import('./dbConnection');
+        const { getAccountBalanceHistorySqlServer } = await import('./storage/sqlServerDashboard');
+        const pool = await getMssqlPool();
+        const trendData = await getAccountBalanceHistorySqlServer(pool, accountId);
+        return res.json({ trendData });
+      }
+
+      // PostgreSQL implementation
+      const monthlyData = await db.execute(sql`
+        WITH RECURSIVE
+        month_series AS (
+          SELECT DATE_TRUNC('month', NOW() - INTERVAL '11 months') + (n || ' month')::interval as month
+          FROM generate_series(0, 11) n
+        ),
+        account_monthly_balances AS (
+          SELECT DISTINCT ON (ft.account_id, DATE_TRUNC('month', ft.transaction_date))
+            ft.account_id,
+            DATE_TRUNC('month', ft.transaction_date) as month,
+            ft.ledger_balance_after
+          FROM financial_transaction ft
+          WHERE ft.account_id = ${accountId}
+            AND ft.transaction_date >= NOW() - INTERVAL '12 months'
+          ORDER BY ft.account_id, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
+        ),
+        filled_balances AS (
+          SELECT
+            ms.month,
+            COALESCE(
+              amb.ledger_balance_after,
+              (
+                SELECT amb2.ledger_balance_after
+                FROM account_monthly_balances amb2
+                WHERE amb2.month < ms.month
+                ORDER BY amb2.month DESC
+                LIMIT 1
+              )
+            ) as balance
+          FROM month_series ms
+          LEFT JOIN account_monthly_balances amb
+            ON amb.month = ms.month
+        )
+        SELECT
+          month,
+          COALESCE(balance, 0) as balance
+        FROM filled_balances
+        ORDER BY month ASC
+      `);
+
+      const trendData = (monthlyData as any).rows.map((row: any) => {
+        const monthDate = new Date(row.month);
+        return {
+          month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
+          date: monthDate.toISOString(),
+          balance: Number(row.balance) || 0
+        };
+      });
+
+      res.json({ trendData });
+    } catch (error) {
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account balance history');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1543,7 +1670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           ClientEngagementDTO.parse(engagementDTO);
         } catch (validationError) {
-          console.error('Client Engagement DTO validation failed:', validationError);
+          logger.error({ err: validationError, module: 'routes' }, 'Client Engagement DTO validation failed');
           return res.status(500).json({ 
             code: "DTO_VALIDATION_FAILED",
             message: "Internal data contract violation",
@@ -1555,7 +1682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(engagementDTO);
     } catch (error) {
-      console.error("Error fetching client engagement:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching client engagement');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal server error",
@@ -1610,7 +1737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           RelationshipSummaryDTO.parse(summaryDTO);
         } catch (validationError) {
-          console.error('Relationship Summary DTO validation failed:', validationError);
+          logger.error({ err: validationError, module: 'routes' }, 'Relationship Summary DTO validation failed');
           return res.status(500).json({ 
             code: "DTO_VALIDATION_FAILED",
             message: "Internal data contract violation",
@@ -1622,7 +1749,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(summaryDTO);
     } catch (error) {
-      console.error("Error fetching relationship summary:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching relationship summary');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal server error",
@@ -1672,7 +1799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           ContactHistoryDTO.parse(contactsDTO);
         } catch (validationError) {
-          console.error('Contact History DTO validation failed:', validationError);
+          logger.error({ err: validationError, module: 'routes' }, 'Contact History DTO validation failed');
           return res.status(500).json({ 
             code: "DTO_VALIDATION_FAILED",
             message: "Internal data contract violation",
@@ -1684,7 +1811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(contactsDTO);
     } catch (error) {
-      console.error("Error fetching contact history:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching contact history');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         message: "Internal server error",
@@ -1714,7 +1841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const accounts = await storage.getAccounts(Object.keys(filters).length > 0 ? filters : undefined);
       res.json(accounts);
     } catch (error) {
-      console.error("Error fetching accounts:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching accounts');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1734,7 +1861,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(account);
     } catch (error) {
-      console.error("Error fetching account:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1756,7 +1883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const owners = await storage.getAccountOwners(accountId);
       res.json(owners);
     } catch (error) {
-      console.error("Error fetching account owners:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account owners');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1802,7 +1929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountType: account.accountType
       });
     } catch (error) {
-      console.error("Error fetching account debit cards:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account debit cards');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         error: "Internal server error",
@@ -1842,7 +1969,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountId
       });
     } catch (error) {
-      console.error("Error fetching account SIC codes:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account SIC codes');
       res.status(500).json({ 
         code: "INTERNAL_SERVER_ERROR",
         error: "Internal server error",
@@ -1888,7 +2015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ownership = await storage.addAccountOwner(validation.data);
       res.status(201).json(ownership);
     } catch (error) {
-      console.error("Error adding account owner:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error adding account owner');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1923,7 +2050,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(updatedAccount);
     } catch (error) {
-      console.error("Error updating account:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error updating account');
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1950,7 +2077,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await storage.getTransactions(params);
       res.json(result);
     } catch (error: any) {
-      console.error("Error fetching transactions:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching transactions');
       res.status(500).json({ error: error.message || "Failed to fetch transactions" });
     }
   });
@@ -1996,7 +2123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ transactions });
     } catch (error: any) {
-      console.error("Error fetching account transactions:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account transactions');
       res.status(500).json({ error: error.message || "Failed to fetch account transactions" });
     }
   });
@@ -2040,7 +2167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ transactions: enrichedTransactions });
     } catch (error: any) {
-      console.error("Error fetching person transactions:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching person transactions');
       res.status(500).json({ error: error.message || "Failed to fetch person transactions" });
     }
   });
@@ -2086,7 +2213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ transactions });
     } catch (error: any) {
-      console.error("Error fetching account transactions:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account transactions');
       res.status(500).json({ error: error.message || "Failed to fetch account transactions" });
     }
   });
@@ -2097,7 +2224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categories = await storage.getTransactionCategories();
       res.json({ categories });
     } catch (error: any) {
-      console.error("Error fetching transaction categories:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching transaction categories');
       res.status(500).json({ error: error.message || "Failed to fetch categories" });
     }
   });
@@ -2170,7 +2297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categories = await storage.getNoteCategories(includeInactive);
       res.json({ categories });
     } catch (error: any) {
-      console.error("Error fetching note categories:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching note categories');
       res.status(500).json({ error: error.message || "Failed to fetch note categories" });
     }
   });
@@ -2187,7 +2314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notes = await storage.getCustomerNotes(customerId, includeDeleted);
       res.json({ notes });
     } catch (error: any) {
-      console.error("Error fetching customer notes:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching customer notes');
       res.status(500).json({ error: error.message || "Failed to fetch customer notes" });
     }
   });
@@ -2204,7 +2331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notes = await storage.getAccountNotes(accountId, includeDeleted);
       res.json({ notes });
     } catch (error: any) {
-      console.error("Error fetching account notes:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching account notes');
       res.status(500).json({ error: error.message || "Failed to fetch account notes" });
     }
   });
@@ -2225,7 +2352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(note);
     } catch (error: any) {
-      console.error("Error fetching note:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching note');
       res.status(500).json({ error: error.message || "Failed to fetch note" });
     }
   });
@@ -2246,7 +2373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newNote = await storage.createNote(noteData, authorEmployeeId);
       res.status(201).json(newNote);
     } catch (error: any) {
-      console.error("Error creating note:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error creating note');
       res.status(500).json({ error: error.message || "Failed to create note" });
     }
   });
@@ -2286,7 +2413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(updatedNote);
     } catch (error: any) {
-      console.error("Error updating note:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error updating note');
       res.status(500).json({ error: error.message || "Failed to update note" });
     }
   });
@@ -2314,7 +2441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ success: true, message: "Note deleted successfully" });
     } catch (error: any) {
-      console.error("Error deleting note:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error deleting note');
       res.status(500).json({ error: error.message || "Failed to delete note" });
     }
   });
@@ -2345,7 +2472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ success: true, message: "Note restored successfully" });
     } catch (error: any) {
-      console.error("Error restoring note:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error restoring note');
       res.status(500).json({ error: error.message || "Failed to restore note" });
     }
   });
@@ -2376,7 +2503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ success: true, message: `Note ${isPinned ? 'pinned' : 'unpinned'} successfully` });
     } catch (error: any) {
-      console.error("Error pinning/unpinning note:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error pinning/unpinning note');
       res.status(500).json({ error: error.message || "Failed to pin/unpin note" });
     }
   });
@@ -2392,7 +2519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const versions = await storage.getNoteVersions(noteId);
       res.json({ versions });
     } catch (error: any) {
-      console.error("Error fetching note versions:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching note versions');
       res.status(500).json({ error: error.message || "Failed to fetch note versions" });
     }
   });
@@ -2425,7 +2552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await storage.searchNotes(searchParams);
       res.json(result);
     } catch (error: any) {
-      console.error("Error searching notes:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error searching notes');
       res.status(500).json({ error: error.message || "Failed to search notes" });
     }
   });
@@ -2444,12 +2571,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Login endpoint - Redirects to IdP or returns info for development
   app.get("/api/auth/login", (req, res) => {
     if (isSamlEnabled() && process.env.SAML_IDP_LOGIN_URL) {
-      console.log('[Auth] Redirecting to SAML IdP:', process.env.SAML_IDP_LOGIN_URL);
+      logger.info({ module: 'routes', idpUrl: process.env.SAML_IDP_LOGIN_URL }, 'Redirecting to SAML IdP');
       return res.redirect(process.env.SAML_IDP_LOGIN_URL);
     }
     
     // Development mode - no SAML configured
-    console.log('[Auth] SAML not configured, returning dev mode response');
+    logger.info({ module: 'routes' }, 'SAML not configured, returning dev mode response');
     return res.status(200).json({
       message: 'Development mode - SAML not configured',
       samlEnabled: false,
@@ -2460,7 +2587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Logout endpoint - Destroys session and returns success
   app.post("/api/auth/logout", (req, res) => {
     const employeeId = (req as any).session?.employeeId || req.employeeId;
-    console.log('[Auth] Logout requested for employee:', employeeId);
+    logger.info({ module: 'routes', employeeId }, 'Logout requested');
     
     // For now, just return success since session handling is simplified in dev
     return res.json({ success: true, message: 'Logged out successfully' });
@@ -2504,7 +2631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(basePermissions);
     } catch (error) {
-      console.error("Error fetching permissions:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching permissions');
       res.status(500).json({ error: "Failed to fetch permissions" });
     }
   });
@@ -2526,7 +2653,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await storage.checkPermission(employeeId, permissionCode, context || {});
       res.json(result);
     } catch (error) {
-      console.error("Error checking permission:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error checking permission');
       res.status(500).json({ error: "Failed to check permission" });
     }
   });
@@ -2550,7 +2677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const roles = await roleTestService.getAllRoles();
       res.json(roles);
     } catch (error) {
-      console.error("Error fetching role test options:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching role test options');
       res.status(500).json({ error: "Failed to fetch role options" });
     }
   });
@@ -2581,7 +2708,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         permissions: updatedPermissions 
       });
     } catch (error: any) {
-      console.error("Error activating role test:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error activating role test');
       res.status(500).json({ error: error.message || "Failed to activate role testing" });
     }
   });
@@ -2606,7 +2733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         permissions: updatedPermissions 
       });
     } catch (error: any) {
-      console.error("Error resetting role test:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error resetting role test');
       res.status(500).json({ error: error.message || "Failed to reset role testing" });
     }
   });
@@ -2627,7 +2754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const users = await storage.listUsers(filters);
       res.json(users);
     } catch (error) {
-      console.error("Error listing users:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error listing users');
       res.status(500).json({ error: "Failed to fetch users" });
     }
   });
@@ -2642,7 +2769,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(user);
     } catch (error) {
-      console.error("Error fetching user:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching user');
       res.status(500).json({ error: "Failed to fetch user details" });
     }
   });
@@ -2658,7 +2785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.assignRole(employeeId, result.data, assignedByUserId);
       res.json({ message: "Role assigned successfully" });
     } catch (error: any) {
-      console.error("Error assigning role:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error assigning role');
       res.status(500).json({ error: error.message || "Failed to assign role" });
     }
   });
@@ -2675,7 +2802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.removeRole(employeeId, result.data, removedByUserId);
       res.json({ message: "Role removed successfully" });
     } catch (error: any) {
-      console.error("Error removing role:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error removing role');
       res.status(500).json({ error: error.message || "Failed to remove role" });
     }
   });
@@ -2685,7 +2812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const roles = await storage.getAllRoles();
       res.json(roles);
     } catch (error) {
-      console.error("Error fetching roles:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching roles');
       res.status(500).json({ error: "Failed to fetch roles" });
     }
   });
@@ -2700,7 +2827,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mappings = await samlRoleMappingService.getAllMappings();
       res.json(mappings);
     } catch (error) {
-      console.error("Error fetching SAML mappings:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error fetching SAML mappings');
       res.status(500).json({ error: "Failed to fetch SAML role mappings" });
     }
   });
@@ -2728,7 +2855,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(result);
     } catch (error) {
-      console.error("Error creating SAML mapping:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error creating SAML mapping');
       res.status(500).json({ error: "Failed to create SAML role mapping" });
     }
   });
@@ -2747,7 +2874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(result);
     } catch (error) {
-      console.error("Error updating SAML mapping:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error updating SAML mapping');
       res.status(500).json({ error: "Failed to update SAML role mapping" });
     }
   });
@@ -2765,7 +2892,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(result);
     } catch (error) {
-      console.error("Error deleting SAML mapping:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error deleting SAML mapping');
       res.status(500).json({ error: "Failed to delete SAML role mapping" });
     }
   });
@@ -2794,7 +2921,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(result);
     } catch (error) {
-      console.error("Error assigning role manually:", error);
+      logger.error({ err: error, module: 'routes' }, 'Error assigning role manually');
       res.status(500).json({ error: "Failed to assign role" });
     }
   });

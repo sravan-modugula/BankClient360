@@ -2,6 +2,9 @@ import type { CustomerListItem, HouseholdListItem } from '@shared/schema';
 import type { ISearchProvider, SearchProviderCapabilities } from './ISearchProvider';
 import { getMssqlPool } from '../../dbConnection';
 import sqlServer from 'mssql';
+import logger from '../../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-search-provider' });
 
 /**
  * SQL Server search provider using Full-Text Search (FTS) for fuzzy matching
@@ -107,14 +110,14 @@ class SqlServerSearchProvider implements ISearchProvider {
       } catch (error: any) {
         // Fallback to legacy if STRING_SIMILARITY fails
         if (error.number === 195) {
-          console.log('[SQL Server] STRING_SIMILARITY not available, using legacy SOUNDEX search');
+          fileLogger.info('STRING_SIMILARITY not available, using legacy SOUNDEX search');
           return this.searchByNameFuzzyLegacy(nameQuery, threshold, limit);
         }
         throw error;
       }
     } else {
       // Use legacy SOUNDEX/DIFFERENCE for SQL Server 2019 and earlier
-      console.log(`[SQL Server] Version ${version} detected, using legacy SOUNDEX search`);
+      fileLogger.info({ version }, 'Using legacy SOUNDEX search for detected version');
       return this.searchByNameFuzzyLegacy(nameQuery, threshold, limit);
     }
   }
@@ -398,14 +401,14 @@ class SqlServerSearchProvider implements ISearchProvider {
       } catch (error: any) {
         // If STRING_SIMILARITY fails (error 195), fall back to legacy method
         if (error.number === 195) {
-          console.log('[SQL Server] STRING_SIMILARITY not available for households, using legacy SOUNDEX search');
+          fileLogger.info('STRING_SIMILARITY not available for households, using legacy SOUNDEX search');
           return this.searchHouseholdsByNameLegacy(nameQuery, threshold, limit);
         }
         throw error;
       }
     } else {
       // Use legacy SOUNDEX/DIFFERENCE for SQL Server 2019 and earlier
-      console.log(`[SQL Server] Version ${version} detected for households, using legacy SOUNDEX search`);
+      fileLogger.info({ version }, 'Using legacy SOUNDEX search for households for detected version');
       return this.searchHouseholdsByNameLegacy(nameQuery, threshold, limit);
     }
   }

@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { permissionService } from "../services/permissionService";
 import { PermissionContext } from "../../shared/schema";
+import { emitAuditEvent } from "../services/auditService";
+import { AuditEventType } from "../../shared/auditEvents";
+import logger from "../services/logger";
 
 declare global {
   namespace Express {
@@ -37,6 +40,15 @@ export function requirePermission(options: PermissionOptions) {
       req.privilegeLevel = userPermissions.maxPrivilegeLevel;
 
       if (options.minPrivilegeLevel !== undefined && userPermissions.maxPrivilegeLevel < options.minPrivilegeLevel) {
+        emitAuditEvent({
+          eventType: AuditEventType.AUTHZ_PERMISSION_DENIED,
+          action: `Privilege level ${userPermissions.maxPrivilegeLevel} < required ${options.minPrivilegeLevel}`,
+          outcome: 'denied',
+          actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+          correlationId: req.correlationId,
+          metadata: { code: 'INSUFFICIENT_PRIVILEGE', route: `${req.method} ${req.path}` },
+          module: 'permissions',
+        });
         return res.status(403).json({
           error: "Insufficient privilege level",
           code: "INSUFFICIENT_PRIVILEGE",
@@ -48,6 +60,15 @@ export function requirePermission(options: PermissionOptions) {
       if (options.requireAll && options.requireAll.length > 0) {
         const hasAll = await permissionService.hasAllPermissions(employeeId, options.requireAll);
         if (!hasAll) {
+          emitAuditEvent({
+            eventType: AuditEventType.AUTHZ_PERMISSION_DENIED,
+            action: `Missing all of: ${options.requireAll.join(', ')}`,
+            outcome: 'denied',
+            actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+            correlationId: req.correlationId,
+            metadata: { code: 'MISSING_PERMISSIONS', required: options.requireAll, route: `${req.method} ${req.path}` },
+            module: 'permissions',
+          });
           return res.status(403).json({
             error: "Missing required permissions",
             code: "MISSING_PERMISSIONS",
@@ -59,6 +80,15 @@ export function requirePermission(options: PermissionOptions) {
       if (options.requireAny && options.requireAny.length > 0) {
         const hasAny = await permissionService.hasAnyPermission(employeeId, options.requireAny);
         if (!hasAny) {
+          emitAuditEvent({
+            eventType: AuditEventType.AUTHZ_PERMISSION_DENIED,
+            action: `Missing any of: ${options.requireAny.join(', ')}`,
+            outcome: 'denied',
+            actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+            correlationId: req.correlationId,
+            metadata: { code: 'MISSING_PERMISSIONS', requiredAny: options.requireAny, route: `${req.method} ${req.path}` },
+            module: 'permissions',
+          });
           return res.status(403).json({
             error: "Missing required permissions",
             code: "MISSING_PERMISSIONS",
@@ -80,6 +110,15 @@ export function requirePermission(options: PermissionOptions) {
         );
 
         if (!result.allowed) {
+          emitAuditEvent({
+            eventType: AuditEventType.AUTHZ_PERMISSION_DENIED,
+            action: `Permission denied: ${options.permissionCode}`,
+            outcome: 'denied',
+            actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+            correlationId: req.correlationId,
+            metadata: { code: 'PERMISSION_DENIED', permission: options.permissionCode, reason: result.reason, route: `${req.method} ${req.path}` },
+            module: 'permissions',
+          });
           return res.status(403).json({
             error: "Permission denied",
             code: "PERMISSION_DENIED",
@@ -88,9 +127,18 @@ export function requirePermission(options: PermissionOptions) {
         }
       }
 
+      emitAuditEvent({
+        eventType: AuditEventType.AUTHZ_PERMISSION_GRANTED,
+        action: `Permission granted: ${options.permissionCode || options.requireAll?.join(',') || options.requireAny?.join(',') || 'privilege-level'}`,
+        outcome: 'success',
+        actor: { employeeId, ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+        correlationId: req.correlationId,
+        metadata: { route: `${req.method} ${req.path}` },
+        module: 'permissions',
+      });
       next();
     } catch (error) {
-      console.error('Permission check error:', error);
+      logger.error({ err: error, employeeId, module: 'permissions' }, 'Permission check error');
       return res.status(500).json({
         error: "Internal server error during permission check",
         code: "PERMISSION_CHECK_ERROR"
@@ -124,7 +172,7 @@ export async function attachPermissions(req: Request, res: Response, next: NextF
     req.privilegeLevel = userPermissions.maxPrivilegeLevel;
     next();
   } catch (error) {
-    console.error('Failed to attach permissions:', error);
+    logger.error({ err: error, employeeId, module: 'permissions' }, 'Failed to attach permissions');
     next();
   }
 }

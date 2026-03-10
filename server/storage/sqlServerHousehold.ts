@@ -4,13 +4,16 @@
  */
 
 import sql from 'mssql';
-import type { 
-  Household, 
+import type {
+  Household,
   InsertHousehold,
   HouseholdMembership,
   Customer,
   Account
 } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-household' });
 
 /**
  * Extended household member type for SQL Server views
@@ -55,7 +58,7 @@ export async function getHouseholdSqlServer(
 
     return mapHouseholdFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get household error:', error);
+    fileLogger.error({ err: error }, 'Get household error');
     throw error;
   }
 }
@@ -94,7 +97,7 @@ export async function getHouseholdMembersSqlServer(
 
     return result.recordset.map(mapHouseholdMemberFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get household members error:', error);
+    fileLogger.error({ err: error }, 'Get household members error');
     throw error;
   }
 }
@@ -120,7 +123,7 @@ export async function getHouseholdAccountsSqlServer(
 
     return result.recordset.map(mapAccountFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get household accounts error:', error);
+    fileLogger.error({ err: error }, 'Get household accounts error');
     throw error;
   }
 }
@@ -145,7 +148,7 @@ export async function getSubsidiaryHouseholdsSqlServer(
 
     return result.recordset.map(mapHouseholdFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get subsidiary households error:', error);
+    fileLogger.error({ err: error }, 'Get subsidiary households error');
     throw error;
   }
 }
@@ -176,7 +179,7 @@ export async function getCustomerHouseholdsSqlServer(
       relationshipRole: row.relationship_role
     }));
   } catch (error) {
-    console.error('[SQL Server] Get customer households error:', error);
+    fileLogger.error({ err: error }, 'Get customer households error');
     throw error;
   }
 }
@@ -234,7 +237,7 @@ export async function getHouseholdHierarchySqlServer(
 
     return { household, parent, children };
   } catch (error) {
-    console.error('[SQL Server] Get household hierarchy error:', error);
+    fileLogger.error({ err: error }, 'Get household hierarchy error');
     throw error;
   }
 }
@@ -270,7 +273,7 @@ export async function createHouseholdSqlServer(
 
     return mapHouseholdFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Create household error:', error);
+    fileLogger.error({ err: error }, 'Create household error');
     throw error;
   }
 }
@@ -313,7 +316,7 @@ export async function addHouseholdMemberSqlServer(
 
     return mapHouseholdMembershipFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Add household member error:', error);
+    fileLogger.error({ err: error }, 'Add household member error');
     throw error;
   }
 }
@@ -338,7 +341,7 @@ export async function removeHouseholdMemberSqlServer(
         AND customer_id = @customerId
     `);
   } catch (error) {
-    console.error('[SQL Server] Remove household member error:', error);
+    fileLogger.error({ err: error }, 'Remove household member error');
     throw error;
   }
 }
@@ -481,7 +484,7 @@ export async function updateHouseholdSqlServer(
 
     return mapHouseholdFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update household error:', error);
+    fileLogger.error({ err: error }, 'Update household error');
     throw error;
   }
 }
@@ -511,7 +514,7 @@ export async function closeHouseholdSqlServer(
 
     return mapHouseholdFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Close household error:', error);
+    fileLogger.error({ err: error }, 'Close household error');
     throw error;
   }
 }
@@ -541,7 +544,7 @@ export async function endHouseholdMemberSqlServer(
 
     return mapHouseholdMembershipFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] End household member error:', error);
+    fileLogger.error({ err: error }, 'End household member error');
     throw error;
   }
 }

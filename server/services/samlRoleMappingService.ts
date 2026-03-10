@@ -9,6 +9,9 @@ import {
   type SamlRoleMapping,
   type EmployeeRole
 } from "../../shared/schema";
+import logger from "./logger";
+
+const samlLogger = logger.child({ module: 'saml' });
 
 export interface SamlRoleAssignmentResult {
   success: boolean;
@@ -49,7 +52,7 @@ export class SamlRoleMappingService {
   ): Promise<SamlRoleAssignmentResult> {
     // Skip processing in development mode with SQL Server (db is null)
     if (!db) {
-      console.log('[SAML] Skipping role processing (SQL Server mode without Drizzle ORM)');
+      samlLogger.info('Skipping role processing (SQL Server mode without Drizzle ORM)');
       return {
         assigned: false,
         message: 'Role processing skipped in SQL Server mode',
@@ -281,7 +284,7 @@ export class SamlRoleMappingService {
         message: 'Role assigned successfully'
       };
     } catch (error) {
-      console.error('Error assigning role manually:', error);
+      samlLogger.error({ err: error }, 'Error assigning role manually');
       return {
         success: false,
         message: 'Failed to assign role'
@@ -326,7 +329,7 @@ export class SamlRoleMappingService {
         message: 'Role removed successfully'
       };
     } catch (error) {
-      console.error('Error removing role:', error);
+      samlLogger.error({ err: error }, 'Error removing role');
       return {
         success: false,
         message: 'Failed to remove role'
@@ -400,7 +403,7 @@ export class SamlRoleMappingService {
           message: 'SAML role key already exists'
         };
       }
-      console.error('Error creating SAML mapping:', error);
+      samlLogger.error({ err: error }, 'Error creating SAML mapping');
       return {
         success: false,
         message: 'Failed to create SAML role mapping'
@@ -434,7 +437,7 @@ export class SamlRoleMappingService {
         message: 'SAML role mapping updated successfully'
       };
     } catch (error) {
-      console.error('Error updating SAML mapping:', error);
+      samlLogger.error({ err: error }, 'Error updating SAML mapping');
       return {
         success: false,
         message: 'Failed to update SAML role mapping'
@@ -457,7 +460,7 @@ export class SamlRoleMappingService {
         message: 'SAML role mapping deleted successfully'
       };
     } catch (error) {
-      console.error('Error deleting SAML mapping:', error);
+      samlLogger.error({ err: error }, 'Error deleting SAML mapping');
       return {
         success: false,
         message: 'Failed to delete SAML role mapping'

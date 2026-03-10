@@ -5,6 +5,9 @@
 
 import sql from 'mssql';
 import type { CreateNoteData, UpdateNoteData, NoteWithCurrentVersion } from '../storage';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-notes' });
 
 /**
  * Get notes for a customer or account with current version
@@ -72,7 +75,7 @@ export async function getNotesSqlServer(
 
     return result.recordset.map(mapNoteWithVersionFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get notes error:', error);
+    fileLogger.error({ err: error }, 'Get notes error');
     throw error;
   }
 }
@@ -110,7 +113,7 @@ export async function getNoteSqlServer(
 
     return mapNoteWithVersionFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get note error:', error);
+    fileLogger.error({ err: error }, 'Get note error');
     throw error;
   }
 }
@@ -248,7 +251,7 @@ export async function createNoteSqlServer(
     };
   } catch (error) {
     await transaction.rollback();
-    console.error('[SQL Server] Create note error:', error);
+    fileLogger.error({ err: error }, 'Create note error');
     throw error;
   }
 }
@@ -400,7 +403,7 @@ export async function updateNoteSqlServer(
     return await getNoteSqlServer(pool, noteId);
   } catch (error) {
     await transaction.rollback();
-    console.error('[SQL Server] Update note error:', error);
+    fileLogger.error({ err: error }, 'Update note error');
     throw error;
   }
 }
@@ -462,7 +465,7 @@ export async function deleteNoteSqlServer(
     return (result.rowsAffected[0] || 0) > 0;
   } catch (error) {
     await transaction.rollback();
-    console.error('[SQL Server] Delete note error:', error);
+    fileLogger.error({ err: error }, 'Delete note error');
     throw error;
   }
 }
@@ -510,7 +513,7 @@ export async function getNoteCategoriesSqlServer(
       updatedAt: row.updated_at
     }));
   } catch (error) {
-    console.error('[SQL Server] Get note categories error:', error);
+    fileLogger.error({ err: error }, 'Get note categories error');
     throw error;
   }
 }
@@ -575,7 +578,7 @@ export async function getNoteVersionsSqlServer(
       restoredByEmployeeName: row.restored_by_employee_name
     }));
   } catch (error) {
-    console.error('[SQL Server] Get note versions error:', error);
+    fileLogger.error({ err: error }, 'Get note versions error');
     throw error;
   }
 }

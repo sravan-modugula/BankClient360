@@ -3,67 +3,47 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeServerTimezone } from "./utils/timezone";
 import { samlRoleMappingService } from "./services/samlRoleMappingService";
+import logger from "./services/logger";
+import { correlationIdMiddleware } from "./middleware/correlationId";
+import { requestLoggerMiddleware } from "./middleware/requestLogger";
 
 const app = express();
+
+// Correlation ID must be first — all downstream middleware/routes use it
+app.use(correlationIdMiddleware);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // DEVELOPMENT ONLY: Mock user session
 // Only active when NODE_ENV=development and SAML is not enabled
 if (process.env.NODE_ENV === 'development' && process.env.SAML_ENABLED !== 'true') {
-  console.log('[Auth] Using mock authentication (development mode)');
-  
+  logger.info({ module: 'auth' }, 'Using mock authentication (development mode)');
+
   app.use(async (req, res, next) => {
     // Mock authenticated user for development testing
     req.employeeId = 1; // Sarah Johnson, System Admin
     next();
   });
 } else {
-  console.log('[Auth] Mock authentication disabled - using real authentication');
+  logger.info({ module: 'auth' }, 'Mock authentication disabled - using real authentication');
 }
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
+// Structured request logging (replaces old custom logger)
+app.use(requestLoggerMiddleware);
 
 (async () => {
   // Initialize server timezone to PST
   initializeServerTimezone();
-  
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    logger.error({ err, status, module: 'error-handler' }, message);
     res.status(status).json({ message });
-    throw err;
   });
 
   // API 404 handler moved to routes.ts to ensure it comes after all route definitions

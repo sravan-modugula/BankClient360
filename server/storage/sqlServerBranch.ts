@@ -6,6 +6,9 @@
 
 import sql from 'mssql';
 import type { Branch, InsertBranch } from '@shared/schema';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'sqlserver-branch' });
 
 /**
  * Get branch by ID
@@ -28,7 +31,7 @@ export async function getBranchSqlServer(
 
     return mapBranchFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Get branch error:', error);
+    fileLogger.error({ err: error }, 'Get branch error');
     throw error;
   }
 }
@@ -50,7 +53,7 @@ export async function getBranchesSqlServer(
 
     return result.recordset.map(mapBranchFromDb);
   } catch (error) {
-    console.error('[SQL Server] Get branches error:', error);
+    fileLogger.error({ err: error }, 'Get branches error');
     throw error;
   }
 }
@@ -83,7 +86,7 @@ export async function createBranchSqlServer(
 
     return mapBranchFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Create branch error:', error);
+    fileLogger.error({ err: error }, 'Create branch error');
     throw error;
   }
 }
@@ -134,7 +137,7 @@ export async function updateBranchSqlServer(
 
     return mapBranchFromDb(result.recordset[0]);
   } catch (error) {
-    console.error('[SQL Server] Update branch error:', error);
+    fileLogger.error({ err: error }, 'Update branch error');
     throw error;
   }
 }

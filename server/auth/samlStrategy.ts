@@ -3,6 +3,9 @@ import { db } from '../db';
 import { employee } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import { samlRoleMappingService } from '../services/samlRoleMappingService';
+import logger from '../services/logger';
+
+const fileLogger = logger.child({ module: 'saml-strategy' });
 
 // SAML attribute mappings from RSA IdP
 // UPDATE THESE based on your actual RSA IdP attribute names
@@ -58,10 +61,7 @@ export function createSamlStrategy() {
     // Verify callback - called after successful assertion validation
     async (profile: any, done: any) => {
       try {
-        console.log('[SAML] Processing authentication for profile:', {
-          nameID: profile.nameID,
-          attributes: Object.keys(profile)
-        });
+        fileLogger.info({ nameID: profile.nameID, attributes: Object.keys(profile) }, 'Processing authentication for profile');
 
         // Extract attributes from SAML assertion
         const employeeIdStr = profile[ATTRIBUTE_MAP.employeeId];
@@ -74,29 +74,18 @@ export function createSamlStrategy() {
         
         // Validate required attributes
         if (!employeeIdStr || !employeeNumber) {
-          console.error('[SAML] Missing required SAML attributes:', {
-            employeeId: employeeIdStr,
-            employeeNumber: employeeNumber
-          });
+          fileLogger.error({ employeeId: employeeIdStr, employeeNumber }, 'Missing required SAML attributes');
           return done(new Error('Missing required SAML attributes: employeeId or employeeNumber'));
         }
         
         const employeeId = parseInt(employeeIdStr, 10);
         
         if (isNaN(employeeId)) {
-          console.error('[SAML] Invalid employeeId format:', employeeIdStr);
+          fileLogger.error({ employeeIdStr }, 'Invalid employeeId format');
           return done(new Error('Invalid employeeId format'));
         }
 
-        console.log('[SAML] Extracted attributes:', {
-          employeeId,
-          employeeNumber,
-          firstName,
-          lastName,
-          email,
-          department,
-          samlRoleKey
-        });
+        fileLogger.info({ employeeId, employeeNumber, firstName, lastName, email, department, samlRoleKey }, 'Extracted SAML attributes');
         
         // Lookup existing employee
         const existingEmployee = await db
@@ -107,11 +96,7 @@ export function createSamlStrategy() {
         
         const isFirstLogin = existingEmployee.length === 0;
         
-        console.log('[SAML] Employee lookup result:', {
-          employeeId,
-          isFirstLogin,
-          exists: !isFirstLogin
-        });
+        fileLogger.info({ employeeId, isFirstLogin, exists: !isFirstLogin }, 'Employee lookup result');
         
         // Upsert employee record
         await db
@@ -138,7 +123,7 @@ export function createSamlStrategy() {
             }
           });
 
-        console.log('[SAML] Employee record upserted successfully');
+        fileLogger.info('Employee record upserted successfully');
         
         // Process SAML role mapping (auto-assign roles)
         try {
@@ -148,16 +133,10 @@ export function createSamlStrategy() {
             isFirstLogin
           );
           
-          console.log('[SAML] Role processing result:', {
-            success: roleResult.success,
-            assigned: roleResult.assigned,
-            roleName: roleResult.roleName,
-            source: roleResult.source,
-            message: roleResult.message
-          });
+          fileLogger.info({ success: roleResult.success, assigned: roleResult.assigned, roleName: roleResult.roleName, source: roleResult.source, message: roleResult.message }, 'Role processing result');
         } catch (roleError) {
           // Log error but don't block login - admin can manually assign role
-          console.error('[SAML] Failed to process SAML role:', roleError);
+          fileLogger.error({ err: roleError }, 'Failed to process SAML role');
         }
         
         // Return user object for session
@@ -171,11 +150,11 @@ export function createSamlStrategy() {
           samlRoleKey
         };
 
-        console.log('[SAML] Authentication successful for employee:', employeeId);
+        fileLogger.info({ employeeId }, 'Authentication successful');
         return done(null, user);
         
       } catch (error) {
-        console.error('[SAML] Authentication error:', error);
+        fileLogger.error({ err: error }, 'Authentication error');
         return done(error);
       }
     }

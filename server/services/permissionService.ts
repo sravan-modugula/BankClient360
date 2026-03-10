@@ -11,6 +11,9 @@ import type {
   AttributeConfig,
   UserPermissions
 } from "../../shared/schema";
+import logger from "./logger";
+
+const permLogger = logger.child({ module: 'permissions' });
 
 export class PermissionService {
   async getUserPermissions(employeeId: number): Promise<UserPermissions> {
@@ -28,7 +31,7 @@ export class PermissionService {
 
       // Check if db is null (SQL Server mode)
       if (!db) {
-        console.warn('[PermissionService] Database not available in SQL Server mode, allowing permission');
+        permLogger.warn('Database not available in SQL Server mode, allowing permission');
         return { allowed: true };
       }
 
@@ -95,7 +98,7 @@ export class PermissionService {
         allowed: true
       };
     } catch (error) {
-      console.error('[PermissionService] Error checking permission:', error);
+      permLogger.error({ err: error }, 'Error checking permission');
       return {
         allowed: false,
         reason: 'Permission check failed'
@@ -187,7 +190,7 @@ export class PermissionService {
         contextData: context
       });
     } catch (error) {
-      console.error('Failed to log permission denial:', error);
+      permLogger.error({ err: error }, 'Failed to log permission denial');
     }
   }
 
