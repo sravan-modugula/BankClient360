@@ -1,42 +1,15 @@
 /**
  * Database Connection Manager
- * Supports both PostgreSQL (Neon) and SQL Server (MSSQL)
+ * MS SQL Server only (on-prem deployment)
  */
 
-import { DB_DIALECT, isPostgreSQL, isSQLServer } from './dbConfig';
-import { Pool as PgPool, neonConfig } from '@neondatabase/serverless';
-import { drizzle as pgDrizzle } from 'drizzle-orm/neon-serverless';
 import sql from 'mssql';
-import ws from 'ws';
-import * as schema from '@shared/schema';
 import logger from './services/logger';
 
 const dbLogger = logger.child({ module: 'database' });
 
-// PostgreSQL connection (Neon serverless)
-let pgPool: PgPool | null = null;
-let pgDb: ReturnType<typeof pgDrizzle> | null = null;
-
 // SQL Server connection
 let mssqlPool: sql.ConnectionPool | null = null;
-
-/**
- * Initialize PostgreSQL connection
- */
-function initPostgreSQL() {
-  if (pgDb) return pgDb;
-
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL must be set for PostgreSQL connection');
-  }
-
-  neonConfig.webSocketConstructor = ws;
-  pgPool = new PgPool({ connectionString: process.env.DATABASE_URL });
-  pgDb = pgDrizzle({ client: pgPool, schema });
-
-  dbLogger.info('PostgreSQL connection initialized');
-  return pgDb;
-}
 
 /**
  * Initialize SQL Server connection
@@ -71,48 +44,24 @@ async function initSQLServer(): Promise<sql.ConnectionPool> {
 }
 
 /**
- * Get database connection based on detected dialect
+ * Get database connection (MS SQL)
  */
 export async function getDatabase() {
-  if (isPostgreSQL()) {
-    return { type: 'postgresql' as const, db: initPostgreSQL(), pool: null };
-  } else {
-    const pool = await initSQLServer();
-    return { type: 'mssql' as const, db: null, pool };
-  }
+  const pool = await initSQLServer();
+  return { type: 'mssql' as const, db: null, pool };
 }
 
 /**
- * Get PostgreSQL Drizzle instance (throws if not PostgreSQL)
- */
-export function getPgDatabase() {
-  if (!isPostgreSQL()) {
-    throw new Error('getPgDatabase() called but database is not PostgreSQL');
-  }
-  return initPostgreSQL();
-}
-
-/**
- * Get SQL Server pool (throws if not SQL Server)
+ * Get SQL Server pool
  */
 export async function getMssqlPool() {
-  if (!isSQLServer()) {
-    throw new Error('getMssqlPool() called but database is not SQL Server');
-  }
   return await initSQLServer();
 }
 
 /**
- * Close all database connections
+ * Close database connections
  */
 export async function closeDatabaseConnections() {
-  if (pgPool) {
-    await pgPool.end();
-    pgPool = null;
-    pgDb = null;
-    dbLogger.info('PostgreSQL connection closed');
-  }
-
   if (mssqlPool) {
     await mssqlPool.close();
     mssqlPool = null;
@@ -120,18 +69,11 @@ export async function closeDatabaseConnections() {
   }
 }
 
-// Export for backward compatibility
-// Initialize immediately if PostgreSQL
-if (isPostgreSQL()) {
-  initPostgreSQL();
-  
-  // Assert that db is initialized
-  if (!pgDb) {
-    throw new Error('[Database] Failed to initialize PostgreSQL database');
-  }
-}
+// Stubs for backward compatibility — these are never used on the MS SQL path
+// but are still imported by storage.ts and routes.ts in their PostgreSQL branches.
+export const pool = null;
+export const db = null;
 
-// Export pool and db
-// Note: db will be null for SQL Server - use getMssqlPool() instead
-export const pool = pgPool;
-export const db = pgDb;
+export function getPgDatabase(): never {
+  throw new Error('getPgDatabase() is not available — this deployment uses MS SQL only');
+}

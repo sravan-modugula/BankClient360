@@ -5,7 +5,6 @@
  */
 
 import logger, { createChildLogger, FileWriter } from './logger';
-import { isPostgreSQL } from '../dbConfig';
 import {
   AuditEvent,
   AuditSeverity,
@@ -51,11 +50,7 @@ async function flushToDatabase(): Promise<void> {
   const batch = eventBuffer.splice(0, eventBuffer.length);
 
   try {
-    if (isPostgreSQL()) {
-      await flushToPostgreSQL(batch);
-    } else {
-      await flushToSQLServer(batch);
-    }
+    await flushToSQLServer(batch);
   } catch (err) {
     // Graceful degradation: events are already written to pino log output
     auditLogger.warn(
@@ -63,15 +58,6 @@ async function flushToDatabase(): Promise<void> {
       'Failed to flush audit events to database — events preserved in log output'
     );
   }
-}
-
-async function flushToPostgreSQL(events: AuditEvent[]): Promise<void> {
-  const { getPgDatabase } = await import('../db');
-  const { auditEvent } = await import('../../shared/schema');
-  const db = getPgDatabase();
-
-  const rows = events.map(mapEventToRow);
-  await db.insert(auditEvent).values(rows);
 }
 
 async function flushToSQLServer(events: AuditEvent[]): Promise<void> {
