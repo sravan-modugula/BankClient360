@@ -4,43 +4,122 @@ BankClient360 uses a hybrid **RBAC + ABAC** (Role-Based + Attribute-Based Access
 
 ---
 
+## Roles
+
+Roles are managed in the database via the Admin > User Management page. Each role is assigned a **privilege level** (0-4) that determines its authority tier. The following roles are configured in the system:
+
+| Role                  | Privilege Level | Description                                              |
+|-----------------------|-----------------|----------------------------------------------------------|
+| System Admin          | 4               | Full system access. Manages users, roles, SAML mappings. |
+| Branch Manager        | 3               | Branch-level authority. Can view employee customer data.  |
+| Assistant Manager     | 2               | Team management. Limited user management.                 |
+| Loan Officer          | 2               | Lending operations. Account and customer access.          |
+| Business Banker       | 2               | Business relationship management.                        |
+| Teller                | 1               | Day-to-day customer and account operations.              |
+| Customer Service Rep  | 1               | Basic customer lookup and service.                       |
+| Risk Analyst          | 1               | Risk monitoring and review.                              |
+| Compliance Officer    | 1               | Compliance monitoring.                                   |
+
+> **Note:** Roles and their privilege levels are database-managed. The list above reflects the current deployment. New roles can be created via the Admin UI or directly in the `role` table.
+
+---
+
 ## Privilege Levels
 
-| Level | Name           | Description                                      |
-|-------|----------------|--------------------------------------------------|
-| 4     | System Admin   | Full system access. Can manage users, roles, and all permissions. |
-| 3     | Senior Manager | Wide departmental/branch authority. Most operational permissions. |
-| 2     | Manager        | Team/section management. Limited user management. |
-| 1     | Teller/Officer | Basic customer and account operations. No user management. |
-| 0     | Basic User     | Minimal access. View-only on most resources.     |
+Privilege levels are **hierarchical** — a user at level 3 automatically inherits all permissions that require level 3 or below.
 
-Privilege levels are hierarchical: a user at level 3 automatically inherits all permissions that require level 3 or below.
+| Level | Tier             | Authority                                                 |
+|-------|------------------|-----------------------------------------------------------|
+| 4     | System Admin     | Everything. User/role management, SAML config, all data.  |
+| 3     | Senior/Branch    | Can view employee customer records. Most operational access. |
+| 2     | Manager          | Team management. Can view user list. Standard operational access. |
+| 1     | Staff            | Basic customer and account operations. No admin access.   |
+| 0     | Read-Only        | Minimal access. View-only on permitted resources.         |
+
+---
+
+## What Each Role Sees in the App
+
+### Customer Dashboard Tabs
+
+| UI Section                | Permission Required                    | Level 4 | Level 3 | Level 2 | Level 1 | Level 0 |
+|---------------------------|----------------------------------------|---------|---------|---------|---------|---------|
+| **Client tab**            | _(always visible)_                     | Yes     | Yes     | Yes     | Yes     | Yes     |
+| **Household tab**         | `household.view`                       | Yes     | Yes     | Yes     | *       | *       |
+| **Accounts tab**          | `accounts.view`                        | Yes     | Yes     | Yes     | *       | *       |
+| **Account Summary tab**   | `accounts.view`                        | Yes     | Yes     | Yes     | *       | *       |
+
+_* Depends on whether the role has this permission assigned in the `role_permission` table._
+
+### Client Tab Sections
+
+| UI Section                     | Permission Required                    | Description                          |
+|--------------------------------|----------------------------------------|--------------------------------------|
+| Relationship Summary card      | `customer.view.relationship_summary`   | Total relationship value overview    |
+| Recent Activity card           | `customer.view.recent_activity`        | Recent contact history               |
+| Deposits section               | `customer.view.deposits`               | Deposit account details              |
+
+If the user lacks the permission, the section is **hidden** (not shown at all).
+
+### Account Table Columns
+
+| Column           | Permission Required       | Description                              |
+|------------------|---------------------------|------------------------------------------|
+| Balance          | `account.view.balances`   | Current balance amount                   |
+| Interest Rate    | `account.view.balances`   | Account interest rate                    |
+| Total Balance    | `account.view.balances`   | Summary row with total across accounts   |
+
+Without `account.view.balances`, the user sees the account list but **balance and interest rate columns are hidden**.
+
+### Employee Customer Protection (ABAC)
+
+When viewing a customer who is a **bank employee** (`isEmployee = true`):
+
+| User Privilege Level | Can See Accounts/Transactions? |
+|----------------------|--------------------------------|
+| Level 3+ (Branch Manager, System Admin) | Yes |
+| Level 2 (Manager)   | No - tabs auto-hidden, redirected to Client tab |
+| Level 1 (Teller)    | No - tabs auto-hidden, redirected to Client tab |
+| Level 0 (Read-Only) | No - tabs auto-hidden, redirected to Client tab |
+
+### Administration
+
+| UI Section                    | Permission Required              | Typical Roles                     |
+|-------------------------------|----------------------------------|-----------------------------------|
+| "User Management" menu item  | `users.view`                     | System Admin, Branch Manager      |
+| View user list & details      | `users.view`                     | System Admin, Branch Manager      |
+| Assign/remove roles           | `users.assign_roles`             | System Admin                      |
+| View SAML role mappings       | `user_management.view`           | System Admin                      |
+| Create/edit/delete SAML maps  | `user_management.assign_roles`   | System Admin                      |
 
 ---
 
 ## Permission Codes
 
-Permissions follow a `resource.action` naming convention.
+Permissions follow a `resource.action` naming convention. A user gets permissions from two sources:
+1. **Role-based** — permissions assigned to their role(s) in the `role_permission` table
+2. **Privilege-level-based** — permissions where `minPrivilegeLevel <= user's max privilege level`
 
 ### Customer & Account Permissions
 
-| Permission Code                     | Resource   | Action             | Description                        |
-|-------------------------------------|------------|--------------------|------------------------------------|
-| `accounts.view`                     | accounts   | view               | View customer accounts and details |
-| `transaction.view`                  | transaction| view               | View transaction history           |
-| `customer.view.relationship_summary`| customer   | view               | View customer relationship summaries |
-| `customer.view.recent_activity`     | customer   | view               | View recent customer activity      |
-| `customer.view.deposits`            | customer   | view               | View deposit information           |
-| `household.view`                    | household  | view               | View household relationships       |
+| Permission Code                      | Description                              |
+|--------------------------------------|------------------------------------------|
+| `accounts.view`                      | View customer accounts and details       |
+| `account.view.balances`              | View balance and interest rate columns   |
+| `transaction.view`                   | View transaction history                 |
+| `customer.view.relationship_summary` | View relationship summary card           |
+| `customer.view.recent_activity`      | View recent activity card                |
+| `customer.view.deposits`             | View deposits section                    |
+| `household.view`                     | View household tab and relationships     |
 
 ### Administration Permissions
 
-| Permission Code                | Resource         | Action       | Description                        |
-|--------------------------------|------------------|--------------|------------------------------------|
-| `users.view`                   | users            | view         | View user list and details         |
-| `users.assign_roles`           | users            | assign_roles | Assign or remove roles from users  |
-| `user_management.view`         | user_management  | view         | View SAML role mappings            |
-| `user_management.assign_roles` | user_management  | assign_roles | Create, update, delete SAML role mappings |
+| Permission Code                | Description                                      |
+|--------------------------------|--------------------------------------------------|
+| `users.view`                   | View user list, details, and roles list          |
+| `users.assign_roles`           | Assign or remove roles from users                |
+| `user_management.view`         | View SAML role mappings                          |
+| `user_management.assign_roles` | Create, update, delete SAML role mappings        |
 
 ---
 
@@ -87,8 +166,6 @@ Some permissions support fine-grained, attribute-based checks beyond simple role
 | `less_than`    | Numeric less than                   |
 
 ### Example: Employee Customer Protection
-
-The `transaction.view` permission uses ABAC to restrict access to employee customer accounts. When a customer has `isEmployee = true`, a condition denies access unless the user has a sufficiently high privilege level (e.g., level 3+).
 
 ```
 Condition:
@@ -201,7 +278,7 @@ The system includes a role testing feature that lets developers simulate differe
 - **Environment variable:** `ROLE_TESTING_ENABLED` (defaults to `true`, set to `false` to disable)
 - **Production guard:** Always disabled in `NODE_ENV=production`
 
-When active, a user can temporarily override their role to see the application as that role would experience it. The override replaces (not merges) the user's permissions with the test role's permissions.
+When active, a user can temporarily override their role to see the application as that role would experience it. The override replaces (not merges) the user's permissions with the test role's permissions. A yellow banner appears at the top of the page when role testing is active.
 
 ---
 
@@ -216,3 +293,7 @@ When active, a user can temporarily override their role to see the application a
 | `server/storage/roleManagement/`              | Data access layer (Postgres + SQL Server) |
 | `client/src/hooks/usePermissions.ts`          | React permission hooks                |
 | `client/src/components/PermissionGuard.tsx`   | Declarative permission guard component|
+| `client/src/components/CustomerDashboard.tsx` | Main dashboard with tab/section visibility |
+| `client/src/components/AccountList.tsx`       | Account table with column-level permissions |
+| `client/src/components/TopBar.tsx`            | Navigation with admin menu visibility |
+| `client/src/pages/UserManagement.tsx`         | Admin page for user and role management |
