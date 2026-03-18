@@ -73,14 +73,19 @@ Without `account.view.balances`, the user sees the account list but **balance an
 
 ### Employee Customer Protection (ABAC)
 
-When viewing a customer who is a **bank employee** (`isEmployee = true`):
+Bank employees can also be customers. When viewing a customer flagged as `isEmployee = true`, the system restricts access based on privilege level. The check is `maxPrivilegeLevel < 2` — meaning only **level 0 and level 1 users are restricted**.
 
-| User Privilege Level | Can See Accounts/Transactions? |
-|----------------------|--------------------------------|
-| Level 3+ (Branch Manager, System Admin) | Yes |
-| Level 2 (Manager)   | No - tabs auto-hidden, redirected to Client tab |
-| Level 1 (Teller)    | No - tabs auto-hidden, redirected to Client tab |
-| Level 0 (Read-Only) | No - tabs auto-hidden, redirected to Client tab |
+| User Privilege Level | Can See Accounts/Transactions? | Behavior |
+|----------------------|--------------------------------|----------|
+| Level 4 (System Admin)     | Yes | Full access to employee customer data |
+| Level 3 (Branch Manager)   | Yes | Full access to employee customer data |
+| Level 2 (Manager)          | Yes | Full access to employee customer data |
+| Level 1 (Teller)           | **No** | Accounts & Account Summary tabs hidden. Auto-redirected to Client tab. API returns 403. |
+| Level 0 (Read-Only)        | **No** | Accounts & Account Summary tabs hidden. Auto-redirected to Client tab. API returns 403. |
+
+This is enforced at **both layers**:
+- **Frontend:** Accounts and Account Summary tabs are hidden; if already on those tabs, the user is auto-redirected to the Client tab.
+- **Backend:** Transaction API endpoints build ABAC context by checking all account owners for `isEmployee === true` and deny access if privilege level is insufficient. Denials are audit-logged.
 
 ### Administration
 
