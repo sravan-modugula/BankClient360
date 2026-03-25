@@ -1,9 +1,10 @@
 import { faker } from '@faker-js/faker';
 import { db } from '../server/db';
-import { 
+import {
   branch, customer, contactInfo, address, household, account, employee,
   entityAddress, entityContact, householdMembership, accountOwnership,
-  debitCardLimitProfile, debitCard
+  debitCardLimitProfile, debitCard,
+  privilegeLevel, role, permission, rolePermission, employeeRole
 } from '../shared/schema';
 import { sql } from 'drizzle-orm';
 
@@ -50,19 +51,36 @@ async function generateEmployees() {
   const branchIds = await db.select({ branchId: branch.branchId }).from(branch);
   const employees: (typeof employee.$inferInsert)[] = [];
   
+  // Hardcode employee #1 as Sarah Johnson (System Admin) — matches dev mock in server/index.ts
+  employees.push({
+    employeeNumber: 'SYSADM01',
+    firstName: 'Sarah',
+    lastName: 'Johnson',
+    jobTitle: 'System Admin',
+    department: 'Operations',
+    email: 'sarah.johnson@bank.com',
+    phoneNumber: faker.phone.number(),
+    hireDate: faker.date.past({ years: 8 }),
+    branchId: branchIds[0].branchId,
+    isActive: true,
+    managerEmployeeId: null,
+    salary: 120000,
+    lastReviewDate: faker.date.recent({ days: 365 })
+  });
+
   for (const { branchId } of branchIds) {
     const employeeCount = faker.number.int({ min: 15, max: 35 });
-    
+
     for (let i = 0; i < employeeCount; i++) {
       const firstName = faker.person.firstName();
       const lastName = faker.person.lastName();
-      
+
       employees.push({
         employeeNumber: faker.string.alphanumeric(8).toUpperCase(),
         firstName,
         lastName,
         jobTitle: faker.helpers.arrayElement([
-          'Branch Manager', 'Assistant Manager', 'Loan Officer', 'Teller', 
+          'Branch Manager', 'Assistant Manager', 'Loan Officer', 'Teller',
           'Customer Service Rep', 'Business Banker', 'Risk Analyst', 'Compliance Officer'
         ]),
         department: faker.helpers.arrayElement(['Operations', 'Lending', 'Customer Service', 'Risk Management']),
@@ -71,7 +89,7 @@ async function generateEmployees() {
         hireDate: faker.date.past({ years: 8 }),
         branchId,
         isActive: faker.datatype.boolean({ probability: 0.95 }),
-        managerEmployeeId: null, // Will be updated later
+        managerEmployeeId: null,
         salary: faker.number.float({ min: 35000, max: 120000, fractionDigits: 2 }),
         lastReviewDate: faker.date.recent({ days: 365 })
       });
@@ -80,6 +98,154 @@ async function generateEmployees() {
   
   await db.insert(employee).values(employees);
   console.log(`✅ Generated ${employees.length} employees across ${branchIds.length} branches`);
+}
+
+async function seedRBAC() {
+  console.log('🔐 Seeding RBAC tables (privilege levels, roles, permissions)...');
+
+  // Step 1: Privilege levels
+  await db.insert(privilegeLevel).values([
+    { level: 0, levelName: 'Read-Only',     description: 'Minimal access. View-only on permitted resources.' },
+    { level: 1, levelName: 'Staff',         description: 'Basic customer and account operations. No admin access.' },
+    { level: 2, levelName: 'Manager',       description: 'Team management. Standard operational access.' },
+    { level: 3, levelName: 'Senior/Branch', description: 'Can view employee customer records. Most operational access.' },
+    { level: 4, levelName: 'System Admin',  description: 'Everything. User/role management, SAML config, all data.' }
+  ]);
+  console.log('  ✅ 5 privilege levels');
+
+  // Step 2: Roles
+  const insertedRoles = await db.insert(role).values([
+    { roleName: 'System Admin',         privilegeLevel: 4, description: 'Full system access. Manages users, roles, SAML mappings.',    isSystemRole: true, isActive: true },
+    { roleName: 'Branch Manager',       privilegeLevel: 3, description: 'Branch-level authority. Can view employee customer data.',     isSystemRole: true, isActive: true },
+    { roleName: 'Assistant Manager',    privilegeLevel: 2, description: 'Team management. Limited user management.',                    isSystemRole: true, isActive: true },
+    { roleName: 'Loan Officer',         privilegeLevel: 2, description: 'Lending operations. Account and customer access.',             isSystemRole: true, isActive: true },
+    { roleName: 'Business Banker',      privilegeLevel: 2, description: 'Business relationship management.',                            isSystemRole: true, isActive: true },
+    { roleName: 'Teller',               privilegeLevel: 1, description: 'Day-to-day customer and account operations.',                  isSystemRole: true, isActive: true },
+    { roleName: 'Customer Service Rep', privilegeLevel: 1, description: 'Basic customer lookup and service.',                           isSystemRole: true, isActive: true },
+    { roleName: 'Risk Analyst',         privilegeLevel: 1, description: 'Risk monitoring and review.',                                  isSystemRole: true, isActive: true },
+    { roleName: 'Compliance Officer',   privilegeLevel: 1, description: 'Compliance monitoring.',                                       isSystemRole: true, isActive: true }
+  ]).returning({ roleId: role.roleId, roleName: role.roleName });
+  console.log(`  ✅ ${insertedRoles.length} roles`);
+
+  const roleMap = new Map(insertedRoles.map(r => [r.roleName, r.roleId]));
+
+  // Step 3: Permissions
+  const insertedPerms = await db.insert(permission).values([
+    { permissionCode: 'accounts.view',                      resource: 'accounts',        action: 'view',                    description: 'View customer accounts and details',            minPrivilegeLevel: 2, isAttributeBased: false, isActive: true },
+    { permissionCode: 'account.view.balances',              resource: 'account',         action: 'view.balances',           description: 'View balance and interest rate columns',         minPrivilegeLevel: 2, isAttributeBased: false, isActive: true },
+    { permissionCode: 'transaction.view',                   resource: 'transaction',     action: 'view',                    description: 'View transaction history',                       minPrivilegeLevel: 2, isAttributeBased: true,  isActive: true, attributeConfig: {
+      conditions: [{
+        attribute: 'customer.isEmployee',
+        operator: 'equals',
+        value: true,
+        denyIfMatch: true,
+        minPrivilegeOverride: 3,
+        reason: 'Employee customer records require Level 3+ access'
+      }]
+    }},
+    { permissionCode: 'customer.view.relationship_summary', resource: 'customer',        action: 'view.relationship_summary', description: 'View relationship summary card',             minPrivilegeLevel: 1, isAttributeBased: false, isActive: true },
+    { permissionCode: 'customer.view.recent_activity',      resource: 'customer',        action: 'view.recent_activity',      description: 'View recent activity card',                   minPrivilegeLevel: 1, isAttributeBased: false, isActive: true },
+    { permissionCode: 'customer.view.deposits',             resource: 'customer',        action: 'view.deposits',             description: 'View deposits section',                       minPrivilegeLevel: 1, isAttributeBased: false, isActive: true },
+    { permissionCode: 'household.view',                     resource: 'household',       action: 'view',                    description: 'View household tab and relationships',           minPrivilegeLevel: 2, isAttributeBased: false, isActive: true },
+    { permissionCode: 'users.view',                         resource: 'users',           action: 'view',                    description: 'View user list, details, and roles list',        minPrivilegeLevel: 3, isAttributeBased: false, isActive: true },
+    { permissionCode: 'users.assign_roles',                 resource: 'users',           action: 'assign_roles',            description: 'Assign or remove roles from users',              minPrivilegeLevel: 4, isAttributeBased: false, isActive: true },
+    { permissionCode: 'user_management.view',               resource: 'user_management', action: 'view',                    description: 'View SAML role mappings',                        minPrivilegeLevel: 4, isAttributeBased: false, isActive: true },
+    { permissionCode: 'user_management.assign_roles',       resource: 'user_management', action: 'assign_roles',            description: 'Create, update, delete SAML role mappings',      minPrivilegeLevel: 4, isAttributeBased: false, isActive: true }
+  ]).returning({ permissionId: permission.permissionId, permissionCode: permission.permissionCode });
+  console.log(`  ✅ ${insertedPerms.length} permissions`);
+
+  const permMap = new Map(insertedPerms.map(p => [p.permissionCode, p.permissionId]));
+
+  // Step 4: Role-permission grants for Level 1 roles
+  // Level 2+ already inherit via min_privilege_level on permissions
+  const level1Grants: { roleId: number; permissionId: number }[] = [];
+
+  // Teller + CSR get all customer/account permissions
+  const tellerCsrPerms = [
+    'accounts.view', 'account.view.balances', 'transaction.view',
+    'customer.view.relationship_summary', 'customer.view.recent_activity',
+    'customer.view.deposits', 'household.view'
+  ];
+  for (const roleName of ['Teller', 'Customer Service Rep']) {
+    for (const permCode of tellerCsrPerms) {
+      level1Grants.push({ roleId: roleMap.get(roleName)!, permissionId: permMap.get(permCode)! });
+    }
+  }
+
+  // Risk Analyst + Compliance Officer get read-only account access
+  const analystPerms = [
+    'accounts.view', 'account.view.balances',
+    'customer.view.relationship_summary', 'customer.view.recent_activity',
+    'customer.view.deposits', 'household.view'
+  ];
+  for (const roleName of ['Risk Analyst', 'Compliance Officer']) {
+    for (const permCode of analystPerms) {
+      level1Grants.push({ roleId: roleMap.get(roleName)!, permissionId: permMap.get(permCode)! });
+    }
+  }
+
+  await db.insert(rolePermission).values(level1Grants);
+  console.log(`  ✅ ${level1Grants.length} role-permission grants`);
+
+  // Step 5: Assign roles to employees
+  const allEmployees = await db.select({
+    employeeId: employee.employeeId,
+    isActive: employee.isActive
+  }).from(employee);
+
+  const roleAssignments: (typeof employeeRole.$inferInsert)[] = [];
+
+  // Distribute roles: employee_id=1 is System Admin (Sarah Johnson),
+  // then spread remaining across roles using a realistic distribution
+  const roleDistribution = [
+    { name: 'Branch Manager',       weight: 0.08 },
+    { name: 'Assistant Manager',    weight: 0.08 },
+    { name: 'Loan Officer',         weight: 0.10 },
+    { name: 'Business Banker',      weight: 0.08 },
+    { name: 'Teller',               weight: 0.30 },
+    { name: 'Customer Service Rep', weight: 0.20 },
+    { name: 'Risk Analyst',         weight: 0.08 },
+    { name: 'Compliance Officer',   weight: 0.08 }
+  ];
+
+  for (const emp of allEmployees) {
+    if (!emp.isActive) continue;
+
+    let assignedRoleId: number;
+
+    if (emp.employeeId === 1) {
+      // Sarah Johnson — System Admin
+      assignedRoleId = roleMap.get('System Admin')!;
+    } else {
+      // Weighted random role assignment
+      const roll = faker.number.float({ min: 0, max: 1 });
+      let cumulative = 0;
+      let roleName = 'Teller'; // default fallback
+      for (const { name, weight } of roleDistribution) {
+        cumulative += weight;
+        if (roll < cumulative) {
+          roleName = name;
+          break;
+        }
+      }
+      assignedRoleId = roleMap.get(roleName)!;
+    }
+
+    roleAssignments.push({
+      employeeId: emp.employeeId,
+      roleId: assignedRoleId,
+      isPrimary: true,
+      assignedDate: new Date(),
+      effectiveDate: new Date().toISOString().split('T')[0],
+      expirationDate: null,
+      isActive: true,
+      notes: 'Assigned by seed script'
+    });
+  }
+
+  await db.insert(employeeRole).values(roleAssignments);
+  console.log(`  ✅ ${roleAssignments.length} employee-role assignments`);
+  console.log('🔐 RBAC seeding complete');
 }
 
 async function generatePersons() {
@@ -620,9 +786,10 @@ async function resetSequences() {
   console.log('🔄 Resetting database sequences...');
   
   const tables = [
-    'branch', 'employee', 'person', 'address', 'contact_info', 
+    'branch', 'employee', 'person', 'address', 'contact_info',
     'household', 'account', 'entity_address', 'entity_contact',
-    'household_membership', 'account_ownership', 'debit_card_limit_profile', 'debit_card'
+    'household_membership', 'account_ownership', 'debit_card_limit_profile', 'debit_card',
+    'role', 'permission'
   ];
   
   for (const table of tables) {
@@ -645,7 +812,8 @@ async function resetSequences() {
 async function main() {
   try {
     await generateBranches();
-    await generateEmployees(); 
+    await generateEmployees();
+    await seedRBAC();
     await generatePersons();
     await generateAddressesAndContacts();
     await generateHouseholds();
