@@ -195,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/customers/:id - Get person by ID with detailed information (numeric IDs only)
-  app.get("/api/customers/:id(\\d+)", async (req, res) => {
+  app.get("/api/customers/:id", async (req, res) => {
     try {
       const customerId = parseInt(req.params.id);
       
@@ -871,7 +871,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Officer assignment not found" });
       }
 
-      res.status(204).send();
+      res.status(204).end();
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error removing customer officer');
       res.status(500).json({ error: "Internal server error" });
@@ -995,7 +995,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "SIC code assignment not found" });
       }
 
-      res.status(204).send();
+      res.status(204).end();
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error removing customer SIC code');
       res.status(500).json({ error: "Internal server error" });
