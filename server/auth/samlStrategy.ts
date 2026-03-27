@@ -1,4 +1,4 @@
-import { Strategy as SamlStrategy } from 'passport-saml';
+import { Strategy as SamlStrategy } from '@node-saml/passport-saml';
 import { db } from '../db';
 import { employee } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -52,7 +52,7 @@ export function createSamlStrategy() {
       // IdP-Initiated SSO Support
       // Set to 'never' to allow SAML assertions without a corresponding AuthnRequest
       // This is required for IdP-initiated flows where the IdP sends users directly to us
-      validateInResponseTo: 'never' as const,
+      validateInResponseTo: 'never',
       
       // Passport options
       passReqToCallback: false

@@ -212,7 +212,7 @@ export function createAuthRoutes() {
         return res.status(500).send('SAML strategy not configured');
       }
 
-      const metadata = strategy.generateServiceProviderMetadata();
+      const metadata = strategy.generateServiceProviderMetadata(null);
       authLogger.debug({ metadataLength: metadata.length }, 'Generated SAML metadata');
 
       res.type('application/xml');
