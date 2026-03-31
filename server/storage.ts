@@ -15,6 +15,7 @@ import {
   type CustomerSearchResult,
   type SearchCustomerParams,
   type CustomerListItem,
+  type HouseholdListItem,
   type SmartSearchParams,
   type SmartSearchResult,
   type UnifiedSearchResult,
@@ -2100,15 +2101,32 @@ export class DatabaseStorage implements IBankingStorage {
       ? Math.ceil(limit * 0.3) 
       : limit;
 
-    // Execute parallel searches
-    const [customerResults, householdResults] = await Promise.all([
-      searchCustomers 
-        ? this.searchProvider.searchByNameFuzzy(normalizedQuery, params.fuzzyThreshold, customerLimit + 1, cursor)
-        : Promise.resolve([]),
-      shouldSearchHouseholds 
-        ? this.searchProvider.searchHouseholdsByNameFuzzy(normalizedQuery, params.fuzzyThreshold, householdLimit + 1, cursor)
-        : Promise.resolve([])
-    ]);
+    // For non-name ID-type queries, delegate customer search to smartSearchCustomers
+    // which has proper type-specific logic (CIF, Tax ID, Customer ID, etc.)
+    const isIdSearch = detectedType && !['name', 'household', 'auto'].includes(detectedType);
+
+    let customerResults: CustomerListItem[];
+    let householdResults: HouseholdListItem[];
+
+    if (isIdSearch && searchCustomers) {
+      // Use type-specific search for customers; skip household search for ID queries
+      const smartResult = await this.smartSearchCustomers({
+        ...params,
+        limit: customerLimit,
+      });
+      customerResults = smartResult.data;
+      householdResults = [];
+    } else {
+      // Name-type query: parallel fuzzy search for both customers and households
+      [customerResults, householdResults] = await Promise.all([
+        searchCustomers
+          ? this.searchProvider.searchByNameFuzzy(normalizedQuery, params.fuzzyThreshold, customerLimit + 1, cursor)
+          : Promise.resolve([]),
+        shouldSearchHouseholds
+          ? this.searchProvider.searchHouseholdsByNameFuzzy(normalizedQuery, params.fuzzyThreshold, householdLimit + 1, cursor)
+          : Promise.resolve([])
+      ]);
+    }
 
     // Convert to unified format
     const customerEntities: SearchEntityItem[] = customerResults.map(c => ({
@@ -2176,7 +2194,9 @@ export class DatabaseStorage implements IBankingStorage {
       },
       diagnostics: {
         detectedType,
-        fieldsUsed: ['fullName', 'householdName'],
+        fieldsUsed: isIdSearch
+          ? (customerResults.length > 0 ? [customerResults[0].matchedField || detectedType] : [detectedType as string])
+          : ['fullName', ...(shouldSearchHouseholds ? ['householdName'] : [])],
         queryNormalized: normalizedQuery
       }
     };
