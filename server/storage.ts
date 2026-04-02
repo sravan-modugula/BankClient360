@@ -1993,6 +1993,11 @@ export class DatabaseStorage implements IBankingStorage {
 
           persons = await this.searchProvider.searchByCifNumber(normalizedQuery, exact, effectiveLimit + 1, cursor);
           searchFields = ['cifNumber'];
+          // Fallback: if no CIF match and query is pure digits, try as customer ID
+          if (persons.length === 0 && /^\d+$/.test(normalizedQuery)) {
+            persons = await this.searchProvider.searchByCustomerId(normalizedQuery, limit + 1);
+            searchFields = ['customerId'];
+          }
           break;
         case 'ambiguousNumeric':
           // 3-5 digit inputs: Try customer ID first, fallback to CIF prefix search
