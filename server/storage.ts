@@ -2016,12 +2016,32 @@ export class DatabaseStorage implements IBankingStorage {
           searchFields = ['taxIdentifier'];
           break;
         case 'govId':
+          // Alphanumeric queries are ambiguous - could be Government ID, CIF, or Silverlake ID
+          // Try Government ID first, then fall back to CIF, then Silverlake ID
           persons = await this.searchProvider.searchByGovernmentId(normalizedQuery, exact, limit + 1, cursor);
           searchFields = ['governmentId'];
+          if (persons.length === 0) {
+            persons = await this.searchProvider.searchByCifNumber(normalizedQuery, exact, limit + 1, cursor);
+            searchFields = ['cifNumber'];
+          }
+          if (persons.length === 0) {
+            persons = await this.searchProvider.searchBySilverlakeId(normalizedQuery, exact, limit + 1, cursor);
+            searchFields = ['silverlakeCustomerId'];
+          }
           break;
         case 'silverlakeId':
+          // Alphanumeric queries are ambiguous - could be Silverlake ID, CIF, or Government ID
+          // Try Silverlake ID first, then fall back to CIF, then Government ID
           persons = await this.searchProvider.searchBySilverlakeId(normalizedQuery, exact, limit + 1, cursor);
           searchFields = ['silverlakeCustomerId'];
+          if (persons.length === 0) {
+            persons = await this.searchProvider.searchByCifNumber(normalizedQuery, exact, limit + 1, cursor);
+            searchFields = ['cifNumber'];
+          }
+          if (persons.length === 0) {
+            persons = await this.searchProvider.searchByGovernmentId(normalizedQuery, exact, limit + 1, cursor);
+            searchFields = ['governmentId'];
+          }
           break;
         case 'name':
         default:
