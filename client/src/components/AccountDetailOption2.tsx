@@ -354,8 +354,13 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                         <Typography variant="body1" fontWeight={500}>
                           {owner.customerName || '—'}
                         </Typography>
-                        {owner.isPrimaryOwner && (
-                          <Chip label="Primary" size="small" color="primary" sx={{ height: 20 }} />
+                        {owner.ownershipType && (
+                          <Chip
+                            label={owner.ownershipType.charAt(0).toUpperCase() + owner.ownershipType.slice(1)}
+                            size="small"
+                            color={owner.ownershipType.toLowerCase() === 'primary' ? 'primary' : 'default'}
+                            sx={{ height: 20 }}
+                          />
                         )}
                       </Box>
                       <Typography variant="body2" color="text.secondary">
