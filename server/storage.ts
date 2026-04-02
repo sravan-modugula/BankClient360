@@ -2134,13 +2134,13 @@ export class DatabaseStorage implements IBankingStorage {
       customerResults = smartResult.data;
       householdResults = [];
     } else {
-      // Name-type query: parallel fuzzy search for both customers and households
+      // Name-type query: use hybrid search (prefix + fuzzy) for proper ranking
       [customerResults, householdResults] = await Promise.all([
         searchCustomers
-          ? this.searchProvider.searchByNameFuzzy(normalizedQuery, params.fuzzyThreshold, customerLimit + 1, cursor)
+          ? this.hybridNameSearch(normalizedQuery, customerLimit + 1, cursor, params.fuzzyThreshold)
           : Promise.resolve([]),
         shouldSearchHouseholds
-          ? this.searchProvider.searchHouseholdsByNameFuzzy(normalizedQuery, params.fuzzyThreshold, householdLimit + 1, cursor)
+          ? this.hybridHouseholdNameSearch(normalizedQuery, householdLimit + 1, cursor, params.fuzzyThreshold)
           : Promise.resolve([])
       ]);
     }
@@ -2343,6 +2343,56 @@ export class DatabaseStorage implements IBankingStorage {
 
     // Return up to limit results
     return merged.slice(0, limit);
+  }
+
+  /**
+   * Hybrid household name search that adapts to query length (mirrors hybridNameSearch)
+   */
+  private async hybridHouseholdNameSearch(
+    nameQuery: string,
+    limit: number,
+    cursor?: string,
+    userThreshold?: number
+  ): Promise<HouseholdListItem[]> {
+    const strategy = analyzeQuery(nameQuery);
+
+    if (strategy.mode === 'suppress') {
+      return [];
+    }
+
+    let prefixResults: HouseholdListItem[] = [];
+    let fuzzyResults: HouseholdListItem[] = [];
+
+    if (strategy.usePrefix) {
+      prefixResults = await this.searchProvider.searchHouseholdsByName(nameQuery, limit, cursor);
+    }
+
+    if (strategy.useFuzzy) {
+      const threshold = userThreshold ?? strategy.fuzzyThreshold ?? 0.3;
+      fuzzyResults = await this.searchProvider.searchHouseholdsByNameFuzzy(nameQuery, threshold, limit, cursor);
+    }
+
+    // Merge: prefix matches get priority with score 100
+    const merged = new Map<number, HouseholdListItem>();
+    for (const result of prefixResults) {
+      if (!merged.has(result.householdId)) {
+        merged.set(result.householdId, { ...result, matchType: 'prefix', matchScore: result.matchScore ?? 100 });
+      }
+    }
+    for (const result of fuzzyResults) {
+      if (!merged.has(result.householdId)) {
+        merged.set(result.householdId, result);
+      }
+    }
+
+    return Array.from(merged.values())
+      .sort((a, b) => {
+        const scoreA = a.matchScore ?? 0;
+        const scoreB = b.matchScore ?? 0;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        return a.householdId - b.householdId;
+      })
+      .slice(0, limit);
   }
 
   // Search implementations
