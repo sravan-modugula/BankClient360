@@ -1986,19 +1986,12 @@ export class DatabaseStorage implements IBankingStorage {
       // Smart type-based search using SearchProvider
       switch (detectedType) {
         case 'cif':
-          // Normalize CIF number: prepend "CIF" prefix if not present (digit-only input)
-          // Database stores complete CIF value with prefix
-          const normalizedCif = /^CIF/i.test(normalizedQuery) 
-            ? normalizedQuery 
-            : `CIF${normalizedQuery}`;
-
           // Apply result cap for very short CIF prefix queries to prevent overwhelming results
-          // Short queries (4-5 chars like "CIF0", "CIF1") capped at 20 results
-          const cifQueryLength = normalizedCif.length;
-          const isShortCifPrefix = cifQueryLength <= 5; // "CIF" + 1-2 digits
+          const cifQueryLength = normalizedQuery.length;
+          const isShortCifPrefix = cifQueryLength <= 3;
           const effectiveLimit = isShortCifPrefix ? Math.min(limit, 20) : limit;
 
-          persons = await this.searchProvider.searchByCifNumber(normalizedCif, exact, effectiveLimit + 1, cursor);
+          persons = await this.searchProvider.searchByCifNumber(normalizedQuery, exact, effectiveLimit + 1, cursor);
           searchFields = ['cifNumber'];
           break;
         case 'ambiguousNumeric':
@@ -2007,9 +2000,8 @@ export class DatabaseStorage implements IBankingStorage {
           persons = await this.searchProvider.searchByCustomerId(normalizedQuery, limit + 1);
           if (persons.length === 0) {
             // No customer ID match - try as CIF prefix with result cap
-            const cifQuery = `CIF${normalizedQuery}`;
-            const ambiguousCifLimit = Math.min(limit, 20); // Cap at 20 for short prefix searches
-            persons = await this.searchProvider.searchByCifNumber(cifQuery, false, ambiguousCifLimit + 1, cursor);
+            const ambiguousCifLimit = Math.min(limit, 20);
+            persons = await this.searchProvider.searchByCifNumber(normalizedQuery, false, ambiguousCifLimit + 1, cursor);
             searchFields = ['cifNumber'];
           } else {
             searchFields = ['customerId'];
@@ -2245,7 +2237,6 @@ export class DatabaseStorage implements IBankingStorage {
 
     // Digit-only CIF pattern: 6-20 digits (assumes longer digit sequences are CIF numbers)
     // Examples: "000001", "100002", "123456"
-    // Will be normalized by prepending "CIF" prefix before search
     if (/^\d{6,20}$/.test(query)) {
       return 'cif';
     }
