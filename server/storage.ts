@@ -2183,8 +2183,22 @@ export class DatabaseStorage implements IBankingStorage {
       };
     });
 
-    // Merge and sort by match score
-    const mergedResults = [...customerEntities, ...householdEntities].sort((a, b) => {
+    // Boost exact name matches — SOUNDEX/DIFFERENCE scoring is too coarse and
+    // often gives identical scores to partial matches, so exact matches must be
+    // explicitly promoted to sort first.
+    const queryLower = normalizedQuery.toLowerCase();
+    const allEntities = [...customerEntities, ...householdEntities];
+    for (const entity of allEntities) {
+      if (entity.displayName.toLowerCase() === queryLower) {
+        entity.matchScore = 200;
+        entity.matchType = 'exact';
+      } else if (entity.displayName.toLowerCase().startsWith(queryLower)) {
+        entity.matchScore = Math.max(entity.matchScore || 0, 150);
+      }
+    }
+
+    // Sort by match score (exact match boosted to 200, prefix to 150)
+    const mergedResults = allEntities.sort((a, b) => {
       const scoreA = a.matchScore || 0;
       const scoreB = b.matchScore || 0;
       if (scoreB !== scoreA) return scoreB - scoreA;
@@ -2340,6 +2354,23 @@ export class DatabaseStorage implements IBankingStorage {
 
     // Merge results with prefix matches prioritized
     const merged = mergeResults(prefixResults, fuzzyResults);
+
+    // Boost exact name matches (SOUNDEX/DIFFERENCE can give identical scores to many names)
+    const queryLower = nameQuery.toLowerCase();
+    for (const result of merged) {
+      if (result.fullName.toLowerCase() === queryLower) {
+        result.matchScore = 200;
+        result.matchType = 'exact';
+      } else if (result.fullName.toLowerCase().startsWith(queryLower)) {
+        result.matchScore = Math.max(result.matchScore ?? 0, 150);
+      }
+    }
+    merged.sort((a, b) => {
+      const scoreA = a.matchScore ?? 0;
+      const scoreB = b.matchScore ?? 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return getStatusPriority(a.customerStatus) - getStatusPriority(b.customerStatus);
+    });
 
     // Return up to limit results
     return merged.slice(0, limit);
