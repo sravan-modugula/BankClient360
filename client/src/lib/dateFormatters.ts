@@ -52,7 +52,7 @@ export const useDateFormatter = () => {
     },
     
     // Format percentage
-    formatPercentage: (value: number | string, decimals: number = 2) => {
+    formatPercentage: (value: number | string, decimals: number = 4) => {
       const numValue = typeof value === 'string' ? parseFloat(value) : value;
       if (isNaN(numValue)) return '0%';
       return `${numValue.toFixed(decimals)}%`;

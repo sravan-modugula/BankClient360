@@ -269,7 +269,7 @@ export default function AccountList({
                           const rate = safeParseInterestRate(account.interestRate);
                           return rate !== null ? (
                             <Chip
-                              label={`${rate.toFixed(2)}%`}
+                              label={`${rate.toFixed(4)}%`}
                               size="small"
                               sx={{
                                 backgroundColor: theme.palette.success.light,

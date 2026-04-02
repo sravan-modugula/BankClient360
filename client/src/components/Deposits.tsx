@@ -294,7 +294,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                         if (name === 'balance') {
                           return [formatCurrency(value), 'Total Balance'];
                         } else if (name === 'weightedAverage') {
-                          return [`${value.toFixed(2)}%`, 'Overall Weighted Avg'];
+                          return [`${value.toFixed(4)}%`, 'Overall Weighted Avg'];
                         }
                         return [value, name];
                       }}
