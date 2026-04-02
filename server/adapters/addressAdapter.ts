@@ -22,15 +22,15 @@ export function mapAddressToContactDTO(dbAddress: Address, purpose?: string | nu
     dbAddress.addressLine2,
     [dbAddress.city, dbAddress.state, dbAddress.postalCode].filter(Boolean).join(', ')
   ].filter(Boolean);
-  
-  const addressValue = addressParts.join(', ');
-  
+
+  const addressValue = addressParts.join(', ') || '';
+
   return {
     id: dbAddress.addressId.toString(),
     type: 'address',
     value: addressValue,
     subtype: dbAddress.addressType || purpose || 'primary',
-    isPrimary: dbAddress.isPrimary || false,
+    isPrimary: !!dbAddress.isPrimary,
     purpose: purpose || dbAddress.addressType || undefined
   };
 }

@@ -19,12 +19,39 @@ type ContactInfo = typeof contactInfo.$inferSelect;
 export function mapContactToDTO(dbContact: ContactInfo, purpose?: string | null): ContactDTO {
   return {
     id: dbContact.contactId.toString(),
-    type: dbContact.contactType as 'phone' | 'email' | 'address',
-    value: dbContact.contactValue,
+    type: normalizeContactType(dbContact.contactType),
+    value: dbContact.contactValue || '',
     subtype: dbContact.contactSubtype || 'unknown',
-    isPrimary: dbContact.isPrimary || false,
+    isPrimary: !!dbContact.isPrimary,
     purpose: purpose || dbContact.preferredTime || undefined
   };
+}
+
+/**
+ * Normalizes contact type values from downstream systems to valid enum values.
+ * Handles case differences and common naming variants.
+ */
+function normalizeContactType(type: string): 'phone' | 'email' | 'address' {
+  const normalized = (type || '').toLowerCase().trim();
+  switch (normalized) {
+    case 'phone':
+    case 'telephone':
+    case 'mobile':
+    case 'cell':
+    case 'fax':
+    case 'ph':
+      return 'phone';
+    case 'email':
+    case 'e-mail':
+    case 'em':
+      return 'email';
+    case 'address':
+    case 'addr':
+    case 'mailing':
+      return 'address';
+    default:
+      return 'phone';
+  }
 }
 
 /**

@@ -645,7 +645,7 @@ export default function CustomerDashboard() {
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
-                  <ContactInformation contacts={realCustomerContacts || mockContacts || []} />
+                  <ContactInformation contacts={realCustomerContacts || []} />
                 </Grid>
               </Grid>
             </PermissionGuard>
@@ -669,7 +669,7 @@ export default function CustomerDashboard() {
                   }} />
                 </Box>
                 <Box sx={{ flex: '1.5' }}>
-                  <ContactInformation contacts={realCustomerContacts || mockContacts || []} />
+                  <ContactInformation contacts={realCustomerContacts || []} />
                 </Box>
                 <Box sx={{ flex: '1' }}>
                   <Officers officers={realCustomerOfficers?.map((officer: any) => ({

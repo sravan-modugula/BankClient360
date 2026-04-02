@@ -588,22 +588,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Combine all contact types
       const allContactDTOs = [...contactDTOs, ...addressDTOs];
       
-      // Runtime validation in development/test environments
-      if (process.env.NODE_ENV !== 'production') {
-        try {
-          ContactDTO.array().parse(allContactDTOs);
-        } catch (validationError) {
-          logger.error({ err: validationError, module: 'routes' }, 'Contact DTO validation failed');
-          return res.status(500).json({ 
-            code: "DTO_VALIDATION_FAILED",
-            message: "Internal data contract violation",
-            correlationId: req.headers['x-correlation-id']?.toString() || 'unknown',
-            timestamp: new Date().toISOString()
-          });
+      // Runtime validation - log warnings for invalid records but don't block the response
+      const validDTOs: typeof allContactDTOs = [];
+      for (const dto of allContactDTOs) {
+        const result = ContactDTO.safeParse(dto);
+        if (result.success) {
+          validDTOs.push(dto);
+        } else {
+          logger.warn({
+            module: 'routes',
+            customerId,
+            contactId: dto.id,
+            contactType: dto.type,
+            errors: result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`)
+          }, 'Skipping invalid contact DTO');
         }
       }
       
-      res.json(allContactDTOs);
+      res.json(validDTOs);
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error fetching person contacts');
       res.status(500).json({ 
