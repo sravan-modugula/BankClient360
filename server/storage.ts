@@ -1342,7 +1342,7 @@ export class DatabaseStorage implements IBankingStorage {
       totalBalance += balance;
 
       const accType = acc.accountType?.toLowerCase();
-      if (accType === 'checking') {
+      if (accType === 'checking' || accType === 'deposit checking') {
         balanceByType.checking += balance;
       } else if (accType === 'savings') {
         balanceByType.savings += balance;
@@ -2891,7 +2891,7 @@ export class DatabaseStorage implements IBankingStorage {
       SELECT COALESCE(SUM(a.balance), 0) as total
       FROM account a
       WHERE a.account_id IN (${sql.join(accountIds, sql`, `)})
-        AND a.account_type IN ('checking', 'savings', 'money_market', 'cd')
+        AND a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd')
     `);
 
     // Calculate current loans total directly from account table (using absolute value)
@@ -2923,7 +2923,7 @@ export class DatabaseStorage implements IBankingStorage {
       SELECT COALESCE(SUM(hb.balance), 0) as total
       FROM historical_balances hb
       INNER JOIN account a ON a.account_id = hb.account_id
-      WHERE a.account_type IN ('checking', 'savings', 'money_market', 'cd')
+      WHERE a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd')
     `);
 
     // Get loans total from 3 months ago using transaction history

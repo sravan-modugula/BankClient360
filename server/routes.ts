@@ -1282,7 +1282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Generate REAL trend data from transaction history with continuous 12-month series
       const depositAccountIds = analytics.accounts
-        .filter(acc => ['checking', 'savings', 'money_market', 'cd'].includes(acc.accountType))
+        .filter(acc => ['checking', 'deposit checking', 'savings', 'money_market', 'cd'].includes(acc.accountType))
         .map(acc => acc.accountId);
 
       let trendData: Array<{

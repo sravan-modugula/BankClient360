@@ -524,7 +524,7 @@ export async function getCustomerDepositAccountsSqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_status) = 'active'
-        AND LOWER(a.account_type) IN ('checking', 'savings', 'cd')
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'cd')
       ORDER BY a.account_type, a.account_number
     `);
 

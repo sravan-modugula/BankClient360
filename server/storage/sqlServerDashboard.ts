@@ -160,7 +160,7 @@ export async function getRelationshipSummarySqlServer(
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
-        AND a.account_type IN ('checking', 'savings', 'money_market', 'cd')
+        AND a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd')
     `);
 
     // Calculate current loans total (using absolute value)
@@ -192,7 +192,7 @@ export async function getRelationshipSummarySqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
       INNER JOIN account a ON a.account_id = ft.account_id
       WHERE ao.customer_id = @customerId
-        AND a.account_type IN ('checking', 'savings', 'money_market', 'cd')
+        AND a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd')
         AND ft.transaction_date >= @ninetyDaysAgo
         AND ft.ledger_balance_after IS NOT NULL
     `);
@@ -288,7 +288,7 @@ export async function getDepositAccountAnalyticsSqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_status) = 'active'
-        AND LOWER(a.account_type) IN ('checking', 'savings', 'money_market', 'cd')
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd')
       ORDER BY a.account_type, a.account_number
     `);
 
@@ -321,7 +321,7 @@ export async function getDepositAccountAnalyticsSqlServer(
       totalBalance += balance;
 
       const accType = acc.account_type?.toLowerCase();
-      if (accType === 'checking') {
+      if (accType === 'checking' || accType === 'deposit checking') {
         balanceByType.checking += balance;
       } else if (accType === 'savings' || accType === 'money_market') {
         balanceByType.savings += balance;
