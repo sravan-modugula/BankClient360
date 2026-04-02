@@ -359,7 +359,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                         )}
                       </Box>
                       <Typography variant="body2" color="text.secondary">
-                        Ownership: {owner.ownershipPercentage ? `${parseFloat(owner.ownershipPercentage)}%` : 'N/A'} | Signing Authority: {owner.signingAuthority ? 'Yes' : 'No'}
+                        Signing Authority: {owner.signingAuthority ? 'Yes' : 'No'}
                       </Typography>
                     </Box>
                   ))}

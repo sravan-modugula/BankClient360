@@ -308,7 +308,7 @@ export default function AccountDetailHELOC({ accountId, onBack, params }: Accoun
                     <Chip label={owner.role} color="primary" size="small" />
                   </Box>
                   <Typography variant="body2" color="text.secondary">
-                    Ownership: {owner.percentage}% | Signing Authority: {owner.signingAuthority ? 'Yes' : 'No'}
+                    Signing Authority: {owner.signingAuthority ? 'Yes' : 'No'}
                   </Typography>
                 </Box>
               ))}
