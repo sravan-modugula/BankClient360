@@ -4,7 +4,7 @@ import { isPostgreSQL, isSQLServer } from "./dbConfig";
 import { caseInsensitiveLike } from "./dbHelpers";
 import { SearchProviderFactory } from "./adapters/search";
 import type { ISearchProvider } from "./adapters/search";
-import { analyzeQuery, mergeResults } from "./adapters/search/queryStrategy";
+import { analyzeQuery, mergeResults, getStatusPriority } from "./adapters/search/queryStrategy";
 import logger from './services/logger';
 
 const fileLogger = logger.child({ module: 'storage' });
@@ -2188,6 +2188,10 @@ export class DatabaseStorage implements IBankingStorage {
       const scoreA = a.matchScore || 0;
       const scoreB = b.matchScore || 0;
       if (scoreB !== scoreA) return scoreB - scoreA;
+      // Active/prospect accounts before inactive/closed
+      const statusA = getStatusPriority(a.status);
+      const statusB = getStatusPriority(b.status);
+      if (statusA !== statusB) return statusA - statusB;
       // Tie-breaker: customers first, then by ID
       if (a.entityType !== b.entityType) return a.entityType === 'customer' ? -1 : 1;
       return a.entityId - b.entityId;

@@ -3,6 +3,18 @@
  * Determines the best search approach based on query characteristics
  */
 
+/** Status priority mapping — active customers sort first within same match quality */
+export const STATUS_PRIORITY: Record<string, number> = {
+  active: 1,
+  prospect: 2,
+  inactive: 3,
+  closed: 4,
+};
+
+export function getStatusPriority(status: string | null | undefined): number {
+  return STATUS_PRIORITY[status?.toLowerCase() ?? ''] ?? 5;
+}
+
 export type SearchMode = 'suppress' | 'prefix-only' | 'hybrid-low' | 'hybrid-standard';
 
 export interface SearchStrategy {
@@ -67,7 +79,7 @@ export function analyzeQuery(query: string): SearchStrategy {
  * Merges and deduplicates search results from multiple sources
  * Prefix matches are prioritized over fuzzy matches
  */
-export function mergeResults<T extends { customerId: number; matchScore?: number; matchType?: string }>(
+export function mergeResults<T extends { customerId: number; matchScore?: number; matchType?: string; customerStatus?: string | null }>(
   prefixResults: T[],
   fuzzyResults: T[]
 ): T[] {
@@ -91,10 +103,11 @@ export function mergeResults<T extends { customerId: number; matchScore?: number
     }
   }
 
-  // Convert map to array and sort by match score (descending)
+  // Convert map to array and sort by match score (descending), then status priority
   return Array.from(merged.values()).sort((a, b) => {
     const scoreA = a.matchScore ?? 0;
     const scoreB = b.matchScore ?? 0;
-    return scoreB - scoreA;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return getStatusPriority(a.customerStatus) - getStatusPriority(b.customerStatus);
   });
 }

@@ -4,6 +4,15 @@ import type { ISearchProvider, SearchProviderCapabilities } from './ISearchProvi
 import { db } from '../../db';
 import { customer, household, householdMembership } from '@shared/schema';
 
+/** SQL CASE expression for ordering by customer status priority */
+const statusPriorityExpr = sql`CASE
+  WHEN ${customer.customerStatus} = 'active' THEN 1
+  WHEN ${customer.customerStatus} = 'prospect' THEN 2
+  WHEN ${customer.customerStatus} = 'inactive' THEN 3
+  WHEN ${customer.customerStatus} = 'closed' THEN 4
+  ELSE 5
+END`;
+
 /**
  * PostgreSQL search provider using pg_trgm for fuzzy text matching
  * Requires: pg_trgm and fuzzystrmatch extensions
@@ -78,7 +87,7 @@ export class PostgresSearchProvider implements ISearchProvider {
       })
       .from(customer)
       .where(sql`similarity(${customer.fullName}, ${nameQuery}) > ${threshold}`)
-      .orderBy(sql`score DESC`, asc(customer.customerId))
+      .orderBy(sql`score DESC`, statusPriorityExpr, asc(customer.customerId))
       .limit(limit);
 
     return result.map((r: any) => ({
@@ -105,7 +114,7 @@ export class PostgresSearchProvider implements ISearchProvider {
       })
       .from(customer)
       .where(condition)
-      .orderBy(asc(customer.fullName), asc(customer.customerId))
+      .orderBy(statusPriorityExpr, asc(customer.fullName), asc(customer.customerId))
       .limit(limit);
 
     return result.map(this.maskPII);
@@ -131,7 +140,7 @@ export class PostgresSearchProvider implements ISearchProvider {
       })
       .from(customer)
       .where(eq(customer.taxIdentifier, taxIdDigits))
-      .orderBy(asc(customer.customerId))
+      .orderBy(statusPriorityExpr, asc(customer.customerId))
       .limit(limit);
 
     return result.map(this.maskPII);
@@ -159,7 +168,7 @@ export class PostgresSearchProvider implements ISearchProvider {
       })
       .from(customer)
       .where(condition)
-      .orderBy(asc(customer.customerId))
+      .orderBy(statusPriorityExpr, asc(customer.customerId))
       .limit(limit);
 
     return result.map(this.maskPII);
@@ -187,7 +196,7 @@ export class PostgresSearchProvider implements ISearchProvider {
       })
       .from(customer)
       .where(condition)
-      .orderBy(asc(customer.customerId))
+      .orderBy(statusPriorityExpr, asc(customer.customerId))
       .limit(limit);
 
     return result.map(this.maskPII);
@@ -219,7 +228,7 @@ export class PostgresSearchProvider implements ISearchProvider {
         isNotNull(customer.jackHenryCifNumber),
         condition
       ))
-      .orderBy(asc(customer.customerId))
+      .orderBy(statusPriorityExpr, asc(customer.customerId))
       .limit(limit);
 
     return result.map((r: any) => ({

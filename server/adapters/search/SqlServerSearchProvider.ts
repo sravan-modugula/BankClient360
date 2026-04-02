@@ -6,6 +6,15 @@ import logger from '../../services/logger';
 
 const fileLogger = logger.child({ module: 'sqlserver-search-provider' });
 
+/** SQL CASE expression for ordering by customer status priority */
+const STATUS_ORDER_SQL = `CASE
+  WHEN customer_status = 'active' THEN 1
+  WHEN customer_status = 'prospect' THEN 2
+  WHEN customer_status = 'inactive' THEN 3
+  WHEN customer_status = 'closed' THEN 4
+  ELSE 5
+END`;
+
 /**
  * SQL Server search provider using Full-Text Search (FTS) for fuzzy matching
  * Requires: Full-Text Search enabled on customer table
@@ -148,7 +157,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         STRING_SIMILARITY(full_name, @nameQuery) as score
       FROM customer
       WHERE STRING_SIMILARITY(full_name, @nameQuery) > @threshold
-      ORDER BY score DESC, customer_id ASC
+      ORDER BY score DESC, ${STATUS_ORDER_SQL}, customer_id ASC
     `);
 
     return result.recordset.map((r: any) => ({
@@ -185,7 +194,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         DIFFERENCE(full_name, @nameQuery) / 4.0 as score
       FROM customer
       WHERE DIFFERENCE(full_name, @nameQuery) / 4.0 > @threshold
-      ORDER BY score DESC, customer_id ASC
+      ORDER BY score DESC, ${STATUS_ORDER_SQL}, customer_id ASC
     `);
 
     return result.recordset.map((r: any) => ({
@@ -213,7 +222,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         government_id as governmentId
       FROM customer
       WHERE full_name COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @nameQuery
-      ORDER BY full_name, customer_id
+      ORDER BY ${STATUS_ORDER_SQL}, full_name, customer_id
     `);
 
     return result.recordset.map(r => this.maskPII(r));
@@ -243,7 +252,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         government_id as governmentId
       FROM customer
       WHERE tax_identifier = @taxId
-      ORDER BY customer_id
+      ORDER BY ${STATUS_ORDER_SQL}, customer_id
     `);
 
     return result.recordset.map(r => this.maskPII(r));
@@ -275,7 +284,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         government_id as governmentId
       FROM customer
       ${whereClause}
-      ORDER BY customer_id
+      ORDER BY ${STATUS_ORDER_SQL}, customer_id
     `);
 
     return result.recordset.map(r => this.maskPII(r));
@@ -307,7 +316,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         government_id as governmentId
       FROM customer
       ${whereClause}
-      ORDER BY customer_id
+      ORDER BY ${STATUS_ORDER_SQL}, customer_id
     `);
 
     return result.recordset.map(r => this.maskPII(r));
@@ -340,7 +349,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       FROM customer
       WHERE jack_henry_cif_number IS NOT NULL
         AND ${whereClause.replace('WHERE ', '')}
-      ORDER BY customer_id
+      ORDER BY ${STATUS_ORDER_SQL}, customer_id
     `);
 
     return result.recordset.map((r: any) => ({
