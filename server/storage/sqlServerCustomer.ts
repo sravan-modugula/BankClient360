@@ -74,9 +74,7 @@ export async function getCustomerWithDetailsSqlServer(
         a.is_primary as address_is_primary,
         -- Branch info
         b.branch_name,
-        b.branch_code,
-        -- Class description
-        cc.description as class_description
+        b.branch_code
       FROM customer c
       LEFT JOIN entity_contact ec ON ec.entity_id = c.customer_id
         AND ec.entity_type = 'customer'
@@ -87,7 +85,6 @@ export async function getCustomerWithDetailsSqlServer(
         AND ea.is_current = 1
       LEFT JOIN address a ON a.address_id = ea.address_id
       LEFT JOIN branch b ON b.branch_id = c.branch_id
-      LEFT JOIN customer_class cc ON cc.class_code = c.class_code
       WHERE c.customer_id = @customerId
     `);
 
@@ -142,13 +139,28 @@ export async function getCustomerWithDetailsSqlServer(
       }
     }
 
+    // Safely look up class description (table may not exist yet)
+    let classDescription: string | null = null;
+    if (customer.classCode) {
+      try {
+        const classRequest = pool.request();
+        classRequest.input('classCode', sql.NVarChar, customer.classCode);
+        const classResult = await classRequest.query(
+          `SELECT description FROM customer_class WHERE class_code = @classCode`
+        );
+        classDescription = classResult.recordset[0]?.description || null;
+      } catch {
+        // customer_class table may not exist yet — skip
+      }
+    }
+
     return {
       ...customer,
       contacts,
       addresses,
       branchName: result.recordset[0].branch_name,
       branchCode: result.recordset[0].branch_code,
-      classDescription: result.recordset[0].class_description || null
+      classDescription
     } as CustomerWithDetails;
   } catch (error) {
     fileLogger.error({ err: error }, 'Get customer with details error');
