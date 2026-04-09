@@ -60,7 +60,6 @@ interface CustomerDetail {
   insideCode?: string | null;
   salesAssociateCode?: string | null;
   classCode?: string | null;
-  classDescription?: string | null;
   isEmployee: boolean;
   vipCustomer: boolean;
   isDeceased: boolean;
@@ -477,7 +476,7 @@ export default function CustomerDetailModal({ open, onClose, customerId }: Custo
                     <Box sx={{ flex: '0 0 auto', minWidth: '120px' }}>
                       <Typography variant="caption" color="text.secondary">Class</Typography>
                       <Typography variant="body2" fontWeight="400" sx={{ fontFamily: 'Roboto Mono' }}>
-                        {customerData.classCode}{customerData.classDescription ? ` - ${customerData.classDescription}` : ''}
+                        {customerData.classCode}
                       </Typography>
                     </Box>
                   )}
