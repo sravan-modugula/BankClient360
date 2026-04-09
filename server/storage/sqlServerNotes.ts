@@ -538,22 +538,18 @@ export async function getNoteVersionsSqlServer(
   modifiedAt: Date | null;
   deletedAt: Date | null;
   deletedByEmployeeId: number | null;
-  restoredAt: Date | null;
-  restoredByEmployeeId: number | null;
-  restoredByEmployeeName: string | null;
 }>> {
   try {
     const request = pool.request();
     request.input('noteId', sql.BigInt, noteId);
 
     const result = await request.query(`
-      SELECT 
+      SELECT
         version_id, note_id, version_number, title, body,
         author_employee_id, author_employee_name,
         is_current, is_soft_deleted,
         created_at, modified_at,
-        deleted_at, deleted_by_employee_id,
-        restored_at, restored_by_employee_id, restored_by_employee_name
+        deleted_at, deleted_by_employee_id
       FROM note_version
       WHERE note_id = @noteId
       ORDER BY version_number DESC
@@ -572,10 +568,7 @@ export async function getNoteVersionsSqlServer(
       createdAt: row.created_at,
       modifiedAt: row.modified_at,
       deletedAt: row.deleted_at,
-      deletedByEmployeeId: row.deleted_by_employee_id,
-      restoredAt: row.restored_at,
-      restoredByEmployeeId: row.restored_by_employee_id,
-      restoredByEmployeeName: row.restored_by_employee_name
+      deletedByEmployeeId: row.deleted_by_employee_id
     }));
   } catch (error) {
     fileLogger.error({ err: error }, 'Get note versions error');
