@@ -502,15 +502,20 @@ class SqlServerSearchProvider implements ISearchProvider {
     }));
   }
 
+  /** Trim trailing whitespace from SQL Server CHAR/NCHAR column padding */
+  private trim(value: any): string {
+    return typeof value === 'string' ? value.trimEnd() : value ?? '';
+  }
+
   private maskPII(row: any): CustomerListItem {
     return {
       customerId: row.customerId,
-      fullName: row.fullName || '',
-      customerType: row.customerType,
-      customerStatus: row.customerStatus,
-      silverlakeCustomerId: row.silverlakeCustomerId,
-      taxIdentifierLast4: row.taxIdentifier ? `***-**-${row.taxIdentifier.slice(-4)}` : undefined,
-      governmentIdLast4: row.governmentId ? `****${row.governmentId.slice(-4)}` : undefined
+      fullName: this.trim(row.fullName),
+      customerType: this.trim(row.customerType),
+      customerStatus: this.trim(row.customerStatus),
+      silverlakeCustomerId: this.trim(row.silverlakeCustomerId),
+      taxIdentifierLast4: row.taxIdentifier ? `***-**-${row.taxIdentifier.trimEnd().slice(-4)}` : undefined,
+      governmentIdLast4: row.governmentId ? `****${row.governmentId.trimEnd().slice(-4)}` : undefined
     };
   }
 }

@@ -9,6 +9,17 @@ import logger from '../services/logger';
 
 const fileLogger = logger.child({ module: 'sqlserver-customer-search' });
 
+/** Trim trailing whitespace from all string values in a SQL Server row (CHAR/NCHAR padding) */
+function trimRowStrings<T extends Record<string, any>>(row: T): T {
+  const trimmed = { ...row };
+  for (const key of Object.keys(trimmed)) {
+    if (typeof trimmed[key] === 'string') {
+      trimmed[key] = trimmed[key].trimEnd();
+    }
+  }
+  return trimmed;
+}
+
 /**
  * Search customers using SQL Server
  * This is a proof-of-concept implementation demonstrating the hybrid approach
@@ -123,7 +134,7 @@ export async function searchCustomersSqlServer(
         .query(countQuery)
     ]);
 
-    const customers = customersResult.recordset as CustomerWithDetails[];
+    const customers = customersResult.recordset.map(trimRowStrings) as CustomerWithDetails[];
     const totalCount = countResult.recordset[0]?.totalCount || 0;
     const hasMore = offset + limit < totalCount;
 
@@ -216,7 +227,7 @@ export async function getCustomerByIdSqlServer(
       return null;
     }
 
-    return result.recordset[0] as CustomerWithDetails;
+    return trimRowStrings(result.recordset[0]) as CustomerWithDetails;
   } catch (error) {
     fileLogger.error({ err: error }, 'Get customer by ID error');
     throw new Error(`SQL Server get customer failed: ${error}`);
