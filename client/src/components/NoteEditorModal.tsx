@@ -124,7 +124,7 @@ export default function NoteEditorModal({
       const payload = {
         ...cleanedData,
         targetType,
-        [targetType === 'customer' ? 'customerId' : 'accountId']: targetId
+        [targetType === 'customer' ? 'customerId' : 'accountId']: Number(targetId)
       };
       const res = await apiRequest('POST', '/api/notes', payload);
       return res.json();

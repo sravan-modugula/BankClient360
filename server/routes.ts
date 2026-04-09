@@ -2248,18 +2248,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Validation schemas for notes endpoints
   const createNoteSchema = z.object({
-    customerId: z.number().int().positive().optional(),
-    accountId: z.number().int().positive().optional(),
+    customerId: z.coerce.number().int().positive().optional(),
+    accountId: z.coerce.number().int().positive().optional(),
     targetType: z.enum(['customer', 'account']),
-    categoryId: z.number().int().positive().optional(),
+    categoryId: z.coerce.number().int().positive().optional(),
     importance: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
     visibility: z.enum(['public', 'internal', 'confidential']).default('internal'),
     title: z.string().min(1).max(200),
     body: z.string().min(1),
     legalHold: z.boolean().optional(),
-    retentionYears: z.number().int().positive().optional(),
+    retentionYears: z.coerce.number().int().positive().optional(),
     isPinned: z.boolean().optional(),
-    authorEmployeeId: z.number().int().positive().optional()
+    authorEmployeeId: z.coerce.number().int().positive().optional()
   }).refine(data => {
     if (data.targetType === 'customer') {
       return data.customerId !== undefined && data.accountId === undefined;
@@ -2273,13 +2273,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const updateNoteSchema = z.object({
     title: z.string().min(1).max(200).optional(),
     body: z.string().min(1).optional(),
-    categoryId: z.number().int().positive().nullable().optional(),
+    categoryId: z.coerce.number().int().positive().nullable().optional(),
     importance: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     visibility: z.enum(['public', 'internal', 'confidential']).optional(),
     legalHold: z.boolean().optional(),
-    retentionYears: z.number().int().positive().nullable().optional(),
+    retentionYears: z.coerce.number().int().positive().nullable().optional(),
     isPinned: z.boolean().optional(),
-    authorEmployeeId: z.number().int().positive().optional()
+    authorEmployeeId: z.coerce.number().int().positive().optional()
   });
 
   const pinNoteSchema = z.object({
@@ -2287,7 +2287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const restoreNoteSchema = z.object({
-    employeeId: z.number().int().positive().optional()
+    employeeId: z.coerce.number().int().positive().optional()
   });
 
   const searchNotesSchema = z.object({
