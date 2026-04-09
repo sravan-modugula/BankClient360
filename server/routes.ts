@@ -315,9 +315,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const customerId = parseInt(req.params.id);
       
-      const customer = await storage.getCustomer(customerId);
+      const customer = await storage.getCustomerWithDetails(customerId);
       if (!customer) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: "Customer not found"
         });
       }
@@ -325,9 +325,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Add fullName field for the modal
       const response = {
         ...customer,
-        fullName: customer.fullName || 
+        fullName: customer.fullName ||
                  (customer.businessName ? customer.businessName :
-                  [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' '))
+                  [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' ')),
+        classDescription: customer.classDescription || null
       };
 
       res.json(response);

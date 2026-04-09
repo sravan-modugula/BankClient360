@@ -74,17 +74,20 @@ export async function getCustomerWithDetailsSqlServer(
         a.is_primary as address_is_primary,
         -- Branch info
         b.branch_name,
-        b.branch_code
+        b.branch_code,
+        -- Class description
+        cc.description as class_description
       FROM customer c
-      LEFT JOIN entity_contact ec ON ec.entity_id = c.customer_id 
-        AND ec.entity_type = 'customer' 
+      LEFT JOIN entity_contact ec ON ec.entity_id = c.customer_id
+        AND ec.entity_type = 'customer'
         AND ec.is_current = 1
       LEFT JOIN contact_info ci ON ci.contact_id = ec.contact_id
-      LEFT JOIN entity_address ea ON ea.entity_id = c.customer_id 
-        AND ea.entity_type = 'customer' 
+      LEFT JOIN entity_address ea ON ea.entity_id = c.customer_id
+        AND ea.entity_type = 'customer'
         AND ea.is_current = 1
       LEFT JOIN address a ON a.address_id = ea.address_id
       LEFT JOIN branch b ON b.branch_id = c.branch_id
+      LEFT JOIN customer_class cc ON cc.class_code = c.class_code
       WHERE c.customer_id = @customerId
     `);
 
@@ -144,7 +147,8 @@ export async function getCustomerWithDetailsSqlServer(
       contacts,
       addresses,
       branchName: result.recordset[0].branch_name,
-      branchCode: result.recordset[0].branch_code
+      branchCode: result.recordset[0].branch_code,
+      classDescription: result.recordset[0].class_description || null
     } as CustomerWithDetails;
   } catch (error) {
     fileLogger.error({ err: error }, 'Get customer with details error');

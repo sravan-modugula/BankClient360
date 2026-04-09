@@ -320,6 +320,15 @@ export const customerOfficerAssignment = pgTable("customer_officer_assignment", 
 // REFERENCE/LOOKUP TABLES
 // ==================================================================================
 
+// Customer class code lookup table
+export const customerClass = pgTable("customer_class", {
+  classCode: varchar("class_code", { length: 20 }).primaryKey(),
+  description: varchar("description", { length: 200 }).notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
 // SIC (Standard Industrial Classification) Code lookup table
 export const sicCode = pgTable("sic_code", {
   sicCode: bigint("sic_code", { mode: "number" }).primaryKey(),
@@ -1339,6 +1348,7 @@ export interface CustomerWithDetails extends Customer {
   };
   branchName?: string;
   branchCode?: string;
+  classDescription?: string | null;
 }
 
 export interface CustomerSearchResult {
