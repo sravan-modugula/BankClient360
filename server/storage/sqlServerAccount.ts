@@ -322,7 +322,7 @@ function mapAccountFromDb(row: any): Account {
     balance: row.balance,
     availableBalance: row.available_balance,
     currency: row.currency,
-    interestRate: row.interest_rate,
+    interestRate: row.interest_rate != null ? parseFloat(row.interest_rate) * 100 : null,
     creditLimit: row.credit_limit,
     branchId: row.branch_id,
     productCode: row.product_code,

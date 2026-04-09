@@ -565,7 +565,7 @@ function mapAccountFromDb(row: any): Account {
     currency: row.currency,
     openDate: row.open_date,
     closeDate: row.close_date,
-    interestRate: row.interest_rate,
+    interestRate: row.interest_rate != null ? parseFloat(row.interest_rate) * 100 : null,
     apy: row.apy,
     term: row.term,
     maturityDate: row.maturity_date,
