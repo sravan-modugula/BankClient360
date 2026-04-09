@@ -132,7 +132,7 @@ export default function AccountSummaryTableVersion({
     }, 0);
   };
 
-  const activeAccountsCount = accounts.filter(a => a.accountStatus === 'active').length;
+  const activeAccountsCount = accounts.filter(a => a.accountStatus?.toLowerCase() === 'active').length;
 
   const getAccountIcon = (type: string) => {
     const iconProps = { fontSize: 'small' as const };
