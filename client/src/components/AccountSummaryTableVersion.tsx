@@ -96,28 +96,41 @@ export default function AccountSummaryTableVersion({
     { key: 'all', label: 'All' },
     { key: 'checking', label: 'Checking' },
     { key: 'savings', label: 'Savings' },
+    { key: 'loan', label: 'Loans' },
     { key: 'mortgage', label: 'Mortgage' },
     { key: 'heloc', label: 'HELOC' },
     { key: 'credit_card', label: 'Credit Cards' },
     { key: 'cd', label: 'CDs' }
   ];
 
-  // Filter accounts
+  // Filter accounts (case-insensitive to handle SQL Server data casing)
   const filteredAccounts = accounts.filter(account => {
     let matchesType = false;
-    
+    const type = account.accountType?.toLowerCase() || '';
+
     if (accountTypeFilter === 'all') {
       matchesType = true;
     } else if (accountTypeFilter === 'checking') {
-      // Include both checking and business_checking
-      matchesType = account.accountType === 'checking' || account.accountType === 'business_checking';
+      matchesType = type.includes('checking');
+    } else if (accountTypeFilter === 'savings') {
+      matchesType = type.includes('savings') || type.includes('money market') || type.includes('christmas club');
+    } else if (accountTypeFilter === 'mortgage') {
+      matchesType = type.includes('mortgage');
+    } else if (accountTypeFilter === 'heloc') {
+      matchesType = type.includes('heloc') || type.includes('line of credit');
+    } else if (accountTypeFilter === 'credit_card') {
+      matchesType = type.includes('credit');
+    } else if (accountTypeFilter === 'cd') {
+      matchesType = type.includes('cd') || type.includes('time deposit');
+    } else if (accountTypeFilter === 'loan') {
+      matchesType = type === 'loan' || type.includes('loan');
     } else {
-      matchesType = account.accountType === accountTypeFilter;
+      matchesType = type === accountTypeFilter;
     }
-    
+
     const matchesSearch = !searchQuery ||
       account.accountNumber.includes(searchQuery) ||
-      account.accountType.toLowerCase().includes(searchQuery.toLowerCase());
+      type.includes(searchQuery.toLowerCase());
     return matchesType && matchesSearch;
   });
 
