@@ -160,7 +160,7 @@ export async function getRelationshipSummarySqlServer(
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
-        AND a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
     `);
 
     // Calculate current loans total (using absolute value)
@@ -172,7 +172,7 @@ export async function getRelationshipSummarySqlServer(
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
-        AND a.account_type IN ('mortgage', 'heloc', 'auto_loan', 'personal_loan', 'business_loan')
+        AND LOWER(a.account_type) IN ('loan', 'mortgage', 'heloc', 'auto_loan', 'personal_loan', 'business_loan')
     `);
 
     const currentDeposits = parseFloat(depositResult.recordset[0].total || '0');
@@ -192,7 +192,7 @@ export async function getRelationshipSummarySqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
       INNER JOIN account a ON a.account_id = ft.account_id
       WHERE ao.customer_id = @customerId
-        AND a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
         AND ft.transaction_date >= @ninetyDaysAgo
         AND ft.ledger_balance_after IS NOT NULL
     `);
@@ -207,7 +207,7 @@ export async function getRelationshipSummarySqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
       INNER JOIN account a ON a.account_id = ft.account_id
       WHERE ao.customer_id = @customerId
-        AND a.account_type IN ('mortgage', 'heloc', 'auto_loan', 'personal_loan', 'business_loan')
+        AND LOWER(a.account_type) IN ('loan', 'mortgage', 'heloc', 'auto_loan', 'personal_loan', 'business_loan')
         AND ft.transaction_date >= @ninetyDaysAgo
         AND ft.ledger_balance_after IS NOT NULL
     `);
