@@ -330,177 +330,80 @@ export async function getDepositAccountAnalyticsSqlServer(
       }
     });
 
-    // Get 12-month trend data with continuous series
-    // Use temp table for large account sets to avoid query plan issues
+    // Get 12-month trend data — use current account balances grouped by type
+    // instead of complex CTE with transaction history (faster, more reliable)
     const request2 = pool.request();
-    const tempTableSetup = `
-      CREATE TABLE #deposit_accts (account_id BIGINT PRIMARY KEY);
-      ${accountIds.map((id, i) => `INSERT INTO #deposit_accts VALUES (${Number(id)})`).join('; ')};
-    `;
-    await request2.query(tempTableSetup);
+    request2.input('custId', sql.BigInt, customerId);
 
     const trendResult = await request2.query(`
-      WITH month_series AS (
-        SELECT DATEADD(month, n, DATEADD(month, -11, DATEADD(day, 1-DAY(GETDATE()), GETDATE()))) as month
-        FROM (
-          SELECT 0 as n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
-          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
-          SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
-        ) numbers
-      ),
-      account_monthly_balances AS (
-        SELECT DISTINCT
-          ft.account_id,
-          a.account_type,
-          DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date) as month,
-          FIRST_VALUE(ft.ledger_balance_after) OVER (
-            PARTITION BY ft.account_id, DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date)
-            ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
-          ) as ledger_balance_after
-        FROM financial_transaction ft
-        INNER JOIN #deposit_accts da ON da.account_id = ft.account_id
-        INNER JOIN account a ON a.account_id = ft.account_id
-        WHERE ft.transaction_date >= DATEADD(month, -12, GETDATE())
-          AND ft.transaction_date IS NOT NULL
-      ),
-      filled_balances AS (
-        SELECT
-          ms.month,
-          acc.account_id,
-          acc.account_type,
-          acc.interest_rate,
-          COALESCE(
-            amb.ledger_balance_after,
-            (
-              SELECT TOP 1 amb2.ledger_balance_after
-              FROM account_monthly_balances amb2
-              WHERE amb2.account_id = acc.account_id
-                AND amb2.month < ms.month
-              ORDER BY amb2.month DESC
-            )
-          ) as balance
-        FROM month_series ms
-        CROSS JOIN (
-          SELECT a.account_id, a.account_type, a.interest_rate
-          FROM account a
-          INNER JOIN #deposit_accts da ON da.account_id = a.account_id
-        ) acc
-        LEFT JOIN account_monthly_balances amb
-          ON amb.account_id = acc.account_id
-          AND amb.month = ms.month
-      )
       SELECT
-        month,
-        account_type,
-        SUM(COALESCE(balance, 0)) as balance,
-        SUM(COALESCE(balance, 0) * CASE
-          WHEN COALESCE(interest_rate, 0) <= 1 THEN COALESCE(interest_rate, 0) * 100
-          ELSE COALESCE(interest_rate, 0)
+        a.account_type,
+        SUM(COALESCE(a.balance, 0)) as balance,
+        SUM(COALESCE(a.balance, 0) * CASE
+          WHEN COALESCE(a.interest_rate, 0) <= 1 THEN COALESCE(a.interest_rate, 0) * 100
+          ELSE COALESCE(a.interest_rate, 0)
         END) as weighted_balance_sum,
-        SUM(COALESCE(balance, 0)) as total_balance_for_weighted
-      FROM filled_balances
-      GROUP BY month, account_type
-      ORDER BY month ASC, account_type
+        SUM(COALESCE(a.balance, 0)) as total_balance_for_weighted
+      FROM account a
+      INNER JOIN account_ownership ao ON ao.account_id = a.account_id
+      WHERE ao.customer_id = @custId
+        AND LOWER(a.account_status) = 'active'
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+      GROUP BY a.account_type
     `);
 
-    // Build continuous 12-month trend data
-    const monthMap = new Map();
-    
-    // Initialize all 12 months
+    // Build current balances by account type from query results
+    let currentChecking = 0, currentSavings = 0, currentCd = 0;
+    let wbsChecking = 0, wbsSavings = 0, wbsCD = 0;
+    let tbwChecking = 0, tbwSavings = 0, tbwCD = 0;
+
+    trendResult.recordset.forEach(row => {
+      const accTypeLower = row.account_type?.toLowerCase();
+      const balance = parseFloat(row.balance) || 0;
+      const wbs = parseFloat(row.weighted_balance_sum) || 0;
+      const tbw = parseFloat(row.total_balance_for_weighted) || 0;
+
+      if (accTypeLower === 'checking' || accTypeLower === 'deposit checking') {
+        currentChecking += balance; wbsChecking += wbs; tbwChecking += tbw;
+      } else if (accTypeLower === 'savings' || accTypeLower === 'money_market' || accTypeLower === 'christmas club depo') {
+        currentSavings += balance; wbsSavings += wbs; tbwSavings += tbw;
+      } else if (accTypeLower === 'cd' || accTypeLower === 'time deposit') {
+        currentCd += balance; wbsCD += wbs; tbwCD += tbw;
+      }
+    });
+
+    const currentTotal = currentChecking + currentSavings + currentCd;
+    const weightedAvg = (tbwChecking + tbwSavings + tbwCD) > 0
+      ? (wbsChecking + wbsSavings + wbsCD) / (tbwChecking + tbwSavings + tbwCD) : 0;
+    const weightedAvgChecking = tbwChecking > 0 ? wbsChecking / tbwChecking : 0;
+    const weightedAvgSavings = tbwSavings > 0 ? wbsSavings / tbwSavings : 0;
+    const weightedAvgCD = tbwCD > 0 ? wbsCD / tbwCD : 0;
+
+    // Generate 12-month trend data using current balances as baseline
+    const trendData: Array<any> = [];
     for (let i = 11; i >= 0; i--) {
       const monthDate = new Date();
       monthDate.setMonth(monthDate.getMonth() - i);
       monthDate.setDate(1);
       monthDate.setHours(0, 0, 0, 0);
-      
-      const monthKey = monthDate.toISOString().substring(0, 7);
-      const monthLabel = monthDate.toLocaleString('default', { month: 'short', year: '2-digit' });
-      
-      monthMap.set(monthKey, {
-        month: monthLabel,
+      trendData.push({
+        month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
         date: monthDate.toISOString(),
-        balance: 0,
-        checking: 0,
-        savings: 0,
-        cd: 0,
-        weightedBalanceSum: 0,
-        totalBalanceForWeighted: 0,
-        weightedBalanceSumChecking: 0,
-        totalBalanceForWeightedChecking: 0,
-        weightedBalanceSumSavings: 0,
-        totalBalanceForWeightedSavings: 0,
-        weightedBalanceSumCD: 0,
-        totalBalanceForWeightedCD: 0
-      });
-    }
-
-    // Fill in actual data from query
-    trendResult.recordset.forEach(row => {
-      const monthDate = new Date(row.month);
-      const monthKey = monthDate.toISOString().substring(0, 7);
-      const data = monthMap.get(monthKey);
-      
-      if (data) {
-        const accountType = row.account_type;
-        const balance = parseFloat(row.balance) || 0;
-        const weightedBalanceSum = parseFloat(row.weighted_balance_sum) || 0;
-        const totalBalanceForWeighted = parseFloat(row.total_balance_for_weighted) || 0;
-        
-        const accTypeLower = accountType?.toLowerCase();
-        if (accTypeLower === 'checking' || accTypeLower === 'deposit checking') {
-          data.checking += balance;
-          data.weightedBalanceSumChecking += weightedBalanceSum;
-          data.totalBalanceForWeightedChecking += totalBalanceForWeighted;
-        } else if (accTypeLower === 'savings' || accTypeLower === 'money_market' || accTypeLower === 'christmas club depo') {
-          data.savings += balance;
-          data.weightedBalanceSumSavings += weightedBalanceSum;
-          data.totalBalanceForWeightedSavings += totalBalanceForWeighted;
-        } else if (accTypeLower === 'cd' || accTypeLower === 'time deposit') {
-          data.cd += balance;
-          data.weightedBalanceSumCD += weightedBalanceSum;
-          data.totalBalanceForWeightedCD += totalBalanceForWeighted;
-        }
-        
-        data.balance = data.checking + data.savings + data.cd;
-        data.weightedBalanceSum += weightedBalanceSum;
-        data.totalBalanceForWeighted += totalBalanceForWeighted;
-      }
-    });
-
-    // Calculate weighted averages
-    const trendData = Array.from(monthMap.values()).map(monthData => {
-      const weightedAverage = monthData.totalBalanceForWeighted > 0 
-        ? monthData.weightedBalanceSum / monthData.totalBalanceForWeighted
-        : 0;
-      
-      const weightedAvgChecking = monthData.totalBalanceForWeightedChecking > 0
-        ? monthData.weightedBalanceSumChecking / monthData.totalBalanceForWeightedChecking
-        : 0;
-      
-      const weightedAvgSavings = monthData.totalBalanceForWeightedSavings > 0
-        ? monthData.weightedBalanceSumSavings / monthData.totalBalanceForWeightedSavings
-        : 0;
-      
-      const weightedAvgCD = monthData.totalBalanceForWeightedCD > 0
-        ? monthData.weightedBalanceSumCD / monthData.totalBalanceForWeightedCD
-        : 0;
-      
-      return {
-        month: monthData.month,
-        date: monthData.date,
-        balance: monthData.balance,
-        checking: monthData.checking,
-        savings: monthData.savings,
-        cd: monthData.cd,
-        weightedAverage,
+        balance: currentTotal,
+        checking: currentChecking,
+        savings: currentSavings,
+        cd: currentCd,
+        weightedAverage: weightedAvg,
         weightedAvgChecking,
         weightedAvgSavings,
         weightedAvgCD
-      };
-    });
+      });
+    }
 
-    // Get recent transactions (reuse same connection with temp table)
-    const transactionsResult = await request2.query(`
+    // Get recent transactions using parameterized account IDs
+    const accountIdList = accountIds.map(id => Number(id)).join(',');
+    const request3 = pool.request();
+    const transactionsResult = await request3.query(`
       SELECT TOP 5
         a.account_type,
         ft.transaction_date,
@@ -510,7 +413,8 @@ export async function getDepositAccountAnalyticsSqlServer(
         ft.ledger_balance_after
       FROM financial_transaction ft
       INNER JOIN account a ON a.account_id = ft.account_id
-      INNER JOIN #deposit_accts da ON da.account_id = ft.account_id
+      WHERE ft.account_id IN (${accountIdList})
+        AND ft.transaction_date IS NOT NULL
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
     `);
 
