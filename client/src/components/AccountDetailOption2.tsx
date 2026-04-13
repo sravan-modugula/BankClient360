@@ -69,6 +69,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   });
 
   // Fetch transactions
+  console.log('AccountDetailOption2 fetching transactions for accountId:', accountId);
   const { data: txData } = useQuery<{ transactions: any[] }>({
     queryKey: [`/api/accounts/${accountId}/transactions`],
     enabled: !!accountId
@@ -76,6 +77,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
 
   const debitCards = cardsData?.cards || [];
   const transactions = txData?.transactions || [];
+  console.log('AccountDetailOption2 transactions loaded:', transactions.length);
 
   const handleBack = () => {
     if (onBack) {

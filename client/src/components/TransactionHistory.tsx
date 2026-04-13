@@ -85,14 +85,21 @@ export default function TransactionHistory({
   // Fetch transactions from API
   // If selectedAccountId is provided, use account-specific endpoint
   // Otherwise, use customer-level endpoint
+  const queryUrl = effectiveAccountId
+    ? `/api/accounts/${effectiveAccountId}/transactions?limit=200`
+    : customerId
+    ? `/api/customers/${customerId}/transactions?limit=200`
+    : '/api/transactions?limit=200';
+
+  const isEnabled = !!(customerId || effectiveAccountId);
+
+  // Debug: log what URL TransactionHistory is querying
+  console.log('TransactionHistory query:', { customerId, effectiveAccountId, selectedAccountId, accountId, queryUrl, isEnabled });
+
   const { data, isLoading, error} = useQuery({
-    queryKey: effectiveAccountId
-      ? [`/api/accounts/${effectiveAccountId}/transactions?limit=200`]
-      : customerId
-      ? [`/api/customers/${customerId}/transactions?limit=200`]
-      : ['/api/transactions?limit=200'],
-    enabled: !!(customerId || effectiveAccountId),
-    staleTime: 30000, // Cache for 30 seconds
+    queryKey: [queryUrl],
+    enabled: isEnabled,
+    staleTime: 30000,
     refetchOnWindowFocus: false
   });
 
