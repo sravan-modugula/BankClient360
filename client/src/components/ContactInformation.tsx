@@ -87,7 +87,21 @@ export default function ContactInformation({ contacts }: ContactInformationProps
     }
   };
 
+  const formatPhoneNumber = (phone: string): string => {
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length === 10) {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    if (digits.length === 11 && digits[0] === '1') {
+      return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+    }
+    return phone;
+  };
+
   const formatContactValue = (contact: ContactInfo) => {
+    if (contact.type === 'phone') {
+      return formatPhoneNumber(contact.value);
+    }
     if (contact.type === 'address' && contact.value.length > 35) {
       return contact.value.substring(0, 32) + '...';
     }
@@ -147,7 +161,7 @@ export default function ContactInformation({ contacts }: ContactInformationProps
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="body1" sx={{ fontWeight: 400, mb: 0.5 }}>
-          {contact.value}
+          {formatContactValue(contact)}
         </Typography>
         <Box sx={{ display: 'flex', gap: 0.5, mb: showActions ? 1 : 0 }}>
           <Chip
