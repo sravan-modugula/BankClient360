@@ -93,9 +93,6 @@ export default function TransactionHistory({
 
   const isEnabled = !!(customerId || effectiveAccountId);
 
-  // Debug: log what URL TransactionHistory is querying
-  console.log('TransactionHistory query:', { customerId, effectiveAccountId, selectedAccountId, accountId, queryUrl, isEnabled });
-
   const { data, isLoading, error} = useQuery({
     queryKey: [queryUrl],
     enabled: isEnabled,
@@ -104,7 +101,6 @@ export default function TransactionHistory({
   });
 
   const transactions = data?.transactions || [];
-  console.log('TransactionHistory data:', { rawData: data, transactionCount: transactions.length, isLoading, error: error?.message });
 
   // Get transaction icon based on transaction code
   const getTransactionIcon = (code: string) => {
@@ -153,12 +149,14 @@ export default function TransactionHistory({
     return labels[code] || code;
   };
 
-  // Filter transactions based on search
-  const filteredTransactions = transactions.filter((transaction: Transaction) =>
-    (transaction.description && transaction.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (transaction.merchantName && transaction.merchantName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (transaction.referenceNumber && transaction.referenceNumber.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // Filter transactions based on search (show all when no search query)
+  const filteredTransactions = searchQuery
+    ? transactions.filter((transaction: Transaction) =>
+        (transaction.description && transaction.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (transaction.merchantName && transaction.merchantName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (transaction.referenceNumber && transaction.referenceNumber.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : transactions;
 
   // Paginate transactions
   const paginatedTransactions = filteredTransactions.slice(
