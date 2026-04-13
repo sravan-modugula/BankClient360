@@ -234,7 +234,7 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
                 whiteSpace: 'nowrap'
               }}
             >
-              {customer.taxId ? `****-**-${customer.taxId.slice(-4)}` : 'N/A'}
+              {customer.taxId ? `***-**-${customer.taxId.slice(-4)}` : 'N/A'}
             </Typography>
           </Box>
 
