@@ -388,55 +388,8 @@ export default function CustomerDetailModal({ open, onClose, customerId }: Custo
           </Box>
           </Box>
 
-          {/* Row 2: Compliance & Banking Codes */}
+          {/* Row 2: Banking Codes */}
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ flex: '1 1 calc(33.33% - 16px)', minWidth: '280px' }}>
-            <Card elevation={1} sx={{ height: '100%', bgcolor: 'background.paper' }}>
-              <CardContent sx={{ pb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <Security sx={{ color: 'primary.main', fontSize: 20 }} />
-                  <Typography variant="subtitle2" fontWeight="400" color="primary">
-                    COMPLIANCE
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {customerData.kycStatus && (
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">KYC Status</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        {customerData.kycStatus.toLowerCase() === 'verified' && (
-                          <CheckCircle sx={{ fontSize: 16, color: 'primary.main' }} />
-                        )}
-                        <Typography variant="body2" fontWeight="400">
-                          {customerData.kycStatus}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  )}
-                  {customerData.kycLastUpdated && (
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Last Updated</Typography>
-                      <Typography variant="body2" fontWeight="400">{formatDate(customerData.kycLastUpdated)}</Typography>
-                    </Box>
-                  )}
-                  {customerData.riskRating && (
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Risk Rating</Typography>
-                      <Box>
-                        <Chip
-                          icon={<Security />}
-                          label={customerData.riskRating}
-                          color={getRiskColor(customerData.riskRating) as any}
-                          size="small"
-                          sx={{ fontWeight: 400 }}
-                        />
-                      </Box>
-                    </Box>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Box>
 
           <Box sx={{ flex: '1 1 calc(66.67% - 16px)', minWidth: '380px' }}>
             <Card elevation={1} sx={{ height: '100%', bgcolor: 'background.paper' }}>
