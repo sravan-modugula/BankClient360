@@ -87,11 +87,11 @@ export default function TransactionHistory({
   // Otherwise, use customer-level endpoint
   const { data, isLoading, error} = useQuery({
     queryKey: effectiveAccountId
-      ? [`/api/accounts/${effectiveAccountId}/transactions`]
-      : customerId 
-      ? [`/api/customers/${customerId}/transactions`]
+      ? [`/api/accounts/${effectiveAccountId}/transactions?limit=200`]
+      : customerId
+      ? [`/api/customers/${customerId}/transactions?limit=200`]
       : ['/api/transactions?limit=200'],
-    enabled: !!customerId || !!effectiveAccountId || (!customerId && !effectiveAccountId),
+    enabled: !!(customerId || effectiveAccountId),
     staleTime: 30000, // Cache for 30 seconds
     refetchOnWindowFocus: false
   });
@@ -379,6 +379,11 @@ export default function TransactionHistory({
         <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
           Showing {paginatedTransactions.length} of {filteredTransactions.length} transactions
         </Typography>
+        {transactions.length === 0 && selectedAccountId !== null && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            No transactions found for this account. Try selecting "All Accounts" or a different account.
+          </Typography>
+        )}
       </CardContent>
     </Card>
   );
