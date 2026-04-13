@@ -2072,6 +2072,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // TRANSACTION ROUTES
   // ==================================================================================
 
+  // Diagnostic: Check transaction data integrity for a customer
+  app.get("/api/diagnostics/transactions/:customerId", async (req, res) => {
+    try {
+      const customerId = parseInt(req.params.customerId);
+      if (isNaN(customerId)) return res.status(400).json({ error: "Invalid customer ID" });
+
+      if (isSQLServer()) {
+        const { getMssqlPool } = await import('./dbConnection');
+        const mssql = await import('mssql');
+        const pool = await getMssqlPool();
+
+        // 1. Get customer's account IDs from account_ownership
+        const r1 = pool.request();
+        r1.input('custId', mssql.default.BigInt, customerId);
+        const ownershipResult = await r1.query(`
+          SELECT ao.account_id, a.account_number, a.account_type
+          FROM account_ownership ao
+          INNER JOIN account a ON a.account_id = ao.account_id
+          WHERE ao.customer_id = @custId
+        `);
+        const customerAccountIds = ownershipResult.recordset.map((r: any) => r.account_id);
+
+        // 2. Check which accounts have transactions
+        const accountTxCounts: any[] = [];
+        for (const acctId of customerAccountIds.slice(0, 10)) { // Check first 10
+          const r2 = pool.request();
+          r2.input('acctId', mssql.default.BigInt, acctId);
+          const txCount = await r2.query(`SELECT COUNT(*) as cnt FROM financial_transaction WHERE account_id = @acctId`);
+          accountTxCounts.push({
+            accountId: acctId,
+            accountNumber: ownershipResult.recordset.find((r: any) => r.account_id === acctId)?.account_number,
+            transactionCount: txCount.recordset[0].cnt
+          });
+        }
+
+        // 3. Total transactions in table
+        const r3 = pool.request();
+        const totalTx = await r3.query(`SELECT COUNT(*) as cnt FROM financial_transaction`);
+
+        // 4. Sample account_ids from financial_transaction
+        const r4 = pool.request();
+        const sampleFt = await r4.query(`SELECT DISTINCT TOP 10 account_id FROM financial_transaction ORDER BY account_id`);
+
+        // 5. Check data types
+        const r5 = pool.request();
+        const colInfo = await r5.query(`
+          SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE COLUMN_NAME = 'account_id' AND TABLE_NAME IN ('financial_transaction', 'account', 'account_ownership')
+        `);
+
+        return res.json({
+          customerId,
+          customerAccountCount: customerAccountIds.length,
+          customerAccountIds_sample: customerAccountIds.slice(0, 5),
+          accountTransactionCounts: accountTxCounts,
+          totalTransactionsInTable: totalTx.recordset[0].cnt,
+          sampleAccountIdsInTransactions: sampleFt.recordset.map((r: any) => r.account_id),
+          columnDataTypes: colInfo.recordset,
+          diagnosis: accountTxCounts.every(a => a.transactionCount === 0)
+            ? "MISMATCH: Customer accounts have 0 transactions. The account_id values in financial_transaction likely don't match the account table."
+            : "Some accounts have transactions. The issue may be with specific accounts."
+        });
+      }
+
+      res.json({ error: "Diagnostic only available for SQL Server" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get transactions with flexible filtering
   app.get("/api/transactions", async (req, res) => {
     try {
