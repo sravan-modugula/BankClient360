@@ -104,6 +104,7 @@ export default function TransactionHistory({
   });
 
   const transactions = data?.transactions || [];
+  console.log('TransactionHistory data:', { rawData: data, transactionCount: transactions.length, isLoading, error: error?.message });
 
   // Get transaction icon based on transaction code
   const getTransactionIcon = (code: string) => {
