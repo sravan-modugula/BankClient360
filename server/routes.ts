@@ -2123,11 +2123,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WHERE COLUMN_NAME = 'account_id' AND TABLE_NAME IN ('financial_transaction', 'account', 'account_ownership')
         `);
 
+        // 6. Direct match: find transactions for this customer via subquery (same as TransactionHistory uses)
+        const r6 = pool.request();
+        r6.input('custId2', mssql.default.BigInt, customerId);
+        const directMatch = await r6.query(`
+          SELECT COUNT(*) as cnt FROM financial_transaction ft
+          WHERE ft.account_id IN (
+            SELECT account_id FROM account_ownership WHERE customer_id = @custId2
+          )
+        `);
+
+        // 7. Try matching first customer account_id directly in financial_transaction
+        let firstAccountDirectCheck = null;
+        if (customerAccountIds.length > 0) {
+          const r7 = pool.request();
+          const firstId = customerAccountIds[0];
+          r7.input('firstAcctId', mssql.default.BigInt, firstId);
+          const directResult = await r7.query(`SELECT TOP 3 transaction_id, account_id, amount FROM financial_transaction WHERE account_id = @firstAcctId`);
+          // Also try with raw SQL to rule out parameterization issues
+          const r8 = pool.request();
+          const rawResult = await r8.query(`SELECT TOP 3 transaction_id, account_id, amount FROM financial_transaction WHERE account_id = ${Number(firstId)}`);
+          firstAccountDirectCheck = {
+            accountId: firstId,
+            accountIdType: typeof firstId,
+            parameterizedCount: directResult.recordset.length,
+            rawSqlCount: rawResult.recordset.length,
+            parameterizedResults: directResult.recordset,
+            rawSqlResults: rawResult.recordset
+          };
+        }
+
         return res.json({
           customerId,
           customerAccountCount: customerAccountIds.length,
           customerAccountIds_sample: customerAccountIds.slice(0, 5),
           accountTransactionCounts: accountTxCounts,
+          directSubqueryMatchCount: directMatch.recordset[0].cnt,
+          firstAccountDirectCheck,
           totalTransactionsInTable: totalTx.recordset[0].cnt,
           sampleAccountIdsInTransactions: sampleFt.recordset.map((r: any) => r.account_id),
           columnDataTypes: colInfo.recordset,
