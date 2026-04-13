@@ -404,7 +404,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   </TableRow>
                 ) : (
                   transactions.slice(0, 20).map((tx: any, idx: number) => {
-                    const amount = parseFloat(tx.amount);
+                    const amount = parseFloat(tx.amount) || 0;
                     return (
                       <TableRow key={tx.transactionId || idx} hover>
                         <TableCell>{formatDate(tx.transactionDate)}</TableCell>

@@ -162,7 +162,7 @@ export default function TransactionHistory({
 
   // Calculate totals for quick stats
   const totals = filteredTransactions.reduce((acc: any, trans: Transaction) => {
-    const amount = parseFloat(trans.amount);
+    const amount = parseFloat(trans.amount) || 0;
     if (amount > 0) {
       acc.credits += amount;
     } else {
@@ -279,7 +279,7 @@ export default function TransactionHistory({
             </TableHead>
             <TableBody>
               {paginatedTransactions.map((transaction: Transaction) => {
-                const amount = parseFloat(transaction.amount);
+                const amount = parseFloat(transaction.amount) || 0;
                 const isCredit = amount > 0;
                 
                 return (
@@ -307,7 +307,7 @@ export default function TransactionHistory({
                     <TableCell>
                       <Box>
                         <Typography variant="body2" fontWeight="400">
-                          {transaction.description}
+                          {transaction.description || '—'}
                         </Typography>
                         {transaction.merchantName && (
                           <Typography variant="caption" color="text.secondary" display="block">

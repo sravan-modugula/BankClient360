@@ -331,22 +331,25 @@ export async function getDepositAccountAnalyticsSqlServer(
     });
 
     // Get 12-month trend data with continuous series
+    // Use temp table for large account sets to avoid query plan issues
     const request2 = pool.request();
-    const accountIdList = accountIds.join(',');
+    const tempTableSetup = `
+      CREATE TABLE #deposit_accts (account_id BIGINT PRIMARY KEY);
+      ${accountIds.map((id, i) => `INSERT INTO #deposit_accts VALUES (${Number(id)})`).join('; ')};
+    `;
+    await request2.query(tempTableSetup);
 
     const trendResult = await request2.query(`
       WITH month_series AS (
-        -- Generate 12-month series
         SELECT DATEADD(month, n, DATEADD(month, -11, DATEADD(day, 1-DAY(GETDATE()), GETDATE()))) as month
         FROM (
-          SELECT 0 as n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL 
-          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL 
+          SELECT 0 as n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
+          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
           SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
         ) numbers
       ),
       account_monthly_balances AS (
-        -- Get last transaction per account per month
-        SELECT DISTINCT 
+        SELECT DISTINCT
           ft.account_id,
           a.account_type,
           DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date) as month,
@@ -355,13 +358,13 @@ export async function getDepositAccountAnalyticsSqlServer(
             ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
           ) as ledger_balance_after
         FROM financial_transaction ft
+        INNER JOIN #deposit_accts da ON da.account_id = ft.account_id
         INNER JOIN account a ON a.account_id = ft.account_id
-        WHERE ft.account_id IN (${accountIdList})
-          AND ft.transaction_date >= DATEADD(month, -12, GETDATE())
+        WHERE ft.transaction_date >= DATEADD(month, -12, GETDATE())
+          AND ft.transaction_date IS NOT NULL
       ),
       filled_balances AS (
-        -- Carry forward balances for months with no transactions
-        SELECT 
+        SELECT
           ms.month,
           acc.account_id,
           acc.account_type,
@@ -378,20 +381,19 @@ export async function getDepositAccountAnalyticsSqlServer(
           ) as balance
         FROM month_series ms
         CROSS JOIN (
-          SELECT account_id, account_type, interest_rate
-          FROM account
-          WHERE account_id IN (${accountIdList})
+          SELECT a.account_id, a.account_type, a.interest_rate
+          FROM account a
+          INNER JOIN #deposit_accts da ON da.account_id = a.account_id
         ) acc
-        LEFT JOIN account_monthly_balances amb 
-          ON amb.account_id = acc.account_id 
+        LEFT JOIN account_monthly_balances amb
+          ON amb.account_id = acc.account_id
           AND amb.month = ms.month
       )
-      -- Aggregate by month and account type
-      SELECT 
+      SELECT
         month,
         account_type,
         SUM(COALESCE(balance, 0)) as balance,
-        SUM(COALESCE(balance, 0) * CASE 
+        SUM(COALESCE(balance, 0) * CASE
           WHEN COALESCE(interest_rate, 0) <= 1 THEN COALESCE(interest_rate, 0) * 100
           ELSE COALESCE(interest_rate, 0)
         END) as weighted_balance_sum,
@@ -497,9 +499,8 @@ export async function getDepositAccountAnalyticsSqlServer(
       };
     });
 
-    // Get recent transactions
-    const request3 = pool.request();
-    const transactionsResult = await request3.query(`
+    // Get recent transactions (reuse same connection with temp table)
+    const transactionsResult = await request2.query(`
       SELECT TOP 5
         a.account_type,
         ft.transaction_date,
@@ -509,7 +510,7 @@ export async function getDepositAccountAnalyticsSqlServer(
         ft.ledger_balance_after
       FROM financial_transaction ft
       INNER JOIN account a ON a.account_id = ft.account_id
-      WHERE ft.account_id IN (${accountIdList})
+      INNER JOIN #deposit_accts da ON da.account_id = ft.account_id
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
     `);
 

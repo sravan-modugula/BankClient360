@@ -1500,11 +1500,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         recentTransactions = transactions.map(t => ({
           accountType: t.accountType,
-          date: t.transactionDate.toISOString(),
+          date: t.transactionDate ? t.transactionDate.toISOString() : new Date().toISOString(),
           type: t.transactionCode || 'Transaction',
           description: t.description || 'Transaction',
-          amount: Number(t.amount),
-          balance: Number(t.balance)
+          amount: Number(t.amount) || 0,
+          balance: Number(t.balance) || 0
         }));
       }
 

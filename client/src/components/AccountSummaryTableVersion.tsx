@@ -137,8 +137,8 @@ export default function AccountSummaryTableVersion({
   // Calculate totals
   const getTotalBalance = () => {
     return accounts.reduce((total, account) => {
-      const balance = parseFloat(account.balance);
-      if (['mortgage', 'heloc', 'credit_card'].includes(account.accountType)) {
+      const balance = parseFloat(account.balance) || 0;
+      if (['mortgage', 'heloc', 'credit_card'].includes(account.accountType?.toLowerCase())) {
         return total;
       }
       return total + balance;

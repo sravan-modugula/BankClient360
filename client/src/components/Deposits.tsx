@@ -489,10 +489,10 @@ export default function Deposits({ customerId }: DepositsProps) {
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Box>
                               <Typography variant="body2" fontWeight="400">
-                                {transaction.accountType.charAt(0).toUpperCase() + transaction.accountType.slice(1)}
+                                {transaction.accountType ? transaction.accountType.charAt(0).toUpperCase() + transaction.accountType.slice(1) : '—'}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
-                                {transaction.description}
+                                {transaction.description || '—'}
                               </Typography>
                             </Box>
                             <Box sx={{ textAlign: 'right' }}>
@@ -501,7 +501,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                                 fontWeight="400"
                                 color="primary.main"
                               >
-                                {transaction.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(transaction.amount))}
+                                {(transaction.amount || 0) >= 0 ? '+' : ''}{formatCurrency(Math.abs(transaction.amount || 0))}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
                                 {formatDate(transaction.date)}

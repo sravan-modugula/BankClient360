@@ -147,7 +147,7 @@ export default function AccountSummary({ accounts, onViewAccount, selectedAccoun
 
   const getTotalBalance = () => {
     return accounts.reduce((total, account) => {
-      const balance = parseFloat(account.balance);
+      const balance = parseFloat(account.balance) || 0;
       // For debt accounts, don't add to total balance (mortgage, credit cards, HELOC)
       if (isDebtAccount(account.accountType)) {
         return total;
