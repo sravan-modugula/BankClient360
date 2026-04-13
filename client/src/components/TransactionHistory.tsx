@@ -216,9 +216,12 @@ export default function TransactionHistory({
               Transaction History
             </Typography>
             {selectedAccountId !== null && selectedAccountLabel !== 'All Accounts' && (
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 5, mt: 0.5 }}>
-                Showing transactions for: <Chip label={selectedAccountLabel} size="small" color="primary" sx={{ ml: 1 }} />
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', ml: 5, mt: 0.5 }}>
+                <Typography variant="body2" color="text.secondary" component="span">
+                  Showing transactions for:
+                </Typography>
+                <Chip label={selectedAccountLabel} size="small" color="primary" sx={{ ml: 1 }} />
+              </Box>
             )}
           </Box>
         </Box>
