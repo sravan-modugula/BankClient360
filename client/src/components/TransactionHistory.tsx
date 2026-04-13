@@ -147,7 +147,7 @@ export default function TransactionHistory({
 
   // Filter transactions based on search
   const filteredTransactions = transactions.filter((transaction: Transaction) =>
-    transaction.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (transaction.description && transaction.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (transaction.merchantName && transaction.merchantName.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (transaction.referenceNumber && transaction.referenceNumber.toLowerCase().includes(searchQuery.toLowerCase()))
   );
