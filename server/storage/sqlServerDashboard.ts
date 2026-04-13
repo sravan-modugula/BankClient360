@@ -515,11 +515,11 @@ export async function getDepositAccountAnalyticsSqlServer(
 
     const recentTransactions = transactionsResult.recordset.map(t => ({
       accountType: t.account_type,
-      date: t.transaction_date.toISOString(),
+      date: t.transaction_date ? new Date(t.transaction_date).toISOString() : new Date().toISOString(),
       type: t.transaction_code || 'Transaction',
       description: t.description || 'Transaction',
-      amount: parseFloat(t.amount),
-      balance: parseFloat(t.ledger_balance_after)
+      amount: parseFloat(t.amount) || 0,
+      balance: parseFloat(t.ledger_balance_after) || 0
     }));
 
     return {
