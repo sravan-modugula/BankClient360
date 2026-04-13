@@ -83,9 +83,16 @@ export async function getTransactionsSqlServer(
       FETCH NEXT @limit ROWS ONLY
     `);
 
+    fileLogger.info({
+      accountId: params.accountId,
+      customerId: params.customerId,
+      resultCount: result.recordset.length,
+      whereClause
+    }, 'Transaction query completed');
+
     return result.recordset.map(mapTransactionFromDb);
   } catch (error) {
-    fileLogger.error({ err: error }, 'Get transactions error');
+    fileLogger.error({ err: error, accountId: params.accountId, customerId: params.customerId }, 'Get transactions error');
     throw error;
   }
 }
