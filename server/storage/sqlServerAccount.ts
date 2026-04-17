@@ -107,9 +107,10 @@ export async function getAccountOwnersSqlServer(
     request.input('accountId', sql.BigInt, accountId);
 
     const result = await request.query(`
-      SELECT 
+      SELECT
         ao.*,
-        c.full_name as customer_name
+        c.full_name as customer_name,
+        c.jack_henry_cif_number as cif_number
       FROM account_ownership ao
       INNER JOIN customer c ON c.customer_id = ao.customer_id
       WHERE ao.account_id = @accountId
@@ -118,7 +119,8 @@ export async function getAccountOwnersSqlServer(
 
     return result.recordset.map(row => ({
       ...mapAccountOwnershipFromDb(row),
-      customerName: row.customer_name
+      customerName: row.customer_name,
+      cifNumber: row.cif_number || null
     }));
   } catch (error) {
     fileLogger.error({ err: error }, 'Get account owners error');

@@ -1168,11 +1168,21 @@ export class DatabaseStorage implements IBankingStorage {
 
     // PostgreSQL implementation
     const result = await db
-      .select()
+      .select({
+        ownershipId: accountOwnership.ownershipId,
+        accountId: accountOwnership.accountId,
+        customerId: accountOwnership.customerId,
+        ownershipType: accountOwnership.ownershipType,
+        ownershipPercentage: accountOwnership.ownershipPercentage,
+        startDate: accountOwnership.startDate,
+        endDate: accountOwnership.endDate,
+        cifNumber: customer.jackHenryCifNumber
+      })
       .from(accountOwnership)
+      .innerJoin(customer, eq(customer.customerId, accountOwnership.customerId))
       .where(eq(accountOwnership.accountId, accountId));
 
-    return result;
+    return result as any;
   }
 
   async addAccountOwner(ownershipData: InsertAccountOwnership): Promise<AccountOwnership> {

@@ -144,7 +144,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   {getProductName(account)}
                 </Typography>
                 <Typography variant="body1" sx={{ opacity: 0.9 }}>
-                  Account: ****{account.accountNumber?.slice(-4)} | Product: {account.productCode || '—'} | JH ID: {account.jackHenryAccountId || '—'}
+                  Account: ****{account.accountNumber?.slice(-4)} | Product: {getProductName(account)} | CIF: {owners[0]?.cifNumber || '—'}
                 </Typography>
               </Box>
             </Box>
@@ -228,8 +228,8 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   <Typography variant="body1">N/A</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
-                  <Typography variant="body2" color="text.secondary">Product Code</Typography>
-                  <Typography variant="body1">{account.productCode || 'N/A'}</Typography>
+                  <Typography variant="body2" color="text.secondary">Product</Typography>
+                  <Typography variant="body1">{getProductName(account)}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Product Statement Desc</Typography>
