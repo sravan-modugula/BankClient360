@@ -1803,7 +1803,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recentContacts: contacts.map(contact => ({
           contactType: contact.contactType,
           occurredAt: DateFormatter.formatDateTimeWithTZ(contact.occurredAt),
-          employeeName: contact.employeeName
+          employeeName: contact.employeeName,
+          contactDescription: contact.contactDescription || undefined
         }))
       };
 

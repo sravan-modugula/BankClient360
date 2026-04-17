@@ -300,6 +300,7 @@ export interface IBankingStorage {
     contactType: string;
     occurredAt: Date;
     employeeName: string;
+    contactDescription: string | null;
   }>>;
 
   // Notes operations
@@ -3073,6 +3074,7 @@ export class DatabaseStorage implements IBankingStorage {
     contactType: string;
     occurredAt: Date;
     employeeName: string;
+    contactDescription: string | null;
   }>> {
     // SQL Server implementation
     if (isSQLServer()) {
@@ -3087,7 +3089,8 @@ export class DatabaseStorage implements IBankingStorage {
       .select({
         contactType: contactHistory.contactType,
         occurredAt: contactHistory.occurredAt,
-        employeeName: contactHistory.employeeName
+        employeeName: contactHistory.employeeName,
+        summary: contactHistory.summary
       })
       .from(contactHistory)
       .where(eq(contactHistory.customerId, customerId))
@@ -3097,7 +3100,8 @@ export class DatabaseStorage implements IBankingStorage {
     return result.map(row => ({
       contactType: row.contactType,
       occurredAt: row.occurredAt,
-      employeeName: row.employeeName || 'Unknown Employee'
+      employeeName: row.employeeName || 'Unknown Employee',
+      contactDescription: row.summary || null
     }));
   }
 

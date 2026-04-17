@@ -222,12 +222,12 @@ export default function RecentContactHistoryVariantC({ customerId }: RecentConta
                             {formatRelativeDate(contact.occurredAt)}
                           </Typography>
                         </Box>
-                        <Typography 
-                          variant="caption" 
+                        <Typography
+                          variant="caption"
                           color="text.secondary"
                           data-testid={`text-contact-type-${index}`}
                         >
-                          {getContactTypeLabel(contact.contactType)}
+                          {contact.contactDescription || getContactTypeLabel(contact.contactType)}
                         </Typography>
                       </Box>
                     </Box>

@@ -535,6 +535,7 @@ export async function getContactHistorySqlServer(
   contactType: string;
   occurredAt: Date;
   employeeName: string;
+  contactDescription: string | null;
 }>> {
   try {
     const request = pool.request();
@@ -545,7 +546,8 @@ export async function getContactHistorySqlServer(
       SELECT TOP (@limit)
         contact_type,
         occurred_at,
-        employee_name
+        employee_name,
+        contact_desc
       FROM contact_history
       WHERE customer_id = @customerId
       ORDER BY occurred_at DESC
@@ -554,7 +556,8 @@ export async function getContactHistorySqlServer(
     return result.recordset.map(row => ({
       contactType: row.contact_type,
       occurredAt: row.occurred_at,
-      employeeName: row.employee_name || 'Unknown Employee'
+      employeeName: row.employee_name || 'Unknown Employee',
+      contactDescription: row.contact_desc || null
     }));
   } catch (error) {
     fileLogger.error({ err: error }, 'Get contact history error');
