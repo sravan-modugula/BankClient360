@@ -411,28 +411,18 @@ export async function getAccountDebitCardsSqlServer(
     request.input('accountId', sql.BigInt, accountId);
 
     const result = await request.query(`
-      SELECT 
+      SELECT
         dc.card_id,
         dc.account_id,
         dc.customer_id,
         dc.card_type,
         dc.card_status,
-        dc.last_four_digits,
+        dc.card_last_four,
         dc.card_brand,
         dc.expiry_month,
         dc.expiry_year,
-        dc.cardholder_name,
-        dc.jack_henry_card_id,
-        dc.silverlake_card_token,
-        dlp.profile_id,
-        dlp.profile_name,
-        dlp.profile_description,
-        dlp.daily_purchase_limit,
-        dlp.daily_atm_limit,
-        dlp.single_transaction_limit,
-        dlp.monthly_limit
+        dc.cardholder_name
       FROM debit_card dc
-      LEFT JOIN debit_card_limit_profile dlp ON dc.limit_profile_id = dlp.profile_id
       WHERE dc.account_id = @accountId
       ORDER BY dc.card_id DESC
     `);
@@ -443,22 +433,14 @@ export async function getAccountDebitCardsSqlServer(
       customerId: row.customer_id,
       cardType: row.card_type,
       cardStatus: row.card_status,
-      lastFourDigits: row.last_four_digits,
+      lastFourDigits: row.card_last_four,
       cardBrand: row.card_brand,
       expiryMonth: row.expiry_month,
       expiryYear: row.expiry_year,
       cardholderName: row.cardholder_name,
-      jackHenryCardId: row.jack_henry_card_id,
-      silverlakeCardToken: row.silverlake_card_token,
-      limitProfile: row.profile_id ? {
-        profileId: row.profile_id,
-        profileName: row.profile_name,
-        profileDescription: row.profile_description,
-        dailyPurchaseLimit: row.daily_purchase_limit,
-        dailyAtmLimit: row.daily_atm_limit,
-        singleTransactionLimit: row.single_transaction_limit,
-        monthlyLimit: row.monthly_limit
-      } : null
+      jackHenryCardId: row.jack_henry_card_id ?? null,
+      silverlakeCardToken: row.silverlake_card_token ?? null,
+      limitProfile: null
     }));
   } catch (error) {
     fileLogger.error({ err: error }, 'Get account debit cards error');
