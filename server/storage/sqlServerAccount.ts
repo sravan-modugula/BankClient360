@@ -318,9 +318,9 @@ function mapAccountFromDb(row: any): Account {
   return {
     accountId: row.account_id,
     accountNumber: row.account_number,
-    accountType: row.account_type,
+    accountType: row.account_type?.toLowerCase(),
     accountSubtype: row.account_subtype,
-    accountStatus: row.account_status,
+    accountStatus: row.account_status?.toLowerCase(),
     balance: row.balance,
     availableBalance: row.available_balance,
     currency: row.currency,
