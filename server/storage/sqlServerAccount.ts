@@ -412,28 +412,28 @@ export async function getAccountDebitCardsSqlServer(
 
     const result = await request.query(`
       SELECT
-        dc.card_id,
         dc.account_id,
         dc.customer_id,
         dc.card_type,
         dc.card_status,
-        dc.card_last_four,
+        dc.last_four_digits,
         dc.card_brand,
         dc.expiry_month,
         dc.expiry_year,
-        dc.cardholder_name
+        dc.cardholder_name,
+        dc.created_at
       FROM debit_card dc
       WHERE dc.account_id = @accountId
-      ORDER BY dc.card_id DESC
+      ORDER BY dc.created_at DESC
     `);
 
-    return result.recordset.map(row => ({
-      cardId: row.card_id,
+    return result.recordset.map((row, index) => ({
+      cardId: index + 1,
       accountId: row.account_id,
       customerId: row.customer_id,
       cardType: row.card_type,
       cardStatus: row.card_status,
-      lastFourDigits: row.card_last_four,
+      lastFourDigits: row.last_four_digits,
       cardBrand: row.card_brand,
       expiryMonth: row.expiry_month,
       expiryYear: row.expiry_year,
