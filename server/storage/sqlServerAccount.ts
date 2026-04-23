@@ -346,8 +346,6 @@ function mapAccountFromDb(row: any): Account & { branchName?: string; branchCode
     updatedAt: row.updated_at,
     ...(row.branch_name && { branchName: row.branch_name }),
     ...(row.branch_code && { branchCode: row.branch_code }),
-    ...(row.ytd_interest != null && { ytdInterest: row.ytd_interest }),
-    ...(row.interest_ytd != null && { ytdInterest: row.interest_ytd }),
   };
 }
 

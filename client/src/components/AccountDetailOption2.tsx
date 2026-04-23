@@ -286,10 +286,6 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   <Typography variant="body1">{account.averageBalance ? formatCurrency(account.averageBalance) : 'N/A'}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
-                  <Typography variant="body2" color="text.secondary">YTD Interest</Typography>
-                  <Typography variant="body1">{account.ytdInterest != null ? formatCurrency(account.ytdInterest) : 'N/A'}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Product</Typography>
                   <Typography variant="body1">{getProductName(account)}</Typography>
                 </Grid>
