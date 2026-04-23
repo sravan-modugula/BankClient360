@@ -102,9 +102,6 @@ export default function ContactInformation({ contacts }: ContactInformationProps
     if (contact.type === 'phone') {
       return formatPhoneNumber(contact.value);
     }
-    if (contact.type === 'address' && contact.value.length > 35) {
-      return contact.value.substring(0, 32) + '...';
-    }
     return contact.value;
   };
 
