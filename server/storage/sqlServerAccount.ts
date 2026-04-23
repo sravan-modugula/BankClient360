@@ -426,8 +426,16 @@ export async function getAccountDebitCardsSqlServer(
         dc.expiry_month,
         dc.expiry_year,
         dc.cardholder_name,
-        dc.created_at
+        dc.created_at,
+        dlp.profile_id,
+        dlp.profile_name,
+        dlp.profile_description,
+        dlp.daily_purchase_limit,
+        dlp.daily_atm_limit,
+        dlp.single_transaction_limit,
+        dlp.monthly_limit
       FROM debit_card dc
+      LEFT JOIN debit_card_limit_profile dlp ON dc.limit_profile_id = dlp.profile_id
       WHERE dc.account_id = @accountId
       ORDER BY dc.created_at DESC
     `);
@@ -445,7 +453,15 @@ export async function getAccountDebitCardsSqlServer(
       cardholderName: row.cardholder_name,
       jackHenryCardId: row.jack_henry_card_id ?? null,
       silverlakeCardToken: row.silverlake_card_token ?? null,
-      limitProfile: null
+      limitProfile: row.profile_id ? {
+        profileId: row.profile_id,
+        profileName: row.profile_name,
+        profileDescription: row.profile_description,
+        dailyPurchaseLimit: row.daily_purchase_limit,
+        dailyAtmLimit: row.daily_atm_limit,
+        singleTransactionLimit: row.single_transaction_limit,
+        monthlyLimit: row.monthly_limit
+      } : null
     }));
   } catch (error) {
     fileLogger.error({ err: error }, 'Get account debit cards error');
