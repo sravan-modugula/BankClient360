@@ -295,7 +295,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Product Statement Desc</Typography>
-                  <Typography variant="body1">{account.statementCodeDesc || 'N/A'}</Typography>
+                  <Typography variant="body1">{account.accountSubtype || 'N/A'}</Typography>
                 </Grid>
               </Grid>
             </CardContent>
