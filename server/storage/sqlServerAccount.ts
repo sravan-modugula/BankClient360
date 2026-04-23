@@ -28,7 +28,10 @@ export async function getAccountSqlServer(
     request.input('accountId', sql.BigInt, accountId);
 
     const result = await request.query(`
-      SELECT * FROM account WHERE account_id = @accountId
+      SELECT a.*, b.branch_name, b.branch_code
+      FROM account a
+      LEFT JOIN branch b ON b.branch_id = a.branch_id
+      WHERE a.account_id = @accountId
     `);
 
     if (result.recordset.length === 0) {
@@ -314,7 +317,7 @@ export async function getRecentTransactionsSqlServer(
  * Map database row to Account object
  * Matches shared/schema.ts Account type
  */
-function mapAccountFromDb(row: any): Account {
+function mapAccountFromDb(row: any): Account & { branchName?: string; branchCode?: string } {
   return {
     accountId: row.account_id,
     accountNumber: row.account_number,
@@ -340,7 +343,11 @@ function mapAccountFromDb(row: any): Account {
     averageBalance: row.average_balance,
     lastMaintenanceDate: row.last_maintenance_date,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    ...(row.branch_name && { branchName: row.branch_name }),
+    ...(row.branch_code && { branchCode: row.branch_code }),
+    ...(row.ytd_interest != null && { ytdInterest: row.ytd_interest }),
+    ...(row.interest_ytd != null && { ytdInterest: row.interest_ytd }),
   };
 }
 

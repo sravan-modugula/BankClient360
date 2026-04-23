@@ -210,7 +210,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Branch</Typography>
-                  <Typography variant="body1">{account.branchId ? `Branch #${account.branchId}` : 'N/A'}</Typography>
+                  <Typography variant="body1">{account.branchName || (account.branchId ? `Branch #${account.branchId}` : 'N/A')}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Statement Cycle</Typography>
@@ -226,7 +226,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">YTD Interest</Typography>
-                  <Typography variant="body1">N/A</Typography>
+                  <Typography variant="body1">{account.ytdInterest != null ? formatCurrency(account.ytdInterest) : 'N/A'}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Product</Typography>
