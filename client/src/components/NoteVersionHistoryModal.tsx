@@ -36,6 +36,7 @@ interface NoteVersion {
   retentionYears?: number | null;
   isPinned?: boolean | null;
   authorEmployeeId?: number | null;
+  authorEmployeeName?: string | null;
   createdAt: string;
 }
 
@@ -131,6 +132,7 @@ export default function NoteVersionHistoryModal({ open, onClose, noteId }: NoteV
                 legalHold = false,
                 isPinned = false,
                 authorEmployeeId = null,
+                authorEmployeeName = null,
                 createdAt = new Date().toISOString()
               } = version || {};
 
@@ -141,7 +143,7 @@ export default function NoteVersionHistoryModal({ open, onClose, noteId }: NoteV
                       {createdAt ? formatDateTime(createdAt) : 'Unknown date'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {authorEmployeeId ? `Employee #${authorEmployeeId}` : 'Unknown author'}
+                      {authorEmployeeName || (authorEmployeeId ? `Employee #${authorEmployeeId}` : 'Unknown author')}
                     </Typography>
                   </TimelineOppositeContent>
 

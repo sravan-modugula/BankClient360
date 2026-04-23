@@ -95,6 +95,23 @@ export default function NoteEditorModal({
 
   const categories: NoteCategory[] = (categoriesData as any)?.categories || [];
 
+  // Reset form when opening for a new note
+  useEffect(() => {
+    if (open && !isEditMode) {
+      reset({
+        title: '',
+        body: '',
+        categoryId: null,
+        importance: 'medium',
+        visibility: 'internal',
+        legalHold: false,
+        retentionYears: null,
+        isPinned: false
+      });
+      createMutation.reset();
+    }
+  }, [open, isEditMode]);
+
   // Load existing note data into form with null safety
   useEffect(() => {
     if (existingNote && isEditMode) {
