@@ -14,22 +14,25 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   Paper,
   Divider,
   Grid,
   useTheme,
-  Link
+  Link,
+  Pagination,
+  TextField,
+  InputAdornment
 } from '@mui/material';
 import {
   ArrowBack,
   Home,
   CreditCard,
-  TrendingUp,
-  TrendingDown,
   Print,
   Download,
   CheckCircle,
-  Info
+  Info,
+  Search
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import DebitCardDetailModal from './DebitCardDetailModal';
@@ -50,6 +53,11 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<DebitCardWithLimitProfile | null>(null);
   const [showAllCards, setShowAllCards] = useState(false);
+  const [txSortField, setTxSortField] = useState<'transactionDate' | 'amount' | 'description' | 'transactionType'>('transactionDate');
+  const [txSortOrder, setTxSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [txPage, setTxPage] = useState(1);
+  const [txSearch, setTxSearch] = useState('');
+  const txPerPage = 10;
 
   // Fetch real account data
   const { data: account, isLoading: accountLoading } = useQuery<any>({
@@ -405,63 +413,156 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h6">Recent Transactions</Typography>
-            <Button variant="text" size="small">View All</Button>
+            <TextField
+              size="small"
+              placeholder="Search transactions..."
+              value={txSearch}
+              onChange={(e) => { setTxSearch(e.target.value); setTxPage(1); }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search color="action" fontSize="small" />
+                  </InputAdornment>
+                )
+              }}
+              sx={{ width: 250 }}
+            />
           </Box>
           <Divider sx={{ mb: 2 }} />
-          <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 500 }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 500 }}>Description</TableCell>
-                  <TableCell sx={{ fontWeight: 500 }}>Type</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 500 }}>Amount</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {transactions.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
-                      <Typography variant="body2" color="text.secondary">No transactions found</Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  transactions.slice(0, 20).map((tx: any, idx: number) => {
-                    const amount = parseFloat(tx.amount) || 0;
-                    return (
-                      <TableRow key={tx.transactionId || idx} hover>
-                        <TableCell>{formatDate(tx.transactionDate)}</TableCell>
-                        <TableCell>{tx.description || tx.merchantName || '—'}</TableCell>
-                        <TableCell>
-                          {tx.transactionType ? (
-                            <Chip label={tx.transactionType} size="small" variant="outlined" />
-                          ) : '—'}
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: amount >= 0 ? 'success.main' : 'text.primary',
-                              fontWeight: amount >= 0 ? 600 : 400,
-                              fontFamily: 'Roboto Mono',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'flex-end',
-                              gap: 0.5
-                            }}
+          {(() => {
+            const filteredTx = transactions.filter((tx: any) =>
+              !txSearch ||
+              (tx.description || '').toLowerCase().includes(txSearch.toLowerCase()) ||
+              (tx.merchantName || '').toLowerCase().includes(txSearch.toLowerCase()) ||
+              (tx.transactionType || '').toLowerCase().includes(txSearch.toLowerCase())
+            );
+            const sortedTx = [...filteredTx].sort((a: any, b: any) => {
+              let cmp = 0;
+              if (txSortField === 'transactionDate') {
+                cmp = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
+              } else if (txSortField === 'amount') {
+                cmp = (parseFloat(a.amount) || 0) - (parseFloat(b.amount) || 0);
+              } else if (txSortField === 'description') {
+                cmp = (a.description || '').localeCompare(b.description || '');
+              } else if (txSortField === 'transactionType') {
+                cmp = (a.transactionType || '').localeCompare(b.transactionType || '');
+              }
+              return txSortOrder === 'asc' ? cmp : -cmp;
+            });
+            const txTotalPages = Math.ceil(sortedTx.length / txPerPage);
+            const paginatedTx = sortedTx.slice((txPage - 1) * txPerPage, txPage * txPerPage);
+
+            const handleSort = (field: typeof txSortField) => {
+              if (txSortField === field) {
+                setTxSortOrder(txSortOrder === 'asc' ? 'desc' : 'asc');
+              } else {
+                setTxSortField(field);
+                setTxSortOrder(field === 'transactionDate' ? 'desc' : 'asc');
+              }
+              setTxPage(1);
+            };
+
+            return (
+              <>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 500 }}>
+                          <TableSortLabel
+                            active={txSortField === 'transactionDate'}
+                            direction={txSortField === 'transactionDate' ? txSortOrder : 'desc'}
+                            onClick={() => handleSort('transactionDate')}
                           >
-                            {amount >= 0 && <TrendingUp fontSize="small" />}
-                            {amount < 0 && <TrendingDown fontSize="small" color="action" />}
-                            {formatCurrency(Math.abs(amount))}
-                          </Typography>
+                            Date
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 500 }}>
+                          <TableSortLabel
+                            active={txSortField === 'description'}
+                            direction={txSortField === 'description' ? txSortOrder : 'asc'}
+                            onClick={() => handleSort('description')}
+                          >
+                            Description
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 500 }}>
+                          <TableSortLabel
+                            active={txSortField === 'transactionType'}
+                            direction={txSortField === 'transactionType' ? txSortOrder : 'asc'}
+                            onClick={() => handleSort('transactionType')}
+                          >
+                            Type
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 500 }}>
+                          <TableSortLabel
+                            active={txSortField === 'amount'}
+                            direction={txSortField === 'amount' ? txSortOrder : 'desc'}
+                            onClick={() => handleSort('amount')}
+                          >
+                            Amount
+                          </TableSortLabel>
                         </TableCell>
                       </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      {paginatedTx.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              {txSearch ? 'No matching transactions' : 'No transactions found'}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        paginatedTx.map((tx: any, idx: number) => {
+                          const amount = parseFloat(tx.amount) || 0;
+                          return (
+                            <TableRow key={tx.transactionId || idx} hover>
+                              <TableCell>{formatDate(tx.transactionDate)}</TableCell>
+                              <TableCell>{tx.description || tx.merchantName || '—'}</TableCell>
+                              <TableCell>
+                                {tx.transactionType ? (
+                                  <Chip label={tx.transactionType} size="small" variant="outlined" />
+                                ) : '—'}
+                              </TableCell>
+                              <TableCell align="right">
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    color: amount > 0 ? 'success.main' : amount < 0 ? 'error.main' : 'text.primary',
+                                    fontWeight: 500,
+                                    fontFamily: 'Roboto Mono'
+                                  }}
+                                >
+                                  {amount > 0 ? '+' : amount < 0 ? '-' : ''}{formatCurrency(Math.abs(amount))}
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Showing {paginatedTx.length} of {filteredTx.length} transactions
+                  </Typography>
+                  {txTotalPages > 1 && (
+                    <Pagination
+                      count={txTotalPages}
+                      page={txPage}
+                      onChange={(_, page) => setTxPage(page)}
+                      size="small"
+                      color="primary"
+                    />
+                  )}
+                </Box>
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 
