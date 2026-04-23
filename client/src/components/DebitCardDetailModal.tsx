@@ -19,7 +19,7 @@ import {
   CreditCard as CreditCardIcon
 } from '@mui/icons-material';
 import {
-  CARD_STATUS_COLORS,
+  getCardStatusConfig,
   calculateUsagePercentage,
   getProgressBarColor,
   formatCardNumber,
@@ -47,8 +47,7 @@ export default function DebitCardDetailModal({
 
   const cardBrand = getCardBrandConfig(card.cardBrand);
   const cardType = getCardTypeConfig(card.cardType);
-  const statusConfig = CARD_STATUS_COLORS[card.cardStatus as keyof typeof CARD_STATUS_COLORS] 
-    || CARD_STATUS_COLORS.active;
+  const statusConfig = getCardStatusConfig(card.cardStatus);
 
   // Render limit section without usage data (Phase 3 feature)
   const renderLimitSection = (

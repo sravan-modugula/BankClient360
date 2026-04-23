@@ -28,6 +28,18 @@ export const CARD_STATUS_COLORS = {
     border: '#f44336',   // Error red
     chip: 'error' as const
   },
+  'hot card': {
+    bg: '#ffebee',      // Light red
+    text: '#c62828',    // Dark red
+    border: '#f44336',   // Error red
+    chip: 'error' as const
+  },
+  'closed card': {
+    bg: '#f5f5f5',      // Light gray
+    text: '#616161',    // Gray
+    border: '#9e9e9e',   // Gray
+    chip: 'default' as const
+  },
   expired: {
     bg: '#f5f5f5',      // Light gray
     text: '#616161',    // Gray
@@ -35,6 +47,21 @@ export const CARD_STATUS_COLORS = {
     chip: 'default' as const
   }
 } as const;
+
+/**
+ * Get card status config with case-insensitive lookup and safe fallback
+ */
+export function getCardStatusConfig(status: string) {
+  const key = status.toLowerCase() as keyof typeof CARD_STATUS_COLORS;
+  return CARD_STATUS_COLORS[key] || CARD_STATUS_COLORS.expired;
+}
+
+/**
+ * Check if a card status is considered active
+ */
+export function isCardActive(status: string): boolean {
+  return status.toLowerCase() === 'active';
+}
 
 // Limit Usage Colors - Green to Red Gradient
 export const LIMIT_USAGE_COLORS = {

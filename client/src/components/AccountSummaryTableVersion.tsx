@@ -42,10 +42,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import DebitCardDetailModal from './DebitCardDetailModal';
 import {
-  CARD_STATUS_COLORS,
   formatCardNumber,
   getCardStatusLabel,
-  getCardBrandConfig
+  getCardBrandConfig,
+  getCardStatusConfig,
+  isCardActive
 } from '@/lib/debitCardConstants';
 import type { DebitCardWithLimitProfile } from '@shared/schema';
 
@@ -464,6 +465,7 @@ function ExpandedAccountDetails({
   });
 
   const debitCards = cardsData?.cards || [];
+  const [showAllCards, setShowAllCards] = useState(false);
 
   // Fetch SIC codes
   const { data: sicCodesData } = useQuery<{
@@ -583,42 +585,60 @@ function ExpandedAccountDetails({
       {renderTypeSpecificDetails()}
 
       {/* Debit Cards */}
-      {isCheckingAccount && debitCards.length > 0 && (
-        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-          <Typography variant="body2" color="primary.main" fontWeight="600" sx={{ mb: 1 }}>
-            Debit Cards ({debitCards.length})
-          </Typography>
-          {debitCards.map((card) => {
-            const cardBrand = getCardBrandConfig(card.cardBrand);
-            const statusConfig = CARD_STATUS_COLORS[card.cardStatus as keyof typeof CARD_STATUS_COLORS] || CARD_STATUS_COLORS.active;
-
-            return (
-              <Box key={card.cardId} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-                <Typography variant="body2" sx={{ color: cardBrand.color, fontWeight: 500 }}>
-                  {cardBrand.name}
-                </Typography>
-                <Typography variant="body2" fontFamily="Roboto Mono">
-                  {formatCardNumber(card.lastFourDigits)}
-                </Typography>
-                <Chip
-                  label={getCardStatusLabel(card.cardStatus)}
-                  size="small"
-                  color={statusConfig.chip}
-                  sx={{ height: 20 }}
-                />
+      {isCheckingAccount && debitCards.length > 0 && (() => {
+        const activeCards = debitCards.filter(c => isCardActive(c.cardStatus));
+        const displayCards = showAllCards ? debitCards : activeCards;
+        const activeCount = activeCards.length;
+        const totalCount = debitCards.length;
+        return (
+          <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="body2" color="primary.main" fontWeight="600">
+                Debit Cards ({showAllCards ? totalCount : activeCount}{!showAllCards && totalCount > activeCount ? ` of ${totalCount}` : ''})
+              </Typography>
+              {totalCount > activeCount && (
                 <Link
                   component="button"
                   variant="body2"
-                  onClick={() => onOpenCardModal(card, account)}
-                  sx={{ ml: 'auto' }}
+                  onClick={() => setShowAllCards(!showAllCards)}
+                  sx={{ textDecoration: 'none' }}
                 >
-                  View Limits →
+                  {showAllCards ? 'Active Only' : 'Show All'}
                 </Link>
-              </Box>
-            );
-          })}
-        </Box>
-      )}
+              )}
+            </Box>
+            {displayCards.map((card) => {
+              const cardBrand = getCardBrandConfig(card.cardBrand);
+              const statusConfig = getCardStatusConfig(card.cardStatus);
+
+              return (
+                <Box key={card.cardId} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                  <Typography variant="body2" sx={{ color: cardBrand.color, fontWeight: 500 }}>
+                    {cardBrand.name}
+                  </Typography>
+                  <Typography variant="body2" fontFamily="Roboto Mono">
+                    {formatCardNumber(card.lastFourDigits)}
+                  </Typography>
+                  <Chip
+                    label={getCardStatusLabel(card.cardStatus)}
+                    size="small"
+                    color={statusConfig.chip}
+                    sx={{ height: 20 }}
+                  />
+                  <Link
+                    component="button"
+                    variant="body2"
+                    onClick={() => onOpenCardModal(card, account)}
+                    sx={{ ml: 'auto' }}
+                  >
+                    View Limits →
+                  </Link>
+                </Box>
+              );
+            })}
+          </Box>
+        );
+      })()}
 
       {/* SIC Codes */}
       {isCheckingAccount && sicCodes.length > 0 && (

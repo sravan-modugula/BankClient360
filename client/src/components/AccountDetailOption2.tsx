@@ -34,7 +34,7 @@ import {
 import { useDateFormatter } from '@/lib/dateFormatters';
 import DebitCardDetailModal from './DebitCardDetailModal';
 import AccountBalanceTrends from './AccountBalanceTrends';
-import { CARD_STATUS_COLORS, getCardStatusLabel, getCardBrandConfig, formatCardNumber } from '@/lib/debitCardConstants';
+import { getCardStatusConfig, getCardStatusLabel, getCardBrandConfig, formatCardNumber, isCardActive } from '@/lib/debitCardConstants';
 import type { DebitCardWithLimitProfile } from '@shared/schema';
 
 interface AccountDetailOption2Props {
@@ -49,6 +49,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
   const { formatCurrency, formatDate, formatPercentage } = useDateFormatter();
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<DebitCardWithLimitProfile | null>(null);
+  const [showAllCards, setShowAllCards] = useState(false);
 
   // Fetch real account data
   const { data: account, isLoading: accountLoading } = useQuery<any>({
@@ -274,66 +275,88 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <Grid size={{ xs: 12, md: 6 }}>
           <Card elevation={2} sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CreditCard fontSize="small" color="primary" />
-                Debit Cards ({debitCards.length})
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              {debitCards.length > 0 ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {debitCards.map((card: any) => {
-                    const brandConfig = getCardBrandConfig(card.cardBrand);
-                    const statusConfig = CARD_STATUS_COLORS[card.cardStatus as keyof typeof CARD_STATUS_COLORS] || CARD_STATUS_COLORS.active;
-                    return (
-                      <Box key={card.cardId}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                          <Typography
-                            variant="body2"
-                            component="span"
-                            fontWeight="400"
-                            sx={{ color: brandConfig.color }}
-                          >
-                            {brandConfig.name}
-                          </Typography>
-                          <Typography variant="body2" component="span" fontFamily="Roboto Mono">
-                            {formatCardNumber(card.lastFourDigits)}
-                          </Typography>
-                          <Chip
-                            label={getCardStatusLabel(card.cardStatus)}
-                            size="small"
-                            color={statusConfig.chip}
-                            sx={{ height: 20 }}
-                          />
-                          {card.limitProfile?.profileName && (
-                            <Chip
-                              label={card.limitProfile.profileName}
-                              size="small"
-                              variant="outlined"
-                              sx={{ height: 20 }}
-                            />
-                          )}
-                          <Link
-                            component="button"
-                            variant="body2"
-                            onClick={() => {
-                              setSelectedCard(card);
-                              setCardModalOpen(true);
-                            }}
-                            sx={{ ml: 'auto', textDecoration: 'none' }}
-                          >
-                            View Limits & Details →
-                          </Link>
-                        </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                          {card.cardholderName || '—'} | Expires {card.expiryMonth}/{card.expiryYear}
-                        </Typography>
+              {(() => {
+                const activeCards = debitCards.filter((c: any) => isCardActive(c.cardStatus));
+                const displayCards = showAllCards ? debitCards : activeCards;
+                const activeCount = activeCards.length;
+                const totalCount = debitCards.length;
+                return (
+                  <>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <CreditCard fontSize="small" color="primary" />
+                        Debit Cards ({showAllCards ? totalCount : activeCount}{!showAllCards && totalCount > activeCount ? ` of ${totalCount}` : ''})
+                      </Typography>
+                      {totalCount > activeCount && (
+                        <Link
+                          component="button"
+                          variant="body2"
+                          onClick={() => setShowAllCards(!showAllCards)}
+                          sx={{ textDecoration: 'none', whiteSpace: 'nowrap' }}
+                        >
+                          {showAllCards ? 'Show Active Only' : 'Show All'}
+                        </Link>
+                      )}
+                    </Box>
+                    <Divider sx={{ mb: 2 }} />
+                    {displayCards.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {displayCards.map((card: any) => {
+                          const brandConfig = getCardBrandConfig(card.cardBrand);
+                          const statusConfig = getCardStatusConfig(card.cardStatus);
+                          return (
+                            <Box key={card.cardId}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                                <Typography
+                                  variant="body2"
+                                  component="span"
+                                  fontWeight="400"
+                                  sx={{ color: brandConfig.color }}
+                                >
+                                  {brandConfig.name}
+                                </Typography>
+                                <Typography variant="body2" component="span" fontFamily="Roboto Mono">
+                                  {formatCardNumber(card.lastFourDigits)}
+                                </Typography>
+                                <Chip
+                                  label={getCardStatusLabel(card.cardStatus)}
+                                  size="small"
+                                  color={statusConfig.chip}
+                                  sx={{ height: 20 }}
+                                />
+                                {card.limitProfile?.profileName && (
+                                  <Chip
+                                    label={card.limitProfile.profileName}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ height: 20 }}
+                                  />
+                                )}
+                                <Link
+                                  component="button"
+                                  variant="body2"
+                                  onClick={() => {
+                                    setSelectedCard(card);
+                                    setCardModalOpen(true);
+                                  }}
+                                  sx={{ ml: 'auto', textDecoration: 'none' }}
+                                >
+                                  View Limits & Details →
+                                </Link>
+                              </Box>
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                {card.cardholderName || '—'} | Expires {card.expiryMonth}/{card.expiryYear}
+                              </Typography>
+                            </Box>
+                          );
+                        })}
                       </Box>
-                    );
-                  })}
-                </Box>
-              ) : (
-                <Typography variant="body2" color="text.secondary">No debit cards linked to this account</Typography>
-              )}
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">No debit cards linked to this account</Typography>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         </Grid>

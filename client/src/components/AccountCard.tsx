@@ -28,10 +28,11 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import {
-  CARD_STATUS_COLORS,
   formatCardNumber,
   getCardStatusLabel,
-  getCardBrandConfig
+  getCardBrandConfig,
+  getCardStatusConfig,
+  isCardActive
 } from '@/lib/debitCardConstants';
 import type { DebitCardWithLimitProfile } from '@shared/schema';
 
@@ -314,10 +315,10 @@ export default function AccountCard({
       return null;
     }
 
-    const primaryCard = debitCards[0];
+    const activeCards = debitCards.filter((c: any) => isCardActive(c.cardStatus));
+    const primaryCard = activeCards[0] || debitCards[0];
     const cardBrand = getCardBrandConfig(primaryCard.cardBrand);
-    const statusConfig = CARD_STATUS_COLORS[primaryCard.cardStatus as keyof typeof CARD_STATUS_COLORS] 
-      || CARD_STATUS_COLORS.active;
+    const statusConfig = getCardStatusConfig(primaryCard.cardStatus);
 
     return (
       <Box 
