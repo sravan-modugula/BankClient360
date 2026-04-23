@@ -327,7 +327,7 @@ export default function AccountSummaryTableVersion({
               ) : (
                 filteredAccounts.flatMap((account) => {
                   const isExpanded = expandedRows.has(account.accountId);
-                  const isCheckingAccount = account.accountType === 'checking' || account.accountType === 'business_checking';
+                  const isCheckingAccount = account.accountType === 'checking' || account.accountType === 'deposit checking' || account.accountType === 'business_checking';
 
                   return [
                     <TableRow
@@ -455,7 +455,7 @@ function ExpandedAccountDetails({
   getProductName: (a: Account) => string;
   onOpenCardModal: (card: DebitCardWithLimitProfile, account: Account) => void;
 }) {
-  const isCheckingAccount = account.accountType === 'checking' || account.accountType === 'business_checking';
+  const isCheckingAccount = account.accountType === 'checking' || account.accountType === 'deposit checking' || account.accountType === 'business_checking';
 
   // Fetch debit cards
   const { data: cardsData } = useQuery<{ cards: DebitCardWithLimitProfile[] }>({

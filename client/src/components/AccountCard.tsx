@@ -67,7 +67,7 @@ export default function AccountCard({
   const { formatCurrency, formatPercentage, formatDate } = useDateFormatter();
 
   // Fetch debit cards for checking accounts (at top level to comply with Hook rules)
-  const isCheckingAccount = account.accountType === 'checking' || account.accountType === 'business_checking';
+  const isCheckingAccount = account.accountType === 'checking' || account.accountType === 'deposit checking' || account.accountType === 'business_checking';
   const { data: cardsData } = useQuery<{ cards: DebitCardWithLimitProfile[] }>({
     queryKey: ['/api/accounts', account.accountId, 'debit-cards'],
     enabled: isCheckingAccount

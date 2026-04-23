@@ -1928,7 +1928,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Business rule: Debit cards only exist on checking and business_checking accounts
       // This is enforced by database triggers, but we provide helpful error messages here
-      const eligibleAccountTypes = ['checking', 'business_checking'];
+      const eligibleAccountTypes = ['checking', 'deposit checking', 'business_checking'];
       if (!eligibleAccountTypes.includes(account.accountType)) {
         return res.json({ 
           cards: [],
