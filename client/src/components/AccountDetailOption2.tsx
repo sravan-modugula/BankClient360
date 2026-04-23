@@ -94,6 +94,59 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
     }
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleExportCsv = () => {
+    if (!account) return;
+
+    // Account summary section
+    const lines: string[] = [];
+    lines.push('Account Summary');
+    lines.push(`Account Number,${account.accountNumber || ''}`);
+    lines.push(`Account Type,${account.accountType || ''}`);
+    lines.push(`Product,${account.accountSubtype || account.accountType || ''}`);
+    lines.push(`Status,${account.accountStatus || ''}`);
+    lines.push(`Branch,${account.branchName || account.branchId || ''}`);
+    lines.push(`Opened Date,${account.openedDate || ''}`);
+    lines.push(`Current Balance,${account.balance || 0}`);
+    lines.push(`Available Balance,${account.availableBalance || 0}`);
+    lines.push(`Average Balance,${account.averageBalance || ''}`);
+    lines.push(`Interest Rate,${account.interestRate || ''}`);
+    lines.push('');
+
+    // Transactions section
+    if (transactions.length > 0) {
+      lines.push('Transactions');
+      lines.push('Date,Description,Type,Amount');
+      transactions.forEach((tx: any) => {
+        const desc = (tx.description || tx.merchantName || '').replace(/,/g, ' ');
+        const type = (tx.transactionType || '').replace(/,/g, ' ');
+        lines.push(`${tx.transactionDate || ''},${desc},${type},${tx.amount || 0}`);
+      });
+      lines.push('');
+    }
+
+    // Debit cards section
+    if (debitCards.length > 0) {
+      lines.push('Debit Cards');
+      lines.push('Card Number,Brand,Status,Cardholder,Expiry');
+      debitCards.forEach((card: any) => {
+        lines.push(`****${card.lastFourDigits},${card.cardBrand || ''},${card.cardStatus || ''},${(card.cardholderName || '').replace(/,/g, ' ')},${card.expiryMonth}/${card.expiryYear}`);
+      });
+    }
+
+    const csvContent = lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `account_${account.accountNumber || accountId}_summary.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const getProductName = (acct: any) => {
     if (acct?.accountSubtype) {
       return acct.accountSubtype.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
@@ -137,8 +190,8 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
           BACK TO CLIENT
         </Button>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button startIcon={<Print />} variant="outlined" size="small">Print</Button>
-          <Button startIcon={<Download />} variant="outlined" size="small">Export</Button>
+          <Button startIcon={<Print />} variant="outlined" size="small" onClick={handlePrint}>Print</Button>
+          <Button startIcon={<Download />} variant="outlined" size="small" onClick={handleExportCsv}>Export CSV</Button>
         </Box>
       </Box>
 

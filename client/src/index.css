@@ -417,3 +417,32 @@
     inset: -1px;
   }
 }
+
+/* Print styles */
+@media print {
+  /* Hide non-essential UI elements */
+  nav, header, aside,
+  button, .MuiButton-root,
+  .MuiPagination-root,
+  .MuiTextField-root,
+  input, .MuiDrawer-root {
+    display: none !important;
+  }
+
+  /* Clean up layout */
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .MuiCard-root {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    break-inside: avoid;
+  }
+
+  .MuiChip-root {
+    border: 1px solid #999 !important;
+  }
+}
