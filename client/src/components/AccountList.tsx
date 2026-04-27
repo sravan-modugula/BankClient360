@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import {
   Box,
@@ -16,6 +16,10 @@ import {
   CircularProgress,
   Alert,
   Chip,
+  ToggleButton,
+  ToggleButtonGroup,
+  TextField,
+  InputAdornment,
   useTheme
 } from '@mui/material';
 import {
@@ -23,7 +27,8 @@ import {
   Savings,
   CreditCard,
   Home,
-  AccountBalanceWallet
+  AccountBalanceWallet,
+  Search
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { useDateFormatter } from '@/lib/dateFormatters';
@@ -51,6 +56,25 @@ export default function AccountList({
   // Pagination state
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Filter state
+  const [accountTypeFilter, setAccountTypeFilter] = useState<'all' | 'deposits' | 'loans'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const accountTypes = [
+    { key: 'all', label: 'All' },
+    { key: 'deposits', label: 'Deposits' },
+    { key: 'loans', label: 'Loans' }
+  ] as const;
+
+  const isLoanType = (t: string) => {
+    const s = (t || '').toLowerCase();
+    return s.includes('loan') || s.includes('mortgage') || s.includes('heloc') || s.includes('credit');
+  };
+
+  useEffect(() => {
+    setPage(0);
+  }, [accountTypeFilter, searchQuery]);
 
   // Safe parsing helpers
   const safeParseBalance = (balance: string | number | null | undefined): number => {
@@ -138,8 +162,21 @@ export default function AccountList({
     setPage(0);
   };
 
+  // Filter accounts (case-insensitive to handle SQL Server data casing)
+  const filteredAccounts = accounts.filter(account => {
+    const type = account.accountType?.toLowerCase() || '';
+    let matchesType = true;
+    if (accountTypeFilter === 'deposits') matchesType = !isLoanType(type);
+    else if (accountTypeFilter === 'loans') matchesType = isLoanType(type);
+
+    const matchesSearch = !searchQuery ||
+      account.accountNumber.includes(searchQuery) ||
+      type.includes(searchQuery.toLowerCase());
+    return matchesType && matchesSearch;
+  });
+
   // Get paginated accounts
-  const paginatedAccounts = accounts.slice(
+  const paginatedAccounts = filteredAccounts.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
   );
@@ -199,6 +236,38 @@ export default function AccountList({
             <AccountBalance sx={{ color: theme.palette.primary.main }} />
             Accounts ({accounts.length})
           </Typography>
+        </Box>
+
+        {/* Filter Bar */}
+        <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center', flexWrap: 'wrap' }}>
+          <ToggleButtonGroup
+            value={accountTypeFilter}
+            exclusive
+            onChange={(_e, value) => value && setAccountTypeFilter(value)}
+            size="small"
+          >
+            {accountTypes.map(type => (
+              <ToggleButton key={type.key} value={type.key} data-testid={`filter-${type.key}`}>
+                {type.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+
+          <TextField
+            placeholder="Search accounts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            size="small"
+            sx={{ width: 250 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search fontSize="small" />
+                </InputAdornment>
+              )
+            }}
+            data-testid="input-search-accounts-list"
+          />
         </Box>
 
         <TableContainer component={Paper} sx={{ borderLeft: 'none', borderRight: 'none' }}>
@@ -308,11 +377,11 @@ export default function AccountList({
           </Table>
         </TableContainer>
 
-        {accounts.length > 10 && (
+        {filteredAccounts.length > 10 && (
           <TablePagination
             rowsPerPageOptions={[10, 25, 50, 100]}
             component="div"
-            count={accounts.length}
+            count={filteredAccounts.length}
             rowsPerPage={rowsPerPage}
             page={page}
             onPageChange={handleChangePage}

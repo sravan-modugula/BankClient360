@@ -95,39 +95,21 @@ export default function AccountSummaryTableVersion({
   // Account type options
   const accountTypes = [
     { key: 'all', label: 'All' },
-    { key: 'checking', label: 'Checking' },
-    { key: 'savings', label: 'Savings' },
-    { key: 'loan', label: 'Loans' },
-    { key: 'mortgage', label: 'Mortgage' },
-    { key: 'heloc', label: 'HELOC' },
-    { key: 'credit_card', label: 'Credit Cards' },
-    { key: 'cd', label: 'CDs' }
+    { key: 'deposits', label: 'Deposits' },
+    { key: 'loans', label: 'Loans' }
   ];
+
+  const isLoanType = (t: string) => {
+    const s = (t || '').toLowerCase();
+    return s.includes('loan') || s.includes('mortgage') || s.includes('heloc') || s.includes('credit');
+  };
 
   // Filter accounts (case-insensitive to handle SQL Server data casing)
   const filteredAccounts = accounts.filter(account => {
-    let matchesType = false;
     const type = account.accountType?.toLowerCase() || '';
-
-    if (accountTypeFilter === 'all') {
-      matchesType = true;
-    } else if (accountTypeFilter === 'checking') {
-      matchesType = type.includes('checking');
-    } else if (accountTypeFilter === 'savings') {
-      matchesType = type.includes('savings') || type.includes('money market') || type.includes('christmas club');
-    } else if (accountTypeFilter === 'mortgage') {
-      matchesType = type.includes('mortgage');
-    } else if (accountTypeFilter === 'heloc') {
-      matchesType = type.includes('heloc') || type.includes('line of credit');
-    } else if (accountTypeFilter === 'credit_card') {
-      matchesType = type.includes('credit');
-    } else if (accountTypeFilter === 'cd') {
-      matchesType = type.includes('cd') || type.includes('time deposit');
-    } else if (accountTypeFilter === 'loan') {
-      matchesType = type === 'loan' || type.includes('loan');
-    } else {
-      matchesType = type === accountTypeFilter;
-    }
+    let matchesType = true;
+    if (accountTypeFilter === 'deposits') matchesType = !isLoanType(type);
+    else if (accountTypeFilter === 'loans') matchesType = isLoanType(type);
 
     const matchesSearch = !searchQuery ||
       account.accountNumber.includes(searchQuery) ||
