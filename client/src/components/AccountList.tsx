@@ -20,6 +20,7 @@ import {
   ToggleButtonGroup,
   TextField,
   InputAdornment,
+  TableSortLabel,
   useTheme
 } from '@mui/material';
 import {
@@ -61,6 +62,38 @@ export default function AccountList({
   const [accountTypeFilter, setAccountTypeFilter] = useState<'all' | 'deposits' | 'loans'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Sort state
+  type SortableColumn = 'balance' | 'status';
+  const [orderBy, setOrderBy] = useState<SortableColumn | null>(null);
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleRequestSort = (column: SortableColumn) => {
+    if (orderBy === column) {
+      setOrder(order === 'asc' ? 'desc' : 'asc');
+    } else {
+      setOrderBy(column);
+      setOrder('asc');
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch ((status || '').toLowerCase()) {
+      case 'active': return 'success';
+      case 'inactive': return 'warning';
+      case 'closed': return 'error';
+      case 'paid_off': return 'info';
+      case 'frozen': return 'warning';
+      case 'suspended': return 'error';
+      case 'matured': return 'success';
+      default: return 'default';
+    }
+  };
+
+  const formatStatusLabel = (status: string) => {
+    if (!status) return '-';
+    return status.replace(/_/g, ' ').toUpperCase();
+  };
+
   const accountTypes = [
     { key: 'all', label: 'All' },
     { key: 'deposits', label: 'Deposits' },
@@ -74,7 +107,7 @@ export default function AccountList({
 
   useEffect(() => {
     setPage(0);
-  }, [accountTypeFilter, searchQuery]);
+  }, [accountTypeFilter, searchQuery, orderBy, order]);
 
   // Safe parsing helpers
   const safeParseBalance = (balance: string | number | null | undefined): number => {
@@ -175,8 +208,21 @@ export default function AccountList({
     return matchesType && matchesSearch;
   });
 
+  // Sort accounts
+  const sortedAccounts = orderBy
+    ? [...filteredAccounts].sort((a, b) => {
+        let cmp = 0;
+        if (orderBy === 'balance') {
+          cmp = safeParseBalance(a.balance) - safeParseBalance(b.balance);
+        } else if (orderBy === 'status') {
+          cmp = (a.accountStatus || '').toLowerCase().localeCompare((b.accountStatus || '').toLowerCase());
+        }
+        return order === 'asc' ? cmp : -cmp;
+      })
+    : filteredAccounts;
+
   // Get paginated accounts
-  const paginatedAccounts = filteredAccounts.slice(
+  const paginatedAccounts = sortedAccounts.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
   );
@@ -278,8 +324,29 @@ export default function AccountList({
                 <TableCell sx={{ fontWeight: 400 }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 400 }}>Account #</TableCell>
                 <TableCell sx={{ fontWeight: 400 }}>Product</TableCell>
-                {canViewBalances && <TableCell align="right" sx={{ fontWeight: 400 }}>Balance</TableCell>}
+                {canViewBalances && (
+                  <TableCell align="right" sx={{ fontWeight: 400 }} sortDirection={orderBy === 'balance' ? order : false}>
+                    <TableSortLabel
+                      active={orderBy === 'balance'}
+                      direction={orderBy === 'balance' ? order : 'asc'}
+                      onClick={() => handleRequestSort('balance')}
+                      data-testid="sort-balance"
+                    >
+                      Balance
+                    </TableSortLabel>
+                  </TableCell>
+                )}
                 {canViewBalances && <TableCell align="center" sx={{ fontWeight: 400 }}>Interest Rate</TableCell>}
+                <TableCell align="center" sx={{ fontWeight: 400 }} sortDirection={orderBy === 'status' ? order : false}>
+                  <TableSortLabel
+                    active={orderBy === 'status'}
+                    direction={orderBy === 'status' ? order : 'asc'}
+                    onClick={() => handleRequestSort('status')}
+                    data-testid="sort-status"
+                  >
+                    Status
+                  </TableSortLabel>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -355,6 +422,13 @@ export default function AccountList({
                         })()}
                       </TableCell>
                     )}
+                    <TableCell align="center">
+                      <Chip
+                        label={formatStatusLabel(account.accountStatus)}
+                        color={getStatusColor(account.accountStatus) as any}
+                        size="small"
+                      />
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -370,6 +444,7 @@ export default function AccountList({
                       {formatCurrency(totalBalance)}
                     </Typography>
                   </TableCell>
+                  <TableCell></TableCell>
                   <TableCell></TableCell>
                 </TableRow>
               )}
