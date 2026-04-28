@@ -76,22 +76,37 @@ export default function AccountList({
     }
   };
 
+  // Map verbose backend statuses (e.g. "LOAN IS ACTIVE, TRANSACTIONS ACCEPTED")
+  // down to a short canonical label so the column stays a stable width.
+  const normalizeStatus = (status: string): string => {
+    const s = (status || '').toLowerCase();
+    if (!s) return 'UNKNOWN';
+    if (s.includes('paid')) return 'PAID OFF';
+    if (s.includes('matured')) return 'MATURED';
+    if (s.includes('frozen')) return 'FROZEN';
+    if (s.includes('suspended')) return 'SUSPENDED';
+    if (s.includes('closed')) return 'CLOSED';
+    if (s.includes('inactive')) return 'INACTIVE';
+    if (s.includes('active')) return 'ACTIVE';
+    return status.replace(/_/g, ' ').toUpperCase();
+  };
+
   const getStatusColor = (status: string) => {
-    switch ((status || '').toLowerCase()) {
-      case 'active': return 'success';
-      case 'inactive': return 'warning';
-      case 'closed': return 'error';
-      case 'paid_off': return 'info';
-      case 'frozen': return 'warning';
-      case 'suspended': return 'error';
-      case 'matured': return 'success';
+    switch (normalizeStatus(status)) {
+      case 'ACTIVE': return 'success';
+      case 'INACTIVE': return 'warning';
+      case 'CLOSED': return 'error';
+      case 'PAID OFF': return 'info';
+      case 'FROZEN': return 'warning';
+      case 'SUSPENDED': return 'error';
+      case 'MATURED': return 'success';
       default: return 'default';
     }
   };
 
   const formatStatusLabel = (status: string) => {
     if (!status) return '-';
-    return status.replace(/_/g, ' ').toUpperCase();
+    return normalizeStatus(status);
   };
 
   const accountTypes = [
@@ -215,7 +230,7 @@ export default function AccountList({
         if (orderBy === 'balance') {
           cmp = safeParseBalance(a.balance) - safeParseBalance(b.balance);
         } else if (orderBy === 'status') {
-          cmp = (a.accountStatus || '').toLowerCase().localeCompare((b.accountStatus || '').toLowerCase());
+          cmp = normalizeStatus(a.accountStatus).localeCompare(normalizeStatus(b.accountStatus));
         }
         return order === 'asc' ? cmp : -cmp;
       })
