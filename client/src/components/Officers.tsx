@@ -16,10 +16,15 @@ import {
 interface Officer {
   id: string;
   name: string;
-  title: string;
-  department: string;
+  title: string | null;
+  department: string | null;
   isPrimary: boolean;
 }
+
+const hasValue = (v: string | null | undefined) => {
+  if (!v) return false;
+  return v.trim().toLowerCase() !== 'unknown';
+};
 
 interface OfficersProps {
   officers: Officer[];
@@ -83,19 +88,23 @@ export default function Officers({ officers }: OfficersProps) {
                       />
                     )}
                   </Box>
-                  <Typography variant="caption" color="text.secondary" data-testid={`text-officer-title-${officer.id}`}>
-                    {officer.title}
-                  </Typography>
-                  <Box sx={{ mt: 0.5 }}>
-                    <Chip 
-                      label={officer.department}
-                      color={getDepartmentColor(officer.department) as any}
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontSize: '0.7rem', height: 18 }}
-                      data-testid={`chip-department-${officer.id}`}
-                    />
-                  </Box>
+                  {hasValue(officer.title) && (
+                    <Typography variant="caption" color="text.secondary" data-testid={`text-officer-title-${officer.id}`}>
+                      {officer.title}
+                    </Typography>
+                  )}
+                  {hasValue(officer.department) && (
+                    <Box sx={{ mt: 0.5 }}>
+                      <Chip
+                        label={officer.department}
+                        color={getDepartmentColor(officer.department!) as any}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.7rem', height: 18 }}
+                        data-testid={`chip-department-${officer.id}`}
+                      />
+                    </Box>
+                  )}
                 </Box>
               </Box>
               {index < officers.length - 1 && <Divider sx={{ mt: 1.5 }} />}

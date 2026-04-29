@@ -676,7 +676,7 @@ export default function CustomerDashboard() {
                     id: officer.id,
                     name: officer.displayName,
                     title: officer.title,
-                    department: officer.department || 'Unknown',
+                    department: officer.department,
                     isPrimary: officer.isPrimary
                   })) || mockOfficers} />
                 </Box>
