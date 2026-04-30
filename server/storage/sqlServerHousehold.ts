@@ -29,12 +29,16 @@ export interface HouseholdMemberView {
   customerType: string;
   customerStatus: string | null;
   dateOfBirth: Date | null;
+  customerSince: Date | null;
   vipCustomer: boolean;
   isEmployee: boolean;
   relationshipRole: string;
   ownershipPercentage: string | null;
   membershipStartDate: Date | null;
+  membershipEndDate: Date | null;
   isPrimaryMember: boolean;
+  isHeadOfHousehold: boolean;
+  controlType: string | null;
 }
 
 /**
@@ -75,7 +79,7 @@ export async function getHouseholdMembersSqlServer(
     request.input('householdId', sql.BigInt, householdId);
 
     const result = await request.query(`
-      SELECT 
+      SELECT
         c.customer_id,
         c.first_name,
         c.last_name,
@@ -85,9 +89,14 @@ export async function getHouseholdMembersSqlServer(
         c.customer_type,
         c.customer_status,
         c.date_of_birth,
+        c.customer_since,
         hm.relationship_role,
         hm.ownership_percentage,
-        hm.is_primary_member
+        hm.is_primary_member,
+        hm.is_head_of_household,
+        hm.control_type,
+        hm.membership_start_date,
+        hm.membership_end_date
       FROM household_membership hm
       INNER JOIN customer c ON c.customer_id = hm.customer_id
       WHERE hm.household_id = @householdId
@@ -384,12 +393,16 @@ function mapHouseholdMemberFromDb(row: any): HouseholdMemberView {
     customerType: row.customer_type,
     customerStatus: row.customer_status,
     dateOfBirth: row.date_of_birth,
+    customerSince: row.customer_since,
     vipCustomer: row.vip_customer || false,
     isEmployee: row.is_employee || false,
     relationshipRole: row.relationship_role,
     ownershipPercentage: row.ownership_percentage,
     membershipStartDate: row.membership_start_date,
-    isPrimaryMember: row.is_primary_member || false
+    membershipEndDate: row.membership_end_date,
+    isPrimaryMember: row.is_primary_member || false,
+    isHeadOfHousehold: row.is_head_of_household || false,
+    controlType: row.control_type ?? null
   };
 }
 

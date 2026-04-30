@@ -103,7 +103,44 @@ interface Account {
   accountStatus: string;
   currency: string;
   openedDate: string;
+  interestRate: string | number | null;
+  averageBalance: string | number | null;
+  creditLimit: string | number | null;
+  productCode: string | null;
+  branchId: number | null;
 }
+
+const isLoanType = (t: string) => {
+  const s = (t || '').toLowerCase();
+  return s.includes('loan') || s.includes('mortgage') || s.includes('heloc') || s.includes('credit');
+};
+
+const titleCase = (s: string | null | undefined) => {
+  if (!s) return '';
+  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+const toNumber = (v: string | number | null | undefined): number => {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  return isNaN(n) ? 0 : n;
+};
+
+// Weighted average interest rate, weighted by balance.
+const weightedAvgRate = (accounts: Account[]): number | null => {
+  let weighted = 0;
+  let totalWeight = 0;
+  for (const a of accounts) {
+    const bal = toNumber(a.balance);
+    const rate = a.interestRate;
+    if (rate === null || rate === undefined || rate === '') continue;
+    const r = typeof rate === 'string' ? parseFloat(rate) : rate;
+    if (isNaN(r) || bal <= 0) continue;
+    weighted += r * bal;
+    totalWeight += bal;
+  }
+  return totalWeight > 0 ? weighted / totalWeight : null;
+};
 
 export default function HouseholdPage() {
   const params = useParams();
@@ -120,6 +157,7 @@ export default function HouseholdPage() {
   const [filterImportance, setFilterImportance] = useState('');
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  const [accountTab, setAccountTab] = useState<'all' | 'deposits' | 'loans'>('all');
 
   // If accessing via customerId, fetch their household first
   const { data: customerHouseholds = [] } = useQuery<any[]>({
@@ -359,17 +397,29 @@ export default function HouseholdPage() {
     );
   }
 
-  const netWorth = parseFloat(household.totalAssets) - parseFloat(household.totalLiabilities);
-  const totalAccountBalance = allAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
+  const depositAccounts = allAccounts.filter(a => !isLoanType(a.accountType));
+  const loanAccounts = allAccounts.filter(a => isLoanType(a.accountType));
 
-  // Group deposits by type
-  const depositsByType = allAccounts.reduce((acc, account) => {
+  const totalDeposits = depositAccounts.reduce((sum, a) => sum + toNumber(a.balance), 0);
+  const totalLoanBalances = loanAccounts.reduce((sum, a) => sum + toNumber(a.balance), 0);
+  const totalAccountBalance = totalDeposits + totalLoanBalances;
+  const depositWair = weightedAvgRate(depositAccounts);
+  const loanWair = weightedAvgRate(loanAccounts);
+
+  const filteredAccounts =
+    accountTab === 'deposits' ? depositAccounts :
+    accountTab === 'loans' ? loanAccounts :
+    allAccounts;
+  const filteredAccountsTotal = filteredAccounts.reduce((sum, a) => sum + toNumber(a.balance), 0);
+
+  // Group deposits by type (deposits only — loan widgets removed per spec)
+  const depositsByType = depositAccounts.reduce((acc, account) => {
     const type = account.accountType;
     if (!acc[type]) {
       acc[type] = { count: 0, totalBalance: 0 };
     }
     acc[type].count++;
-    acc[type].totalBalance += parseFloat(account.balance);
+    acc[type].totalBalance += toNumber(account.balance);
     return acc;
   }, {} as Record<string, { count: number; totalBalance: number }>);
 
@@ -407,27 +457,6 @@ export default function HouseholdPage() {
                   Est. {new Date(household.establishedDate).toLocaleDateString()}
                 </Typography>
               </Box>
-              <Chip 
-                label={household.householdType.replace('_', ' ').toUpperCase()} 
-                size="small"
-                color="primary"
-                data-testid="chip-household-type"
-              />
-              {household.householdStatus && household.householdStatus !== 'active' && (
-                <Chip 
-                  label={household.householdStatus.toUpperCase()} 
-                  size="small"
-                  color="secondary"
-                />
-              )}
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="caption" color="text.secondary">Net Worth</Typography>
-                <Typography variant="h6" color="primary.main" data-testid="text-net-worth">
-                  {formatCurrency(netWorth)}
-                </Typography>
-              </Box>
             </Box>
           </Box>
         </Container>
@@ -438,33 +467,33 @@ export default function HouseholdPage() {
         <Box sx={{ mb: 3 }}>
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip 
-                icon={<People />} 
-                label={`${members.length} Member${members.length !== 1 ? 's' : ''}`} 
+              <Chip
+                icon={<People />}
+                label={`${members.length} Member${members.length !== 1 ? 's' : ''}`}
                 sx={{ width: '100%' }}
                 data-testid="chip-member-count"
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip 
-                icon={<AccountBalance />} 
-                label={`${allAccounts.length} Account${allAccounts.length !== 1 ? 's' : ''}`} 
+              <Chip
+                icon={<AccountBalance />}
+                label={`${depositAccounts.length} Deposit${depositAccounts.length !== 1 ? 's' : ''}`}
                 sx={{ width: '100%' }}
-                data-testid="chip-account-count"
+                data-testid="chip-deposit-count"
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip 
-                icon={<AccountBalanceWallet />} 
-                label={formatCurrency(totalAccountBalance)}
+              <Chip
+                icon={<AccountBalanceWallet />}
+                label={`${loanAccounts.length} Loan${loanAccounts.length !== 1 ? 's' : ''}`}
                 sx={{ width: '100%' }}
-                data-testid="chip-total-balance"
+                data-testid="chip-loan-count"
               />
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip 
-                icon={household.householdType === 'family' ? <FamilyRestroom /> : <Business />} 
-                label={household.householdType.replace('_', ' ')} 
+              <Chip
+                icon={household.householdType === 'family' ? <FamilyRestroom /> : <Business />}
+                label={household.householdType.replace('_', ' ')}
                 sx={{ width: '100%', textTransform: 'capitalize' }}
                 data-testid="chip-structure-type"
               />
@@ -477,33 +506,43 @@ export default function HouseholdPage() {
           <CardContent>
             <Typography variant="h6" sx={{ mb: 3 }}>Household Overview</Typography>
             <Grid container spacing={3}>
-              <Grid size={{ xs: 12, md: 4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Total Assets
+                    Total Deposits
                   </Typography>
-                  <Typography variant="h5" color="primary" data-testid="text-total-assets">
-                    {formatCurrency(household.totalAssets)}
+                  <Typography variant="h5" color="primary" data-testid="text-total-deposits">
+                    {formatCurrency(totalDeposits)}
                   </Typography>
                 </Box>
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Total Liabilities
+                    Deposit WAIR
                   </Typography>
-                  <Typography variant="h5" color="primary.main" data-testid="text-total-liabilities">
-                    {formatCurrency(household.totalLiabilities)}
+                  <Typography variant="h5" color="primary.main" data-testid="text-deposit-wair">
+                    {depositWair !== null ? `${depositWair.toFixed(2)}%` : '—'}
                   </Typography>
                 </Box>
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Net Worth
+                    Total Loan Balances
                   </Typography>
-                  <Typography variant="h5" color="primary.main" data-testid="text-overview-net-worth">
-                    {formatCurrency(netWorth)}
+                  <Typography variant="h5" color="primary.main" data-testid="text-total-loan-balances">
+                    {formatCurrency(totalLoanBalances)}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Box>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Loan WAIR
+                  </Typography>
+                  <Typography variant="h5" color="primary.main" data-testid="text-loan-wair">
+                    {loanWair !== null ? `${loanWair.toFixed(2)}%` : '—'}
                   </Typography>
                 </Box>
               </Grid>
@@ -527,59 +566,40 @@ export default function HouseholdPage() {
                   <TableHead>
                     <TableRow>
                       <TableCell>Member</TableCell>
-                      <TableCell>Role & Control</TableCell>
-                      <TableCell>Ownership</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Since</TableCell>
+                      <TableCell>Open Date</TableCell>
                       <TableCell align="right">Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {members.map((member, index) => (
-                      <TableRow 
-                        key={member.membershipId || `member-${member.customerId}-${index}`} 
-                        data-testid={`row-member-${member.customerId}`}
-                        onClick={() => navigateToCustomer(member.customerId, householdId || undefined)}
-                        sx={{ 
-                          cursor: 'pointer',
-                          '&:hover': { bgcolor: 'action.hover' } 
-                        }}
-                      >
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2">{member.fullName}</Typography>
-                            {member.isPrimaryMember && <Chip label="Primary" size="small" color="primary" />}
-                            {member.isHeadOfHousehold && <Chip label="Head" size="small" color="secondary" />}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">{member.relationshipRole}</Typography>
-                          {member.controlType && member.controlType !== 'none' && (
-                            <Typography variant="caption" color="text.secondary">
-                              {member.controlType.replace('_', ' ')}
-                            </Typography>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {parseFloat(member.ownershipPercentage) > 0 
-                            ? `${parseFloat(member.ownershipPercentage).toFixed(1)}%` 
-                            : '—'}
-                        </TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={member.membershipEndDate ? 'Inactive' : 'Active'} 
-                            size="small" 
-                            color={member.membershipEndDate ? 'default' : 'primary'}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {new Date(member.customerSince).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell align="right">
-                          <ArrowForward fontSize="small" color="action" />
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {members.map((member, index) => {
+                      const isHead = member.isHeadOfHousehold || member.isPrimaryMember;
+                      const since = member.customerSince ? new Date(member.customerSince) : null;
+                      const sinceValid = since && !isNaN(since.getTime());
+                      return (
+                        <TableRow
+                          key={member.membershipId || `member-${member.customerId}-${index}`}
+                          data-testid={`row-member-${member.customerId}`}
+                          onClick={() => navigateToCustomer(member.customerId, householdId || undefined)}
+                          sx={{
+                            cursor: 'pointer',
+                            '&:hover': { bgcolor: 'action.hover' }
+                          }}
+                        >
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2">{member.fullName}</Typography>
+                              {isHead && <Chip label="Head of Household" size="small" color="primary" />}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            {sinceValid ? since!.toLocaleDateString() : '—'}
+                          </TableCell>
+                          <TableCell align="right">
+                            <ArrowForward fontSize="small" color="action" />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -695,41 +715,78 @@ export default function HouseholdPage() {
         {/* Aggregated Accounts Card */}
         <Card sx={{ mb: 3 }} data-testid="card-accounts">
           <CardContent>
-            <Typography variant="h6" sx={{ mb: 3 }}>Aggregated Accounts</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+              <Typography variant="h6">Aggregated Accounts</Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                {(['all', 'deposits', 'loans'] as const).map(key => (
+                  <Chip
+                    key={key}
+                    label={key === 'all' ? 'All' : key === 'deposits' ? 'Deposits' : 'Loans'}
+                    size="small"
+                    onClick={() => setAccountTab(key)}
+                    color={accountTab === key ? 'primary' : 'default'}
+                    variant={accountTab === key ? 'filled' : 'outlined'}
+                    data-testid={`tab-accounts-${key}`}
+                  />
+                ))}
+              </Box>
+            </Box>
             {accountsLoading ? (
               <Skeleton variant="rectangular" height={300} />
-            ) : allAccounts.length === 0 ? (
+            ) : filteredAccounts.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
-                No accounts found for household members.
+                No {accountTab === 'all' ? '' : accountTab} accounts found for household members.
               </Typography>
             ) : (
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Account Type</TableCell>
                       <TableCell>Account Number</TableCell>
-                      <TableCell>Status</TableCell>
+                      <TableCell>Product</TableCell>
+                      <TableCell>Open Date</TableCell>
                       <TableCell align="right">Balance</TableCell>
+                      {accountTab === 'loans' ? (
+                        <TableCell align="right">Commitment</TableCell>
+                      ) : (
+                        <TableCell align="right">MTD Avg Balance</TableCell>
+                      )}
+                      <TableCell align="right">Interest Rate</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {allAccounts.map((account) => (
-                      <TableRow key={account.accountId} data-testid={`account-row-${account.accountId}`}>
-                        <TableCell>{account.accountType}</TableCell>
-                        <TableCell>{account.accountNumber}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={account.accountStatus} 
-                            size="small" 
-                            color={account.accountStatus === 'active' ? 'primary' : 'default'}
-                          />
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 500 }}>
-                          {formatCurrency(account.balance)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredAccounts.map((account) => {
+                      const openDate = account.openedDate ? new Date(account.openedDate) : null;
+                      const openValid = openDate && !isNaN(openDate.getTime());
+                      const product = titleCase(account.accountSubtype) || titleCase(account.accountType);
+                      const rate = account.interestRate;
+                      const rateNum = rate === null || rate === undefined || rate === '' ? null
+                        : (typeof rate === 'string' ? parseFloat(rate) : rate);
+                      return (
+                        <TableRow
+                          key={account.accountId}
+                          hover
+                          onClick={() => setLocation(`/account/${account.accountId}`)}
+                          sx={{ cursor: 'pointer' }}
+                          data-testid={`account-row-${account.accountId}`}
+                        >
+                          <TableCell>{account.accountNumber}</TableCell>
+                          <TableCell>{product || '—'}</TableCell>
+                          <TableCell>{openValid ? openDate!.toLocaleDateString() : '—'}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 500 }}>
+                            {formatCurrency(account.balance)}
+                          </TableCell>
+                          <TableCell align="right">
+                            {accountTab === 'loans'
+                              ? (toNumber(account.creditLimit) > 0 ? formatCurrency(account.creditLimit as any) : '—')
+                              : (toNumber(account.averageBalance) > 0 ? formatCurrency(account.averageBalance as any) : '—')}
+                          </TableCell>
+                          <TableCell align="right">
+                            {rateNum !== null && !isNaN(rateNum) ? `${rateNum.toFixed(2)}%` : '—'}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                     <TableRow key="total-row">
                       <TableCell colSpan={3} align="right">
                         <Typography variant="subtitle2" fontWeight="bold">
@@ -738,9 +795,11 @@ export default function HouseholdPage() {
                       </TableCell>
                       <TableCell align="right">
                         <Typography variant="subtitle2" fontWeight="bold" color="primary">
-                          {formatCurrency(totalAccountBalance)}
+                          {formatCurrency(filteredAccountsTotal)}
                         </Typography>
                       </TableCell>
+                      <TableCell />
+                      <TableCell />
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -759,7 +818,7 @@ export default function HouseholdPage() {
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index}>
                     <Paper variant="outlined" sx={{ p: 2 }}>
                       <Typography variant="body2" color="text.secondary" gutterBottom>
-                        {type}
+                        {titleCase(type)}
                       </Typography>
                       <Typography variant="h6" color="primary">
                         {formatCurrency(data.totalBalance)}
