@@ -62,9 +62,10 @@ export default function AccountList({
   const [accountTypeFilter, setAccountTypeFilter] = useState<'all' | 'deposits' | 'loans'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Sort state
+  // Sort state — default to Status asc so ACTIVE rows surface first
+  // (normalizeStatus values are upper-case canonical; ACTIVE < CLOSED < FROZEN < INACTIVE < ...)
   type SortableColumn = 'balance' | 'status';
-  const [orderBy, setOrderBy] = useState<SortableColumn | null>(null);
+  const [orderBy, setOrderBy] = useState<SortableColumn | null>('status');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
 
   const handleRequestSort = (column: SortableColumn) => {
