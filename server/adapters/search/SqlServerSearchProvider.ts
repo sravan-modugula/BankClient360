@@ -386,7 +386,6 @@ class SqlServerSearchProvider implements ISearchProvider {
             h.household_status as householdStatus,
             h.total_assets as totalAssets,
             h.total_liabilities as totalLiabilities,
-            h.risk_rating as riskRating,
             COALESCE((SELECT COUNT(*) FROM household_membership WHERE household_id = h.household_id), 0) as memberCount,
             STRING_SIMILARITY(h.household_name, @nameQuery) as score
           FROM household h
@@ -402,7 +401,7 @@ class SqlServerSearchProvider implements ISearchProvider {
           totalAssets: r.totalAssets || '0',
           totalLiabilities: r.totalLiabilities || '0',
           memberCount: r.memberCount || 0,
-          riskRating: r.riskRating,
+          riskRating: null,
           matchScore: Math.round(r.score * 100),
           matchType: r.score > 0.8 ? 'exact' as const : 'fuzzy' as const,
           matchedField: 'householdName'
@@ -440,7 +439,6 @@ class SqlServerSearchProvider implements ISearchProvider {
         h.household_status as householdStatus,
         h.total_assets as totalAssets,
         h.total_liabilities as totalLiabilities,
-        h.risk_rating as riskRating,
         COALESCE((SELECT COUNT(*) FROM household_membership WHERE household_id = h.household_id), 0) as memberCount
       FROM household h
       WHERE h.household_name COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @nameQuery
@@ -455,7 +453,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       totalAssets: r.totalAssets || '0',
       totalLiabilities: r.totalLiabilities || '0',
       memberCount: r.memberCount || 0,
-      riskRating: r.riskRating
+      riskRating: null
     }));
   }
 
@@ -479,7 +477,6 @@ class SqlServerSearchProvider implements ISearchProvider {
         h.household_status as householdStatus,
         h.total_assets as totalAssets,
         h.total_liabilities as totalLiabilities,
-        h.risk_rating as riskRating,
         COALESCE((SELECT COUNT(*) FROM household_membership WHERE household_id = h.household_id), 0) as memberCount,
         DIFFERENCE(h.household_name, @nameQuery) / 4.0 as score
       FROM household h
@@ -495,7 +492,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       totalAssets: r.totalAssets || '0',
       totalLiabilities: r.totalLiabilities || '0',
       memberCount: r.memberCount || 0,
-      riskRating: r.riskRating,
+      riskRating: null,
       matchScore: Math.round(r.score * 100),
       matchType: r.score > 0.7 ? 'fuzzy' as const : 'partial' as const,
       matchedField: 'householdName'
