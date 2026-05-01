@@ -32,41 +32,50 @@ export const CURRENCY_CONFIG = {
 } as const;
 
 // Transaction Activity Type Mappings
-// Maps transaction codes to dashboard activity categories
-export const CODE_TO_ACTIVITY = {
-  'DD': 'direct_deposit',
-  'ATM': 'atm',
-  'BILLPAY': 'billpay',
-  'MOBDEP': 'mobile_check_deposit',
-  'ZELLE': 'zelle',
-  'WIRE': 'wire',
-  'ACH': 'ach'
-} as const;
+// Maps transaction_category.group_code values (as stored in the on-prem
+// transaction_category table) to dashboard activity keys.
+export const GROUP_CODE_TO_ACTIVITY: Record<string, ActivityType> = {
+  'ACH': 'ach',
+  'Cash Withdrawal': 'cash_withdrawal',
+  'Check Deposit': 'check_deposit',
+  'Check Payment': 'check_payment',
+  'Debit Card Payment': 'debit_card_payment',
+  'Deposit': 'deposit',
+  'Lockbox': 'lockbox',
+  'Transfer': 'transfer',
+  'Wire': 'wire',
+  'Zelle': 'zelle'
+};
 
 export const ACTIVITY_KEYS = [
-  'direct_deposit',
-  'atm', 
-  'billpay',
-  'mobile_check_deposit',
-  'zelle',
+  'ach',
+  'cash_withdrawal',
+  'check_deposit',
+  'check_payment',
+  'debit_card_payment',
+  'deposit',
+  'lockbox',
+  'transfer',
   'wire',
-  'ach'
+  'zelle'
 ] as const;
 
 export type ActivityType = typeof ACTIVITY_KEYS[number];
-export type TransactionCode = keyof typeof CODE_TO_ACTIVITY;
 
 /**
  * Creates a default activity object with all counts set to zero
  */
 export function createDefaultActivity(): Record<ActivityType, number> {
   return {
-    direct_deposit: 0,
-    atm: 0,
-    billpay: 0,
-    mobile_check_deposit: 0,
-    zelle: 0,
+    ach: 0,
+    cash_withdrawal: 0,
+    check_deposit: 0,
+    check_payment: 0,
+    debit_card_payment: 0,
+    deposit: 0,
+    lockbox: 0,
+    transfer: 0,
     wire: 0,
-    ach: 0
+    zelle: 0
   };
 }

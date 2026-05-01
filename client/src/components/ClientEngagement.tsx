@@ -11,15 +11,18 @@ import {
   Alert,
   LinearProgress
 } from '@mui/material';
-import { 
-  Computer, 
+import {
+  Computer,
   AccountBalance,
+  AccountBalanceWallet,
   LocalAtm,
-  PhoneAndroid,
-  CalendarToday,
+  ReceiptLong,
+  Description,
+  CreditCard,
+  Inbox,
   SwapHoriz,
   FlashOn,
-  AccountBalanceWallet
+  Send
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import type { ClientEngagementDTO } from '@shared/contracts';
@@ -71,18 +74,18 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
 
   if (error || !engagement) {
     return (
-      <Card elevation={2} sx={{ 
-        width: '100%', 
-        flex: 1, 
-        height: '100%', 
-        display: 'flex', 
+      <Card elevation={2} sx={{
+        width: '100%',
+        flex: 1,
+        height: '100%',
+        display: 'flex',
         flexDirection: 'column'
       }}>
         <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <Typography variant="h6" gutterBottom sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1, 
+          <Typography variant="h6" gutterBottom sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
             mb: 2,
             color: theme.palette.text.primary,
             fontWeight: 400
@@ -91,21 +94,26 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
             Client Engagement
           </Typography>
           <Alert severity="info" data-testid="alert-client-engagement-error">
-            {error ? 'No online banking account found' : 'Client engagement data not available'}
+            Client engagement data not available
           </Alert>
         </CardContent>
       </Card>
     );
   }
 
+  const hasOnlineBanking = !!engagement.loginId;
+
   const activityItems = [
-    { label: 'Direct Deposit', count: engagement.thirtyDayActivity.direct_deposit, icon: AccountBalance },
-    { label: 'ATM', count: engagement.thirtyDayActivity.atm, icon: LocalAtm },
-    { label: 'Bill Pay', count: engagement.thirtyDayActivity.billpay, icon: CalendarToday },
-    { label: 'Mobile Check', count: engagement.thirtyDayActivity.mobile_check_deposit, icon: PhoneAndroid },
-    { label: 'Zelle', count: engagement.thirtyDayActivity.zelle, icon: SwapHoriz },
-    { label: 'Wires', count: engagement.thirtyDayActivity.wire, icon: FlashOn },
-    { label: 'ACH', count: engagement.thirtyDayActivity.ach, icon: AccountBalanceWallet }
+    { label: 'ACH', count: engagement.thirtyDayActivity.ach, icon: AccountBalanceWallet },
+    { label: 'Cash Withdrawal', count: engagement.thirtyDayActivity.cash_withdrawal, icon: LocalAtm },
+    { label: 'Check Deposit', count: engagement.thirtyDayActivity.check_deposit, icon: ReceiptLong },
+    { label: 'Check Payment', count: engagement.thirtyDayActivity.check_payment, icon: Description },
+    { label: 'Debit Card Payment', count: engagement.thirtyDayActivity.debit_card_payment, icon: CreditCard },
+    { label: 'Deposit', count: engagement.thirtyDayActivity.deposit, icon: AccountBalance },
+    { label: 'Lockbox', count: engagement.thirtyDayActivity.lockbox, icon: Inbox },
+    { label: 'Transfer', count: engagement.thirtyDayActivity.transfer, icon: SwapHoriz },
+    { label: 'Wire', count: engagement.thirtyDayActivity.wire, icon: FlashOn },
+    { label: 'Zelle', count: engagement.thirtyDayActivity.zelle, icon: Send }
   ];
 
   return (
@@ -129,27 +137,29 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
           Client Engagement
         </Typography>
 
-        {/* Login Information - Clean Stats Bar Style */}
-        <Box sx={{ 
-          display: 'flex', 
-          gap: 3, 
-          mb: 3, 
-          pb: 2, 
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          flexWrap: 'wrap'
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Computer sx={{ color: theme.palette.primary.main, fontSize: 20 }} />
-            <Typography variant="body2" color="text.secondary" data-testid="text-login-id">
-              Login ID: <strong>{engagement.loginId}</strong>
-            </Typography>
+        {/* Login Information - Clean Stats Bar Style. Hidden when no online banking row. */}
+        {hasOnlineBanking && (
+          <Box sx={{
+            display: 'flex',
+            gap: 3,
+            mb: 3,
+            pb: 2,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            flexWrap: 'wrap'
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Computer sx={{ color: theme.palette.primary.main, fontSize: 20 }} />
+              <Typography variant="body2" color="text.secondary" data-testid="text-login-id">
+                Login ID: <strong>{engagement.loginId}</strong>
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary" data-testid="text-last-login">
+                Last Login: <strong>{engagement.lastLoginAt || 'Never'}</strong>
+              </Typography>
+            </Box>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" color="text.secondary" data-testid="text-last-login">
-              Last Login: <strong>{engagement.lastLoginAt || 'Never'}</strong>
-            </Typography>
-          </Box>
-        </Box>
+        )}
 
         {/* 30 Day Activity - Horizontal Metric Bars */}
         <Box sx={{ flex: 1 }}>

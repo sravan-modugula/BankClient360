@@ -1654,27 +1654,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const engagement = await storage.getClientEngagement(customerId);
-      if (!engagement) {
-        return res.status(404).json({ 
-          code: "NO_ONLINE_BANKING",
-          message: "No online banking user found for this person",
-          correlationId: req.headers['x-correlation-id']?.toString() || 'unknown',
-          timestamp: new Date().toISOString()
-        });
-      }
 
       // Transform to DTO with PST formatting
       const engagementDTO: ClientEngagementType = {
         loginId: engagement.loginId,
         lastLoginAt: engagement.lastLoginAt ? DateFormatter.formatDateTimeWithTZ(engagement.lastLoginAt) : null,
         thirtyDayActivity: {
-          direct_deposit: engagement.thirtyDayActivity.direct_deposit || 0,
-          atm: engagement.thirtyDayActivity.atm || 0,
-          billpay: engagement.thirtyDayActivity.billpay || 0,
-          mobile_check_deposit: engagement.thirtyDayActivity.mobile_check_deposit || 0,
-          zelle: engagement.thirtyDayActivity.zelle || 0,
+          ach: engagement.thirtyDayActivity.ach || 0,
+          cash_withdrawal: engagement.thirtyDayActivity.cash_withdrawal || 0,
+          check_deposit: engagement.thirtyDayActivity.check_deposit || 0,
+          check_payment: engagement.thirtyDayActivity.check_payment || 0,
+          debit_card_payment: engagement.thirtyDayActivity.debit_card_payment || 0,
+          deposit: engagement.thirtyDayActivity.deposit || 0,
+          lockbox: engagement.thirtyDayActivity.lockbox || 0,
+          transfer: engagement.thirtyDayActivity.transfer || 0,
           wire: engagement.thirtyDayActivity.wire || 0,
-          ach: engagement.thirtyDayActivity.ach || 0
+          zelle: engagement.thirtyDayActivity.zelle || 0
         }
       };
 

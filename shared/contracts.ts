@@ -139,16 +139,19 @@ export type ErrorResponseDTO = z.infer<typeof ErrorResponseDTO>;
 
 // Client Engagement DTO - Online banking activity and transaction summaries
 export const ClientEngagementDTO = z.object({
-  loginId: z.string(),
+  loginId: z.string().nullable(),
   lastLoginAt: z.string().nullable(), // PST formatted date/time or null
   thirtyDayActivity: z.object({
-    direct_deposit: z.number(),
-    atm: z.number(),
-    billpay: z.number(),
-    mobile_check_deposit: z.number(),
-    zelle: z.number(),
+    ach: z.number(),
+    cash_withdrawal: z.number(),
+    check_deposit: z.number(),
+    check_payment: z.number(),
+    debit_card_payment: z.number(),
+    deposit: z.number(),
+    lockbox: z.number(),
+    transfer: z.number(),
     wire: z.number(),
-    ach: z.number()
+    zelle: z.number()
   })
 });
 

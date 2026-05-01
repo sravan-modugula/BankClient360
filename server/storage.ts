@@ -87,7 +87,7 @@ import {
   noteVersion,
   noteAuditLog
 } from "@shared/schema";
-import { CODE_TO_ACTIVITY, createDefaultActivity } from "../shared/constants";
+import { GROUP_CODE_TO_ACTIVITY, createDefaultActivity } from "../shared/constants";
 
 // Notes helper types
 export interface NoteWithCurrentVersion {
@@ -280,10 +280,10 @@ export interface IBankingStorage {
 
   // Dashboard Cards operations
   getClientEngagement(customerId: number): Promise<{
-    loginId: string;
+    loginId: string | null;
     lastLoginAt: Date | null;
     thirtyDayActivity: Record<string, number>;
-  } | null>;
+  }>;
   getRelationshipSummary(customerId: number): Promise<{
     totalDeposits: number;
     totalLoans: number;
@@ -2883,10 +2883,10 @@ export class DatabaseStorage implements IBankingStorage {
 
   // Dashboard Cards operations
   async getClientEngagement(customerId: number): Promise<{
-    loginId: string;
+    loginId: string | null;
     lastLoginAt: Date | null;
     thirtyDayActivity: Record<string, number>;
-  } | null> {
+  }> {
     // SQL Server implementation
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
@@ -2896,64 +2896,50 @@ export class DatabaseStorage implements IBankingStorage {
     }
 
     // PostgreSQL implementation
-    // Get online banking user info
     const bankingUser = await db
       .select()
       .from(onlineBankingUser)
       .where(eq(onlineBankingUser.customerId, customerId))
       .limit(1);
 
-    if (!bankingUser[0]) {
-      return null;
-    }
-
     const user = bankingUser[0];
 
-    // Get 30-day transaction activity by category group
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Get person's accounts first
     const personAccounts = await this.getCustomerAccounts(customerId);
     const accountIds = personAccounts.map(acc => acc.accountId);
 
-    if (accountIds.length === 0) {
-      return {
-        loginId: user.loginId,
-        lastLoginAt: user.lastLoginAt,
-        thirtyDayActivity: createDefaultActivity()
-      };
-    }
-
-    // Get transaction activity grouped by transaction code
-    const activityResult = await db
-      .select({
-        transactionCode: financialTransaction.transactionCode,
-        count: sql<number>`count(*)`
-      })
-      .from(financialTransaction)
-      .where(
-        and(
-          sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`,
-          sql`${financialTransaction.transactionDate} >= ${thirtyDaysAgo}`,
-          sql`${financialTransaction.transactionCode} IS NOT NULL`
-        )
-      )
-      .groupBy(financialTransaction.transactionCode);
-
-    // Map results to expected activity structure using CODE_TO_ACTIVITY mapping
     const thirtyDayActivity = createDefaultActivity();
 
-    activityResult.forEach(row => {
-      if (row.transactionCode && CODE_TO_ACTIVITY[row.transactionCode as keyof typeof CODE_TO_ACTIVITY]) {
-        const activityType = CODE_TO_ACTIVITY[row.transactionCode as keyof typeof CODE_TO_ACTIVITY];
-        thirtyDayActivity[activityType] = Number(row.count);
-      }
-    });
+    if (accountIds.length > 0) {
+      const activityResult = await db
+        .select({
+          groupCode: transactionCategory.groupCode,
+          count: sql<number>`count(*)`
+        })
+        .from(financialTransaction)
+        .innerJoin(transactionCategory, eq(transactionCategory.categoryId, financialTransaction.categoryId))
+        .where(
+          and(
+            sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`,
+            sql`${financialTransaction.transactionDate} >= ${thirtyDaysAgo}`,
+            sql`${transactionCategory.groupCode} IS NOT NULL`
+          )
+        )
+        .groupBy(transactionCategory.groupCode);
+
+      activityResult.forEach(row => {
+        const key = row.groupCode ? GROUP_CODE_TO_ACTIVITY[row.groupCode.trim()] : undefined;
+        if (key) {
+          thirtyDayActivity[key] = Number(row.count) || 0;
+        }
+      });
+    }
 
     return {
-      loginId: user.loginId,
-      lastLoginAt: user.lastLoginAt,
+      loginId: user?.loginId ?? null,
+      lastLoginAt: user?.lastLoginAt ?? null,
       thirtyDayActivity
     };
   }

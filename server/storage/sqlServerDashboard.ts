@@ -4,7 +4,7 @@
  */
 
 import sql from 'mssql';
-import { CODE_TO_ACTIVITY, createDefaultActivity } from '../../shared/constants';
+import { GROUP_CODE_TO_ACTIVITY, createDefaultActivity } from '../../shared/constants';
 import logger from '../services/logger';
 
 const fileLogger = logger.child({ module: 'sqlserver-dashboard' });
@@ -69,61 +69,59 @@ export async function getClientEngagementSqlServer(
   pool: sql.ConnectionPool,
   customerId: number
 ): Promise<{
-  loginId: string;
+  loginId: string | null;
   lastLoginAt: Date | null;
   thirtyDayActivity: Record<string, number>;
-} | null> {
+}> {
   try {
-    const request = pool.request();
-    request.input('customerId', sql.BigInt, customerId);
+    // Get online banking user (optional — on-prem may not have a row)
+    const userRequest = pool.request();
+    userRequest.input('customerId', sql.BigInt, customerId);
 
-    // Get online banking user
-    const userResult = await request.query(`
-      SELECT 
+    const userResult = await userRequest.query(`
+      SELECT
         login_id,
         last_login_at
       FROM online_banking_user
       WHERE customer_id = @customerId
     `);
 
-    if (userResult.recordset.length === 0) {
-      return null;
-    }
-
     const user = userResult.recordset[0];
 
-    // Get 30-day transaction activity by transaction code
+    // Get 30-day transaction activity grouped by transaction_category.group_code
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const request2 = pool.request();
-    request2.input('customerId', sql.BigInt, customerId);
-    request2.input('thirtyDaysAgo', sql.DateTime2, thirtyDaysAgo);
+    const activityRequest = pool.request();
+    activityRequest.input('customerId', sql.BigInt, customerId);
+    activityRequest.input('thirtyDaysAgo', sql.DateTime2, thirtyDaysAgo);
 
-    const activityResult = await request2.query(`
-      SELECT 
-        ft.transaction_code,
+    const activityResult = await activityRequest.query(`
+      SELECT
+        tc.group_code,
         COUNT(*) as count
       FROM financial_transaction ft
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
+      INNER JOIN transaction_category tc ON tc.category_id = ft.category_id
       WHERE ao.customer_id = @customerId
         AND ft.transaction_date >= @thirtyDaysAgo
-        AND ft.transaction_code IS NOT NULL
-      GROUP BY ft.transaction_code
+        AND tc.group_code IS NOT NULL
+      GROUP BY tc.group_code
     `);
 
-    // Map transaction codes to activity categories
-    const activityByCategory: Record<string, number> = createDefaultActivity();
+    const activityByCategory = createDefaultActivity();
 
     activityResult.recordset.forEach(row => {
-      const code = row.transaction_code;
-      const category = CODE_TO_ACTIVITY[code] || 'Other';
-      activityByCategory[category] += row.count;
+      const groupCode = (row.group_code || '').toString().trim();
+      const key = GROUP_CODE_TO_ACTIVITY[groupCode];
+      if (key) {
+        activityByCategory[key] += Number(row.count) || 0;
+      }
     });
 
     return {
-      loginId: user.login_id,
-      lastLoginAt: user.last_login_at,
+      loginId: user?.login_id ?? null,
+      lastLoginAt: user?.last_login_at ?? null,
       thirtyDayActivity: activityByCategory
     };
   } catch (error) {
