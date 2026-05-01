@@ -427,42 +427,44 @@ export async function getAccountDebitCardsSqlServer(
         dc.expiry_year,
         dc.cardholder_name,
         dc.created_at,
-        dlp.profile_id,
-        dlp.profile_name,
-        dlp.profile_description,
-        dlp.daily_purchase_limit,
-        dlp.daily_atm_limit,
-        dlp.single_transaction_limit,
-        dlp.monthly_limit
+        dc.daily_withdrawal_limit,
+        dc.daily_purchase_limit,
+        dc.daily_transaction_limit
       FROM debit_card dc
-      LEFT JOIN debit_card_limit_profile dlp ON dc.limit_profile_id = dlp.profile_id
       WHERE dc.account_id = @accountId
       ORDER BY dc.created_at DESC
     `);
 
-    return result.recordset.map((row, index) => ({
-      cardId: index + 1,
-      accountId: row.account_id,
-      customerId: row.customer_id,
-      cardType: row.card_type,
-      cardStatus: row.card_status,
-      lastFourDigits: row.last_four_digits,
-      cardBrand: row.card_brand,
-      expiryMonth: row.expiry_month,
-      expiryYear: row.expiry_year,
-      cardholderName: row.cardholder_name,
-      jackHenryCardId: row.jack_henry_card_id ?? null,
-      silverlakeCardToken: row.silverlake_card_token ?? null,
-      limitProfile: row.profile_id ? {
-        profileId: row.profile_id,
-        profileName: row.profile_name,
-        profileDescription: row.profile_description,
-        dailyPurchaseLimit: row.daily_purchase_limit,
-        dailyAtmLimit: row.daily_atm_limit,
-        singleTransactionLimit: row.single_transaction_limit,
-        monthlyLimit: row.monthly_limit
-      } : null
-    }));
+    return result.recordset.map((row, index) => {
+      const hasAnyLimit =
+        row.daily_purchase_limit != null ||
+        row.daily_withdrawal_limit != null ||
+        row.daily_transaction_limit != null;
+
+      return {
+        cardId: index + 1,
+        accountId: row.account_id,
+        customerId: row.customer_id,
+        cardType: row.card_type,
+        cardStatus: row.card_status,
+        lastFourDigits: row.last_four_digits,
+        cardBrand: row.card_brand,
+        expiryMonth: row.expiry_month,
+        expiryYear: row.expiry_year,
+        cardholderName: row.cardholder_name,
+        jackHenryCardId: row.jack_henry_card_id ?? null,
+        silverlakeCardToken: row.silverlake_card_token ?? null,
+        limitProfile: hasAnyLimit ? {
+          profileId: 0,
+          profileName: 'Card Limits',
+          profileDescription: null,
+          dailyPurchaseLimit: row.daily_purchase_limit,
+          dailyAtmLimit: row.daily_withdrawal_limit,
+          singleTransactionLimit: row.daily_transaction_limit,
+          monthlyLimit: null,
+        } : null
+      };
+    });
   } catch (error) {
     fileLogger.error({ err: error }, 'Get account debit cards error');
     throw error;
