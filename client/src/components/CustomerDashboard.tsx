@@ -215,11 +215,11 @@ export default function CustomerDashboard() {
   // Redirect to full household page when household tab is selected
   useEffect(() => {
     if (activeTab === 'household' && hasHouseholdPermission && selectedCustomer?.customerId) {
+      const customerQuery = `customerId=${encodeURIComponent(selectedCustomer.customerId)}`;
       if (primaryHouseholdId) {
-        setLocation(`/household/${primaryHouseholdId}`);
+        setLocation(`/ciq/household?householdId=${primaryHouseholdId}&${customerQuery}`);
       } else {
-        // Redirect to a special route for customers without households
-        setLocation(`/household/customer/${selectedCustomer.customerId}`);
+        setLocation(`/ciq/household?${customerQuery}`);
       }
     }
   }, [activeTab, primaryHouseholdId, hasHouseholdPermission, selectedCustomer?.customerId, setLocation]);
@@ -642,7 +642,7 @@ export default function CustomerDashboard() {
               {/* View Full Household Button */}
               {primaryHouseholdId && (
                 <Box sx={{ mb: 3, display: 'flex', justifyContent: 'flex-end' }}>
-                  <Link href={`/household/${primaryHouseholdId}`}>
+                  <Link href={`/ciq/household?householdId=${primaryHouseholdId}${selectedCustomer?.customerId ? `&customerId=${encodeURIComponent(selectedCustomer.customerId)}` : ''}`}>
                     <Box
                       component="button"
                       data-testid="button-view-full-household"

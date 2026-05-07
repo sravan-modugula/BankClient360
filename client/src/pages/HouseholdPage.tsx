@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useLocation } from 'wouter';
+import { useLocation, useSearchParams } from 'wouter';
 import { navigateToCustomer, navigateToHousehold } from '@/lib/navigation';
 import {
   Container,
@@ -143,11 +143,12 @@ const weightedAvgRate = (accounts: Account[]): number | null => {
 };
 
 export default function HouseholdPage() {
-  const params = useParams();
+  const [searchParams] = useSearchParams();
   const [, setLocation] = useLocation();
   const { formatDateTime } = useDateFormatter();
-  const householdId = params.id ? parseInt(params.id) : null;
-  const customerId = params.customerId || null; // Keep as string to support alphanumeric IDs
+  const householdIdParam = searchParams.get('householdId');
+  const householdId = householdIdParam ? parseInt(householdIdParam) : null;
+  const customerId = searchParams.get('customerId'); // Keep as string to support alphanumeric IDs
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [editNoteId, setEditNoteId] = useState<number | null>(null);
   const [noteTargetType, setNoteTargetType] = useState<'customer' | 'account'>('customer');

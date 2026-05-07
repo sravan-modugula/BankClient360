@@ -65,8 +65,16 @@ export function navigateToCustomer(customerId: number | string, fromHouseholdId?
 export function navigateToHousehold(householdId: number | string): void {
   try {
     const encodedId = validateAndEncodeId(householdId);
+    // Preserve any existing customerId query param so the dashboard tabs stay in sync
+    const currentParams = new URLSearchParams(window.location.search);
+    const targetParams = new URLSearchParams();
+    targetParams.set('householdId', encodedId);
+    const existingCustomerId = currentParams.get('customerId');
+    if (existingCustomerId) {
+      targetParams.set('customerId', existingCustomerId);
+    }
     // Use history.pushState for SPA navigation without full page reload
-    window.history.pushState({}, '', `/household/${encodedId}`);
+    window.history.pushState({}, '', `/ciq/household?${targetParams.toString()}`);
     // Trigger events so hooks detect the navigation
     window.dispatchEvent(new PopStateEvent('popstate'));
     window.dispatchEvent(new Event('pushstate'));
