@@ -138,8 +138,14 @@ export function createSamlStrategy() {
       // NameID configuration
       identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
 
-      // Security — mirror TimeTracker's working RSA IdP config
-      wantAssertionsSigned: true,
+      // Signature requirements — RSA SecurID Access for ClientIQ signs the
+      // Response wrapper (Reference URI = Response@ID), not the Assertion.
+      // With wantAssertionsSigned=false, passport-saml skips assertion-level
+      // verification when the Response signature already verified successfully
+      // (the response sig covers the assertion via c14n). If neither was
+      // signed, validation still throws — at least one valid signature is
+      // required. Confirmed via SAML trace from the F&M Bank IdP team.
+      wantAssertionsSigned: false,
       wantAuthnResponseSigned: false,
       signatureAlgorithm: 'sha256',
 
