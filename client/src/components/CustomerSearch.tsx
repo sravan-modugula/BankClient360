@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import type { CustomerListItem, SmartSearchResult, UnifiedSearchResult, SearchEntityItem } from '@shared/schema';
-import { 
-  AppBar, 
-  Toolbar, 
-  TextField, 
-  InputAdornment, 
-  IconButton, 
-  Chip, 
+import {
+  AppBar,
+  Toolbar,
+  TextField,
+  InputAdornment,
+  IconButton,
+  Chip,
   Box,
   Paper,
   List,
@@ -23,6 +23,7 @@ import {
   ListSubheader
 } from '@mui/material';
 import { Search as SearchIcon, FilterList, Person, Groups } from '@mui/icons-material';
+import { generateCustomerUrl, navigateToCustomer } from '@/lib/navigation';
 
 interface Customer {
   id: string;
@@ -33,13 +34,8 @@ interface Customer {
   status: string;
 }
 
-// Remove old interface - using SmartSearchResult from schema now
 
-interface CustomerSearchProps {
-  onCustomerSelect?: (customer: Customer) => void;
-}
-
-export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps) {
+export default function CustomerSearch() {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
@@ -56,7 +52,7 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
 
   // Smart API search using TanStack Query with unified search (customers + households)
   const searchUrl = `/api/customers/search?q=${encodeURIComponent(debouncedQuery)}&entityTypes=customer,household&limit=15`;
-  
+
   const { data: unifiedResults, isLoading: searchLoading } = useQuery({
     queryKey: [searchUrl],
     enabled: debouncedQuery.length > 2,
@@ -79,15 +75,16 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
         status: entity.status || 'active'
       };
       console.log('Customer selected:', customer);
-      setSearchQuery(customer.name);
+      setSearchQuery("");
       setShowResults(false);
-      onCustomerSelect?.(customer);
+      setLocation("/" + generateCustomerUrl(customer.customerId || customer.id));
     } else if (entity.entityType === 'household') {
       // Navigate to household page
       console.log('Household selected:', entity);
-      setSearchQuery(entity.displayName);
+      setSearchQuery("");
       setShowResults(false);
-      setLocation(`/household/${entity.entityId}`);
+      // setLocation(`/household/${entity.entityId}`);
+      setLocation(`/ciq/household?householdId=${entity.entityId}`)
     }
   };
 
@@ -104,46 +101,51 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
   const householdResults = groupedResults.household || [];
 
   return (
-    <Box sx={{ position: 'relative' }}>
-      <AppBar position="static" elevation={0} sx={{ bgcolor: 'background.paper', color: 'text.primary', borderBottom: 1, borderColor: 'divider' }}>
-        <Toolbar disableGutters sx={{ px: 2 }}>
-          <TextField
-            fullWidth
-            variant="standard"
-            placeholder="Search customers and households by name, CIF number, tax ID, or customer ID..."
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            data-testid="input-customer-search"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="secondary" />
-                </InputAdornment>
-              ),
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton size="small" data-testid="button-search-filters">
-                    <FilterList />
-                  </IconButton>
-                </InputAdornment>
-              ),
-              disableUnderline: true
-            }}
-          />
-        </Toolbar>
-      </AppBar>
+    <>
+      <TextField
+        sx={{ 
+          width: 400, 
+          mt: 1, 
+          mb: 1, 
+          ml: "auto" // push search bar to right
+        }}
+        variant="outlined"
+        placeholder="Search"
+        value={searchQuery}
+        onChange={(e) => handleSearch(e.target.value)}
+        data-testid="input-customer-search"
+        slotProps={{
+          input: {
+            sx: {
+              backgroundColor: "#ffffff",
+              fontSize: 14,
+              '& fieldset': { border: "none"},
+            },
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon color="secondary" />
+              </InputAdornment>
+            ),
+            disableUnderline: true,
+            size: "small"
+          }
+        }}
+      />
 
       <Fade in={showResults}>
-        <Paper 
+        <Paper
           elevation={8}
-          sx={{ 
+          sx={{
             position: 'absolute',
             top: '100%',
             left: 0,
             right: 0,
             zIndex: 1000,
             maxHeight: 400,
-            overflow: 'auto'
+            overflow: 'auto',
+            width: 400,
+            ml: "auto",
+            mr: 3 // this is to match padding in the Header.tsx component
           }}
         >
           <List>
@@ -166,7 +168,7 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
                       </Box>
                     </ListSubheader>
                     {customerResults.map((entity) => (
-                      <ListItem 
+                      <ListItem
                         key={`customer-${entity.entityId}`}
                         component="button"
                         onClick={() => handleEntitySelect(entity)}
@@ -182,7 +184,7 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
                           primary={entity.displayName}
                           secondary={entity.primaryIdentifiers.join(' • ')}
                         />
-                        <Chip 
+                        <Chip
                           label={entity.status?.toUpperCase() || 'ACTIVE'}
                           variant="outlined"
                           size="small"
@@ -207,7 +209,7 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
                       </Box>
                     </ListSubheader>
                     {householdResults.map((entity) => (
-                      <ListItem 
+                      <ListItem
                         key={`household-${entity.entityId}`}
                         component="button"
                         onClick={() => handleEntitySelect(entity)}
@@ -223,7 +225,7 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
                           primary={entity.displayName}
                           secondary={entity.primaryIdentifiers.join(' • ')}
                         />
-                        <Chip 
+                        <Chip
                           label={entity.status?.toUpperCase() || 'ACTIVE'}
                           variant="outlined"
                           size="small"
@@ -235,8 +237,8 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
               </>
             ) : (
               <ListItem>
-                <ListItemText 
-                  primary="No results found" 
+                <ListItemText
+                  primary="No results found"
                   secondary={searchQuery.length > 2 ? `No results for "${searchQuery}"` : 'Start typing to search customers and households...'}
                 />
               </ListItem>
@@ -244,6 +246,6 @@ export default function CustomerSearch({ onCustomerSelect }: CustomerSearchProps
           </List>
         </Paper>
       </Fade>
-    </Box>
+    </>
   );
 }

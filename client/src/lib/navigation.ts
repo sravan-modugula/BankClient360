@@ -23,6 +23,19 @@ function validateAndEncodeId(id: number | string): string {
   return encodeURIComponent(stringId);
 }
 
+export function generateCustomerUrl(customerId: number | string, fromHouseholdId?: number | string) : string {
+    const encodedId = validateAndEncodeId(customerId);
+    let newUrl = `ciq/client?customerId=${encodedId}`;
+    
+    // Add household ID if provided for back navigation
+    if (fromHouseholdId) {
+      const encodedHouseholdId = validateAndEncodeId(fromHouseholdId);
+      newUrl += `&fromHouseholdId=${encodedHouseholdId}`;
+    }
+
+    return newUrl;
+}
+
 /**
  * Navigate to customer detail page using SPA routing
  * @param customerId - The customer ID to navigate to (supports both numeric and alphanumeric IDs)
@@ -31,15 +44,8 @@ function validateAndEncodeId(id: number | string): string {
  */
 export function navigateToCustomer(customerId: number | string, fromHouseholdId?: number | string): void {
   try {
-    const encodedId = validateAndEncodeId(customerId);
-    let newUrl = `/?customerId=${encodedId}`;
-    
-    // Add household ID if provided for back navigation
-    if (fromHouseholdId) {
-      const encodedHouseholdId = validateAndEncodeId(fromHouseholdId);
-      newUrl += `&fromHouseholdId=${encodedHouseholdId}`;
-    }
-    
+    const newUrl = generateCustomerUrl(customerId, fromHouseholdId);
+
     // Use history.pushState for SPA navigation without full page reload
     window.history.pushState({}, '', newUrl);
     // Trigger events so hooks detect the navigation
@@ -68,4 +74,30 @@ export function navigateToHousehold(householdId: number | string): void {
     console.error('Navigation error:', error);
     throw error;
   }
+}
+
+/*
+* Navigate to a url and keep the current search parameters when calling the 
+* going to the new url
+*/
+export function navigateWithMergedSearch(navigate : (url: string) => void, to : string) {
+  // Get current search params from browser location
+  const currentParams = new URLSearchParams(window.location.search);
+
+  // Parse the target URL (supports relative paths)
+  const url = new URL(to, window.location.origin);
+  const targetParams = new URLSearchParams(url.search);
+
+  // Merge: preserve existing target params, append missing ones from current
+  for (const [key, value] of currentParams.entries()) {
+    if (!targetParams.has(key)) {
+      targetParams.append(key, value);
+    }
+  }
+
+  // Reconstruct final URL
+  url.search = targetParams.toString();
+
+  // Navigate using pathname + search + hash (avoids origin issues)
+  navigate(url.pathname + url.search + url.hash);
 }

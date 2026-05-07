@@ -1,9 +1,9 @@
-import { 
-  Card, 
-  CardContent, 
-  Typography, 
-  Box, 
-  Chip, 
+import {
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  Chip,
   List,
   ListItem,
   ListItemIcon,
@@ -21,12 +21,13 @@ import {
   useMediaQuery,
   useTheme,
   Tooltip,
-  Link
+  Link,
+  CardActions
 } from '@mui/material';
-import { 
-  ContactPhone, 
-  Email, 
-  Home, 
+import {
+  ContactPhone,
+  Email,
+  Home,
   Phone,
   Business,
   Close,
@@ -35,9 +36,11 @@ import {
   LocationOn,
   Work,
   PersonalVideo,
-  Emergency
+  Emergency,
+  ArrowForward
 } from '@mui/icons-material';
 import { useState } from 'react';
+import PanelTitle from './PanelTitle';
 
 interface ContactInfo {
   id: string;
@@ -205,62 +208,26 @@ export default function ContactInformation({ contacts }: ContactInformationProps
     <>
       <Card elevation={2} sx={{ width: '100%', flex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
         <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-            <ContactPhone color="secondary" />
-            Contact Information
-          </Typography>
+          <PanelTitle left="Contact Information" />
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
             {primaryContacts.length > 0 ? (
               <>
-                {primaryContacts.map((contact) => (
-                  <Box key={contact.id}>
-                    <Box
-                      data-testid={`contact-${contact.id}`}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1.5,
-                        py: 1,
-                        px: 1,
-                        borderRadius: 1,
-                        '&:hover': {
-                          bgcolor: 'action.hover'
-                        }
-                      }}
-                    >
-                      <Box sx={{ color: 'action.active', minWidth: 24 }}>
-                        {getContactIcon(contact.type, contact.subtype)}
+                {primaryContacts.map((contact, idx, arr) => (
+                    <ListItem key={contact.id} disablePadding sx={{ py: 1, borderBottom: idx < arr.length - 1 ? '1px solid #e4eedc' : "none", alignItems: "flex-start" }}>
+                      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", width: "12%"}}>
+                        <Box data-testid={`contact-${contact.id}`} sx={{ width: 36, height: 36, borderRadius: 1.5, background: '#eaf3e4', border: '1px solid #c0d8b8', display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, mr: 1.25 }}>
+                          {getContactIcon(contact.type, contact.subtype)}
+                        </Box>
                       </Box>
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ wordBreak: 'break-word', fontWeight: 400, mb: 0.5 }}>
-                          {formatContactValue(contact)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {contact.subtype?.charAt(0).toUpperCase() + contact.subtype?.slice(1)} • Primary
-                        </Typography>
+                      <Box>
+                        <Typography sx={{ fontSize: 14, color: '#7a9a7a', textTransform: "uppercase", letterSpacing: "0.07em", mb: 0.25 }}>{contact.type}</Typography>
+                        <Typography sx={{ fontSize: 16, color: '#2a4a2a', fontWeight: 400 }}>{formatContactValue(contact)}</Typography>
+                        <Typography sx={{ fontSize: 14, color: '#9ab89a', mt: 0.25 }}>{contact.subtype?.charAt(0).toUpperCase() + contact.subtype?.slice(1)}{contact.isPrimary ? " • Primary" : ""}</Typography>
                       </Box>
-                    </Box>
-                  </Box>
+                    </ListItem>
                 ))}
-                
-                {totalContacts > primaryContacts.length && (
-                  <Box sx={{ mt: 'auto', pt: 2 }}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      startIcon={<ContactPhone />}
-                      onClick={() => setModalOpen(true)}
-                      data-testid="button-view-all-contacts"
-                      sx={{
-                        textTransform: 'none',
-                        fontWeight: 400
-                      }}
-                    >
-                      View All {totalContacts} Contacts
-                    </Button>
-                  </Box>
-                )}
               </>
             ) : (
               <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -275,6 +242,34 @@ export default function ContactInformation({ contacts }: ContactInformationProps
             )}
           </Box>
         </CardContent>
+
+        {totalContacts > primaryContacts.length && (
+          <CardActions>
+            {/* View Details Link */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', pb: 1, width: "100%" }}>
+              <Link
+                component="button"
+                variant="body2"
+                onClick={() => setModalOpen(true)}
+                data-testid="button-view-all-contacts"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  color: 'primary.main',
+                  fontWeight: 400,
+                  textDecoration: 'none',
+                  '&:hover': {
+                    textDecoration: 'underline'
+                  }
+                }}
+              >
+                View All {totalContacts} Contacts
+                <ArrowForward sx={{ fontSize: 16 }} />
+              </Link>
+            </Box>
+          </CardActions>
+        )}
       </Card>
 
       {/* Contact Details Modal */}
@@ -292,9 +287,9 @@ export default function ContactInformation({ contacts }: ContactInformationProps
           }
         }}
       >
-        <DialogTitle sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+        <DialogTitle sx={{
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
           pb: 1
         }}>
@@ -308,11 +303,11 @@ export default function ContactInformation({ contacts }: ContactInformationProps
             <Typography variant="h6">
               Customer Contact Details
             </Typography>
-            <Chip 
-              label={`${totalContacts} Total`} 
-              size="small" 
-              color="primary" 
-              variant="outlined" 
+            <Chip
+              label={`${totalContacts} Total`}
+              size="small"
+              color="primary"
+              variant="outlined"
             />
           </Box>
           {!isMobile && (
@@ -354,19 +349,19 @@ export default function ContactInformation({ contacts }: ContactInformationProps
                       {type.icon}
                       {type.label} Contacts
                     </Typography>
-                    
+
                     {/* Primary contacts first */}
-                    {groupedContacts[type.key]?.filter(contact => contact.isPrimary).map(contact => 
+                    {groupedContacts[type.key]?.filter(contact => contact.isPrimary).map(contact =>
                       renderContactCard(contact, true)
                     )}
-                    
+
                     {/* Secondary contacts */}
                     {groupedContacts[type.key]?.filter(contact => !contact.isPrimary).length > 0 && (
                       <>
                         <Typography variant="subtitle2" sx={{ mt: 3, mb: 2, color: 'text.secondary' }}>
                           Additional {type.label} Contacts
                         </Typography>
-                        {groupedContacts[type.key]?.filter(contact => !contact.isPrimary).map(contact => 
+                        {groupedContacts[type.key]?.filter(contact => !contact.isPrimary).map(contact =>
                           renderContactCard(contact, true)
                         )}
                       </>

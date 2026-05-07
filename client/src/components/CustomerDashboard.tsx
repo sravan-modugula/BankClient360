@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { HouseholdMemberWithCustomer } from '@shared/schema';
-import { 
-  Box, 
-  Container, 
+import type { Customer, HouseholdMemberWithCustomer } from '@shared/schema';
+import {
+  Box,
+  Container,
   Typography,
   ThemeProvider,
   createTheme,
@@ -21,7 +21,7 @@ import {
   CircularProgress
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
-import { 
+import {
   Person,
   DarkMode,
   LightMode,
@@ -51,35 +51,66 @@ import TotalRelationshipSummary from './TotalRelationshipSummary';
 import RecentContactHistoryVariantC from './RecentContactHistory_VariantC';
 import NotesSection from './NotesSection';
 import PermissionGuard from './PermissionGuard';
-import { Link, useLocation } from 'wouter';
+import { Link, useLocation, useParams, useSearchParams } from 'wouter';
 import { IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText } from '@mui/material';
 import { AdminPanelSettings } from '@mui/icons-material';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSearchParam } from '@/hooks/useSearchParams';
 import { navigateToCustomer, navigateToHousehold } from '@/lib/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import Middle from './Middle';
+import SectionLabel from './SectionLabel';
+import { navigateWithMergedSearch } from '@/lib/navigation';
+import { navigate } from 'wouter/use-browser-location';
+import NotFound from '@/pages/not-found';
+
+type TabView = 'household' | 'client' | 'accounts' | 'accountSummary';
 
 export default function CustomerDashboard() {
+
+
   const [darkMode, setDarkMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'household' | 'client' | 'accounts' | 'accountSummary'>('client');
+  const [activeTab, setActiveTab] = useState<TabView | null>(null);
   const [selectedDetailAccountId, setSelectedDetailAccountId] = useState<number | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [selectedAccountLabel, setSelectedAccountLabel] = useState<string>('All Accounts');
   const [adminMenuAnchor, setAdminMenuAnchor] = useState<null | HTMLElement>(null);
   const [, setLocation] = useLocation();
+  const [params,] = useSearchParams();
+  const urlParams = useParams();
   const { data: permissions } = usePermissions();
   const maxPrivilegeLevel = permissions?.maxPrivilegeLevel || 0;
-  
+
   const { isAuthenticated, isLoading: authLoading, login } = useAuth();
-  
+
+  /* 
+    We are changing the component structure so the URL controls the 
+    state of the tab that is being viewed
+  */
+  let tabView = urlParams?.tabView;
+  React.useEffect(() => {
+    if (["client", "accounts", "household"].includes(tabView || "")) {
+
+      // NOTE: we're remapping the account url to the accountSummary tab
+      if (tabView === "accounts") {
+        tabView = "accountSummary";
+      }
+
+      setActiveTab(tabView as TabView);
+    } else {
+      setActiveTab(null);
+    }
+  }, [tabView]);
+
+
   // Check if user has permissions for tabs
   const hasHouseholdPermission = permissions?.permissions.includes('household.view') || false;
   const hasAccountsPermission = permissions?.permissions.includes('accounts.view') || false;
 
   // Get customer ID from URL parameter - this is the source of truth
-  const customerIdParam = useSearchParam('customerId');
-  const fromHouseholdId = useSearchParam('fromHouseholdId');
-  
+  const customerIdParam = params.get('customerId');
+  const fromHouseholdId = params.get('fromHouseholdId');
+
   // Auto-load customer from URL parameter
   const { data: customerFromUrl, isLoading: customerFromUrlLoading } = useQuery({
     queryKey: [`/api/customers/${customerIdParam}`],
@@ -103,13 +134,15 @@ export default function CustomerDashboard() {
     setSelectedAccountId(null);
     setSelectedAccountLabel('All Accounts');
   }, [customerIdParam]);
-  
+
   // Reset active tab if user loses permission for currently selected tab
   useEffect(() => {
     if (activeTab === 'household' && !hasHouseholdPermission) {
-      setActiveTab('client');
+      navigateWithMergedSearch(navigate, "/ciq/client");
+      // setActiveTab('client');
     } else if ((activeTab === 'accounts' || activeTab === 'accountSummary') && !hasAccountsPermission) {
-      setActiveTab('client');
+      navigateWithMergedSearch(navigate, "/ciq/client");
+      // setActiveTab('client');
     }
   }, [activeTab, hasHouseholdPermission, hasAccountsPermission]);
 
@@ -379,12 +412,6 @@ export default function CustomerDashboard() {
     },
   });
 
-  const handleCustomerSelect = (customer: any) => {
-    console.log('Customer selected:', customer);
-    // Navigate to the customer page using URL parameters
-    navigateToCustomer(customer.customerId || customer.id);
-  };
-
   // Fetch real customer data when a customer is selected
   const { data: customerDetails, isLoading: customerLoading } = useQuery({
     queryKey: [`/api/customers/${selectedCustomer?.id}`],
@@ -423,7 +450,8 @@ export default function CustomerDashboard() {
   // Auto-switch from accounts tab if employee restriction applies
   useEffect(() => {
     if ((activeTab === 'accounts' || activeTab === 'accountSummary') && accountsRestrictedDueToEmployee) {
-      setActiveTab('client');
+      // setActiveTab('client');
+      navigateWithMergedSearch(navigate, "/ciq/client");
     }
   }, [activeTab, accountsRestrictedDueToEmployee]);
 
@@ -433,15 +461,23 @@ export default function CustomerDashboard() {
 
   const handleViewAccountDetail = (accountId: number) => {
     setSelectedDetailAccountId(accountId);
-    setActiveTab('accountSummary');
+
+    // with the new system, we want to change the url while also updating the component state
+    navigateWithMergedSearch(navigate, "/ciq/accounts");
+
+    // setActiveTab('accountSummary');
   };
+
+  if (!activeTab) {
+    return <NotFound />
+  }
 
   if (authLoading) {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box sx={{ 
-          minHeight: '100vh', 
+        <Box sx={{
+          minHeight: '100%',
           bgcolor: 'background.default',
           display: 'flex',
           alignItems: 'center',
@@ -457,8 +493,8 @@ export default function CustomerDashboard() {
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Box sx={{ 
-          minHeight: '100vh', 
+        <Box sx={{
+          minHeight: '100%',
           bgcolor: 'background.default',
           display: 'flex',
           alignItems: 'center',
@@ -494,13 +530,13 @@ export default function CustomerDashboard() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+      <Box sx={{ flex: 1, background: "#f0ece4" }}>
         {/* Customer Search */}
-        <Container maxWidth="xl" sx={{ pt: 3 }}>
-          <CustomerSearch onCustomerSelect={handleCustomerSelect} />
-          
-          {/* Back to Household button - show when navigated from household page */}
-          {fromHouseholdId && (
+        {/* <CustomerSearch /> */}
+
+        {/* Back to Household button - show when navigated from household page */}
+        {fromHouseholdId && (
+          <Box sx={{ pt: 3, background: 'white', width: "100%", maxWidth: "none", display: "flex", justifyContent: "center", alignItems: "center" }}>
             <Box sx={{ mt: 2, mb: 1 }}>
               <Button
                 startIcon={<ArrowBack />}
@@ -513,18 +549,18 @@ export default function CustomerDashboard() {
                 Back to Household
               </Button>
             </Box>
-          )}
-        </Container>
-        
+          </Box>
+        )}
+
         {/* Navigation Tabs - only show when customer is selected */}
-        {selectedCustomer && (
+        {/* selectedCustomer && (
           <Paper elevation={1} sx={{ borderRadius: 0 }}>
-            <Tabs 
-              value={activeTab} 
+            <Tabs
+              value={activeTab}
               onChange={handleTabChange}
               variant="fullWidth"
-              sx={{ 
-                borderBottom: 1, 
+              sx={{
+                borderBottom: 1,
                 borderColor: 'divider',
                 '& .MuiTab-root': {
                   textTransform: 'none',
@@ -534,17 +570,17 @@ export default function CustomerDashboard() {
               }}
             >
               {hasHouseholdPermission && (
-                <Tab 
-                  icon={<FamilyRestroom />} 
-                  label="Household" 
+                <Tab
+                  icon={<FamilyRestroom />}
+                  label="Household"
                   value="household"
                   data-testid="tab-household"
                   sx={{ color: 'secondary.main' }}
                 />
               )}
-              <Tab 
-                icon={<Person />} 
-                label="Client" 
+              <Tab
+                icon={<Person />}
+                label="Client"
                 value="client"
                 data-testid="tab-client"
                 sx={{ color: 'secondary.main' }}
@@ -569,8 +605,8 @@ export default function CustomerDashboard() {
               )}
             </Tabs>
           </Paper>
-        )}
-        
+        )*/}
+
         {/* Main Content */}
         <Container maxWidth="xl" sx={{ py: 3 }}>
 
@@ -589,7 +625,7 @@ export default function CustomerDashboard() {
 
           {/* Dashboard Content - only show when customer is selected */}
           {selectedCustomer && activeTab === 'household' && (
-            <PermissionGuard 
+            <PermissionGuard
               permissionCode="household.view"
               fallback={
                 <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -653,9 +689,10 @@ export default function CustomerDashboard() {
 
           {selectedCustomer && activeTab === 'client' && (
             <>
+              <SectionLabel>Client Profile</SectionLabel>
               {/* Client profile cards with balanced container */}
               <Box sx={{ mb: 3, display: 'flex', gap: 3, '@media (max-width: 768px)': { flexDirection: 'column' } }}>
-                <Box sx={{ flex: '2' }}>
+                <Box sx={{ flex: '1' }}>
                   <CustomerOverview customer={customerDetails || {
                     id: selectedCustomer.id,
                     name: selectedCustomer.name,
@@ -668,7 +705,7 @@ export default function CustomerDashboard() {
                     cifNumber: null
                   }} />
                 </Box>
-                <Box sx={{ flex: '1.5' }}>
+                <Box sx={{ flex: '1' }}>
                   <ContactInformation contacts={realCustomerContacts || []} />
                 </Box>
                 <Box sx={{ flex: '1' }}>
@@ -681,39 +718,48 @@ export default function CustomerDashboard() {
                   })) || mockOfficers} />
                 </Box>
               </Box>
-              
+
+
+              <PermissionGuard permissionCode="customer.view.relationship_summary" fallback={null}>
+                <Box sx={{ mb: 3, display: 'flex', gap: 3, width: "100%" }}>
+                  <Middle customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0} />
+                </Box>
+              </PermissionGuard>
+
               {/* Client Analytics Section - 3 cards in balanced container */}
               <Box sx={{ mb: 3, display: 'flex', gap: 3, '@media (max-width: 768px)': { flexDirection: 'column' } }}>
                 <Box sx={{ flex: '1' }}>
                   <ClientEngagement customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0} />
                 </Box>
+                {/* 
                 <PermissionGuard permissionCode="customer.view.relationship_summary" fallback={null}>
                   <Box sx={{ flex: '1' }}>
                     <TotalRelationshipSummary customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0} />
                   </Box>
                 </PermissionGuard>
+                */}
                 <PermissionGuard permissionCode="customer.view.recent_activity" fallback={null}>
                   <Box sx={{ flex: '1' }}>
                     <RecentContactHistoryVariantC customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0} />
                   </Box>
                 </PermissionGuard>
               </Box>
-              
+
               {/* Customer Notes Section */}
               <Box sx={{ mb: 3 }}>
-                <NotesSection 
+                <NotesSection
                   customerId={customerDetails?.customerId ?? selectedCustomer?.customerId ?? 0}
                   targetType="customer"
                 />
               </Box>
-              
+
               {/* Deposits with proper container */}
               <PermissionGuard permissionCode="customer.view.deposits" fallback={null}>
                 <Box sx={{ mb: 3 }}>
                   <Deposits customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0} />
                 </Box>
               </PermissionGuard>
-              
+
               {/* Account List */}
               <AccountList
                 customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0}
@@ -723,7 +769,7 @@ export default function CustomerDashboard() {
           )}
 
           {selectedCustomer && activeTab === 'accounts' && (
-            <PermissionGuard 
+            <PermissionGuard
               permissionCode="accounts.view"
               fallback={
                 <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -739,17 +785,17 @@ export default function CustomerDashboard() {
             >
               {/* Account Portfolio Table */}
               <Box sx={{ mb: 3 }}>
-                <AccountSummaryTableVersion 
-                  accounts={realCustomerAccounts || mockAccounts || []} 
+                <AccountSummaryTableVersion
+                  accounts={realCustomerAccounts || mockAccounts || []}
                   selectedAccountId={selectedAccountId}
                   onAccountSelect={handleAccountSelect}
                 />
               </Box>
-              
+
               {/* Transaction History */}
               <Box sx={{ mb: 3 }}>
-                <TransactionHistory 
-                  customerId={customerDetails?.customerId ?? selectedCustomer?.customerId ?? 0} 
+                <TransactionHistory
+                  customerId={customerDetails?.customerId ?? selectedCustomer?.customerId ?? 0}
                   selectedAccountId={selectedAccountId}
                   selectedAccountLabel={selectedAccountLabel}
                 />
@@ -784,7 +830,9 @@ export default function CustomerDashboard() {
                   {/* Account Detail inline */}
                   <AccountDetailOption2
                     accountId={String(selectedDetailAccountId)}
-                    onBack={() => setActiveTab('client')}
+                    onBack={() =>
+                      navigateWithMergedSearch(navigate, "/ciq/client")
+                    }
                   />
                 </>
               ) : (
@@ -801,7 +849,9 @@ export default function CustomerDashboard() {
                       <Button
                         variant="outlined"
                         startIcon={<ArrowBack />}
-                        onClick={() => setActiveTab('client')}
+                        onClick={() => {
+                          navigateWithMergedSearch(navigate, "/ciq/client");
+                        }}
                       >
                         GO TO CLIENT TAB
                       </Button>

@@ -1,16 +1,17 @@
 import React from 'react';
-import { 
-  Card, 
-  CardContent, 
-  Typography, 
-  Box, 
-  Chip, 
-  Avatar, 
+import {
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  Chip,
+  Avatar,
   Divider,
-  Link
+  Link,
+  CardActions
 } from '@mui/material';
-import { 
-  Person, 
+import {
+  Person,
   FamilyRestroom,
   Star,
   Badge,
@@ -20,6 +21,7 @@ import {
   LocationOn
 } from '@mui/icons-material';
 import CustomerDetailModal from './CustomerDetailModal';
+import PanelTitle from "./PanelTitle";
 
 interface Customer {
   id: string;
@@ -63,37 +65,40 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
 
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
-    
+
     const date = new Date(dateString);
     if (isNaN(date.getTime())) {
       return 'N/A';
     }
-    
+
     return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
   };
 
   const isBirthday = (dateOfBirth: string | undefined) => {
     if (!dateOfBirth) return false;
-    
+
     const birthDate = new Date(dateOfBirth);
     if (isNaN(birthDate.getTime())) return false;
-    
+
     const today = new Date();
-    return birthDate.getMonth() === today.getMonth() && 
-           birthDate.getDate() === today.getDate();
+    return birthDate.getMonth() === today.getMonth() &&
+      birthDate.getDate() === today.getDate();
   };
 
   const isBirthdayToday = isBirthday(customer.dateOfBirth);
 
   return (
     <Card elevation={2} sx={{ width: '100%', flex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
+
+      <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <PanelTitle left="Client Information" />
+
         {/* Header Section - Avatar, Name, CIF, Status */}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
-          <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main' }}>
+          <Avatar sx={{ width: 56, height: 56, background: "#eaf3e4", border: "3px solid #c0d8b8", color: "#2d5a2d" }}>
             <Person sx={{ fontSize: 28 }} />
           </Avatar>
-          
+
           <Box sx={{ flex: 1 }}>
             {/* Name and Household Icon */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
@@ -105,98 +110,111 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
               )}
             </Box>
 
-            {/* Preferred Name */}
-            {customer.preferredName && (
-              <Typography variant="body2" color="text.secondary" data-testid="text-preferred-name" sx={{ mb: 0.5 }}>
-                "{customer.preferredName}"
-              </Typography>
-            )}
+            <Box sx={{ display: "flex", gap: 1 }}>
+              {/* Status Badge - Only one badge shown */}
+              {customer.status && (
+                <Chip
+                  label={customer.status.toUpperCase()}
+                  sx={{ fontSize: 14, height: 22, borderRadius: 1, background: "#d4edda", color: "#1a5c2a", border: "1px solid #8abf8a" }}
+                  color={getStatusColor(customer.status) as any}
+                  size="small"
+                  data-testid={`chip-status-${customer.status}`}
+                />
+              )}
 
-            {/* CIF Number */}
-            <Typography variant="body2" color="text.secondary" data-testid="text-cif-number" sx={{ mb: 1.5, fontFamily: 'Roboto Mono' }}>
-              CIF {customer.cifNumber || 'N/A'}
-            </Typography>
+              {customer.vipCustomer === true && (
+                <Chip
+                  label="VIP Customer"
+                  size="small"
+                  // icon={
+                  //   <Star sx={{ fontSize: 12, color: "#7a5200"}} />
+                  // }
+                  sx={{ fontSize: 14, height: 22, background: "#fff3cd", color: "#7a5200", border: "1px solid #e0b84a", borderRadius: 1 }}
+                />
+              )}
 
-            {/* Status Badge - Only one badge shown */}
-            {customer.status && (
-              <Chip 
-                label={customer.status.toUpperCase()}
-                color={getStatusColor(customer.status) as any}
-                size="small"
-                data-testid={`chip-status-${customer.status}`}
-                sx={{ fontWeight: 400 }}
-              />
-            )}
+
+              {customer.isEmployee === true && (
+                <Chip
+                  label="Employee"
+                  size="small"
+                  sx={{ fontSize: 14, height: 22, background: "#d4edda", color: "#1b4d20", border: "1px solid #8abf8a", borderRadius: 1 }}
+                />
+              )}
+
+              {isBirthdayToday && (
+                <Chip
+                  label="Birthday Today"
+                  size="small"
+                  sx={{ fontSize: 14, height: 22, background: "#FFF8EC", color: "#f57c00", border: "1px solid #B54800", borderRadius: 1 }}
+                />
+              )}
+
+              {customer.customerType && (
+                <Chip
+                  label={customer.customerType.charAt(0).toUpperCase() + customer.customerType.slice(1)}
+                  size="small"
+                  icon={customer.customerType === 'business' ? (
+                    <Business sx={{ fontSize: 18, color: 'text.secondary' }} />
+                  ) : (
+                    <Person sx={{ fontSize: 18, color: 'text.secondary' }} />
+                  )}
+                  sx={{ fontSize: 14, height: 22, background: "#e8e4f8", color: "#3a2a7a", border: "1px solid #9a8ac8", borderRadius: 1 }}
+                />
+              )}
+
+            </Box>
           </Box>
         </Box>
 
-        {/* Subtitle Icons - VIP, Employee, Birthday as text with icons */}
-        <Box sx={{ display: 'flex', gap: 2.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-          {customer.vipCustomer === true && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} data-testid="indicator-vip">
-              <Star sx={{ fontSize: 18, color: '#936b06' }} />
-              <Typography variant="body2" sx={{ color: '#936b06', fontWeight: 400 }}>
-                VIP Customer
-              </Typography>
-            </Box>
-          )}
-          
-          {customer.isEmployee === true && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} data-testid="indicator-employee">
-              <Badge sx={{ fontSize: 18, color: '#1b4d20' }} />
-              <Typography variant="body2" sx={{ color: '#1b4d20', fontWeight: 400 }}>
-                Employee
-              </Typography>
-            </Box>
-          )}
-
-          {isBirthdayToday && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} data-testid="indicator-birthday">
-              <Cake sx={{ fontSize: 18, color: '#f57c00' }} />
-              <Typography variant="body2" sx={{ color: '#f57c00', fontWeight: 400 }}>
-                Birthday Today
-              </Typography>
-            </Box>
-          )}
-
-          {customer.customerType && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} data-testid="indicator-customer-type">
-              {customer.customerType === 'business' ? (
-                <Business sx={{ fontSize: 18, color: 'text.secondary' }} />
-              ) : (
-                <Person sx={{ fontSize: 18, color: 'text.secondary' }} />
-              )}
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
-                {customer.customerType.charAt(0).toUpperCase() + customer.customerType.slice(1)}
-              </Typography>
-            </Box>
-          )}
-
-          {customer.branchName && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }} data-testid="indicator-branch">
-              <LocationOn sx={{ fontSize: 18, color: '#1b4d20' }} />
-              <Typography variant="body2" sx={{ color: '#1b4d20', fontWeight: 400 }}>
-                Branch: {customer.branchName}
-              </Typography>
-            </Box>
-          )}
-        </Box>
-
-        <Divider sx={{ mb: 2 }} />
 
         {/* Metrics Band - 4-column grid with key information */}
-        <Box 
-          sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { 
-              xs: '1fr', 
-              sm: 'repeat(2, 1fr)', 
-              md: 'repeat(4, 1fr)' 
-            }, 
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, 1fr)',
+              md: 'repeat(2, 1fr)'
+            },
             gap: 3,
             mb: 2
           }}
         >
+          {/* CIF Number */}
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 400 }}>
+              CIF
+            </Typography>
+            <Typography variant="body1" data-testid="text-date-of-birth" sx={{ fontWeight: 400, mt: 0.5 }}>
+              {customer.cifNumber || 'N/A'}
+            </Typography>
+          </Box>
+
+          {customer.branchName && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 400 }}>
+                Branch
+              </Typography>
+              <Typography variant="body1" data-testid="text-date-of-birth" sx={{ fontWeight: 400, mt: 0.5 }}>
+                {customer.branchName}
+              </Typography>
+            </Box> 
+          )}
+
+          {/* Preferred Name */}
+          {customer.preferredName && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 400 }}>
+                Preferred Name
+              </Typography>
+              <Typography variant="body1" data-testid="text-date-of-birth" sx={{ fontWeight: 400, mt: 0.5 }}>
+                {customer.preferredName}
+              </Typography>
+            </Box>
+          )}
+
+
           {/* Date of Birth - Only for individual customers */}
           {customer.customerType !== 'business' && customer.customerType !== 'trust' && (
             <Box>
@@ -224,12 +242,12 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
             <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 400 }}>
               Tax ID
             </Typography>
-            <Typography 
-              variant="body1" 
-              data-testid="text-tax-id" 
-              sx={{ 
-                fontWeight: 400, 
-                fontFamily: 'Roboto Mono', 
+            <Typography
+              variant="body1"
+              data-testid="text-tax-id"
+              sx={{
+                fontWeight: 400,
+                fontFamily: 'Roboto Mono',
                 mt: 0.5,
                 whiteSpace: 'nowrap'
               }}
@@ -244,16 +262,17 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
               {customer.customerType === 'business' || customer.customerType === 'trust' ? 'Entity Type' : 'Gender'}
             </Typography>
             <Typography variant="body1" data-testid="text-gender" sx={{ fontWeight: 400, mt: 0.5 }}>
-              {customer.customerType === 'business' || customer.customerType === 'trust' 
+              {customer.customerType === 'business' || customer.customerType === 'trust'
                 ? (customer.customerType.charAt(0).toUpperCase() + customer.customerType.slice(1))
                 : (customer.gender || 'N/A')}
             </Typography>
           </Box>
         </Box>
+      </CardContent>
 
+      <CardActions>
         {/* View Details Link */}
-        <Divider sx={{ mb: 2 }} />
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', pb: 1, width: "100%" }}>
           <Link
             component="button"
             variant="body2"
@@ -275,7 +294,8 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
             <ArrowForward sx={{ fontSize: 16 }} />
           </Link>
         </Box>
-      </CardContent>
+
+      </CardActions>
 
       {/* Customer Detail Modal */}
       <CustomerDetailModal

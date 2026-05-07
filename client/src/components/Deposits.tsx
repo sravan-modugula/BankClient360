@@ -44,6 +44,7 @@ import {
 } from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { useDateFormatter } from '@/lib/dateFormatters';
+import SectionLabel from "./SectionLabel";
 
 interface DepositAnalytics {
   totalBalance: number;
@@ -170,13 +171,15 @@ export default function Deposits({ customerId }: DepositsProps) {
   if (isLoading) {
     return (
       <Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <AccountBalance color="primary" />
             Deposits Overview
           </Typography>
           <Skeleton variant="text" width={150} height={32} />
         </Box>
+        */}
+        <SectionLabel>Deposits Overview</SectionLabel>
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 4 }}>
             <Card elevation={2}>
@@ -210,12 +213,14 @@ export default function Deposits({ customerId }: DepositsProps) {
   if (!hasDeposits && !isLoading) {
     return (
       <Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <AccountBalance color="primary" />
             Deposits Overview
           </Typography>
         </Box>
+        */}
+        <SectionLabel>Deposits Overview</SectionLabel>
         <Divider sx={{ mb: 3 }} />
         <Card elevation={2}>
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
@@ -234,6 +239,7 @@ export default function Deposits({ customerId }: DepositsProps) {
   return (
     <Box sx={{ width: '100%' }}>
       {/* Header */}
+      {/*
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <AccountBalance color="primary" />
@@ -244,6 +250,8 @@ export default function Deposits({ customerId }: DepositsProps) {
         </Typography>
       </Box>
       <Divider sx={{ mb: 3 }} />
+      */}
+      <SectionLabel>Deposits Overview</SectionLabel>
 
       {/* Three Cards */}
       <Grid container spacing={3} sx={{ width: '100%', display: 'flex', alignItems: 'stretch' }}>
