@@ -2673,10 +2673,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================================================================================
   // AUTHENTICATION ROUTES
   // ==================================================================================
-  // Top-level SAML endpoints (/saml/login, /saml/acs, /saml/metadata, /saml/logout).
-  // Mounted at "/" to match the F&M Bank RSA IdP convention used by TimeTracker —
-  // the IdP POSTs the SAMLResponse to https://<host>/saml/acs.
-  app.use("/", createSamlRoutes());
+  // SAML SP endpoints. Mounted at BOTH "/" (TimeTracker convention) and
+  // "/api/auth" (BankClient360 original convention) so the IdP can POST the
+  // SAMLResponse to either /saml/acs or /api/auth/saml/acs depending on
+  // what's registered on the IdP side. The same router is reused for both.
+  const samlRoutes = createSamlRoutes();
+  app.use("/", samlRoutes);
+  app.use("/api/auth", samlRoutes);
 
   // /api/auth shell: login redirect, logout, status, error pages. RBAC routes
   // below (/api/auth/permissions, /check-permission, /role-test/*) don't overlap.

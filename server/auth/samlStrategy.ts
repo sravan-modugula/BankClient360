@@ -32,6 +32,17 @@ const ATTRIBUTE_MAP = {
 };
 
 export function createSamlStrategy() {
+  // Log the resolved config at strategy creation so misconfigured env vars
+  // are visible in the server log instead of producing an opaque redirect.
+  fileLogger.info({
+    entryPoint: process.env.SAML_ENTRYPOINT || '<missing>',
+    callbackUrl: process.env.SAML_CALLBACK_URL || '<missing>',
+    issuer: process.env.SAML_ISSUER || '<missing>',
+    certPathOrInline: process.env.SAML_CERT?.includes('BEGIN CERTIFICATE')
+      ? '<inline PEM>'
+      : process.env.SAML_CERT || '<missing>',
+  }, 'Loading SAML strategy with resolved env config');
+
   return new SamlStrategy(
     {
       // RSA IdP Configuration - UPDATE with your actual values
