@@ -38,7 +38,7 @@ import {
 import { DateFormatter } from "@shared/utils/timezone";
 import { routeAuditMiddleware } from "./middleware/routeAudit";
 import { auditService, emitAuditEvent } from "./services/auditService";
-import { createAuthRoutes } from "./routes/auth";
+import { createAuthRoutes, createSamlRoutes } from "./routes/auth";
 import logger from "./services/logger";
 import { AuditEventType, AuditCategory, AuditSeverity, EVENT_CLASSIFICATION } from "@shared/auditEvents";
 import type { ClientAuditEvent } from "@shared/auditEvents";
@@ -2673,9 +2673,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================================================================================
   // AUTHENTICATION ROUTES
   // ==================================================================================
-  // SAML SSO + login/logout/status. Mounted at /api/auth before the RBAC routes below
-  // (those handle /api/auth/permissions, /api/auth/check-permission, /api/auth/role-test/*
-  // which don't overlap with paths in the auth router).
+  // Top-level SAML endpoints (/saml/login, /saml/acs, /saml/metadata, /saml/logout).
+  // Mounted at "/" to match the F&M Bank RSA IdP convention used by TimeTracker —
+  // the IdP POSTs the SAMLResponse to https://<host>/saml/acs.
+  app.use("/", createSamlRoutes());
+
+  // /api/auth shell: login redirect, logout, status, error pages. RBAC routes
+  // below (/api/auth/permissions, /check-permission, /role-test/*) don't overlap.
   app.use("/api/auth", createAuthRoutes());
 
   // ==================================================================================

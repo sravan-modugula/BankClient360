@@ -35,39 +35,34 @@ export function createSamlStrategy() {
   return new SamlStrategy(
     {
       // RSA IdP Configuration - UPDATE with your actual values
-      entryPoint: process.env.SAML_ENTRYPOINT!,
+      // SP configuration
       issuer: process.env.SAML_ISSUER || 'ClientIQ-Production',
       callbackUrl: process.env.SAML_CALLBACK_URL!,
+
+      // IdP configuration
+      entryPoint: process.env.SAML_ENTRYPOINT!,
       idpCert: loadSamlCert(),
-      
-      // Optional: For encrypted assertions
-      decryptionPvk: process.env.SAML_DECRYPT_KEY,
-      
-      // Security options
-      signatureAlgorithm: 'sha256',
-      digestAlgorithm: 'sha256',
+
+      // NameID configuration
+      identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+
+      // Security — mirror TimeTracker's working RSA IdP config
       wantAssertionsSigned: true,
-      
-      // NameID format
-      identifierFormat: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-      
-      // Logout configuration
-      logoutUrl: process.env.SAML_LOGOUT_URL,
-      logoutCallbackUrl: process.env.SAML_LOGOUT_CALLBACK_URL,
-      
-      // Audience/Issuer validation
-      audience: process.env.SAML_ISSUER || 'ClientIQ-Production',
-      
-      // Accept clock skew (in seconds)
-      acceptedClockSkewMs: 5 * 60 * 1000, // 5 minutes
-      
-      // IdP-Initiated SSO Support
-      // Set to 'never' to allow SAML assertions without a corresponding AuthnRequest
-      // This is required for IdP-initiated flows where the IdP sends users directly to us
+      wantAuthnResponseSigned: false,
+      signatureAlgorithm: 'sha256',
+
+      // Validation — required for IdP-initiated flow with the RSA IdP
       validateInResponseTo: ValidateInResponseTo.never,
-      
+      audience: false,
+      acceptedClockSkewMs: 10000,
+
+      // Flow optimization
+      disableRequestedAuthnContext: true,
+      skipRequestCompression: true,
+      forceAuthn: false,
+
       // Passport options
-      passReqToCallback: false
+      passReqToCallback: false,
     },
     
     // Verify callback — validate required SAML attributes and pass the user

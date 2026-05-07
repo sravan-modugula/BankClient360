@@ -26,13 +26,24 @@ if (samlEnabled) {
   // Cast to any: @types/passport's Strategy interface is narrower than the
   // actual passport-saml Strategy class, which is a known type-package gap.
   passport.use(createSamlStrategy() as any);
-  app.use(passport.initialize());
 
-  // Bridge: legacy route handlers read req.employeeId; SAML ACS writes session.employeeId.
+  // Round-trip the entire user object through the session — we don't have a
+  // SQL Server-aware employee store yet (Option B), so there's no DB lookup
+  // to deserialize against.
+  passport.serializeUser((user: any, done) => done(null, user));
+  passport.deserializeUser((user: any, done) => done(null, user));
+
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // Bridge: legacy route handlers read req.employeeId. The ACS handler sets
+  // both session.employeeId (legacy) and req.user (via req.logIn).
   app.use((req, _res, next) => {
     const sessionEmployeeId = (req as any).session?.employeeId;
-    if (sessionEmployeeId) {
-      req.employeeId = sessionEmployeeId;
+    const userEmployeeId = (req.user as any)?.employeeId;
+    const employeeId = sessionEmployeeId || userEmployeeId;
+    if (employeeId) {
+      req.employeeId = employeeId;
     }
     next();
   });

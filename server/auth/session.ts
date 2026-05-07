@@ -12,8 +12,9 @@ export function createSessionMiddleware() {
     connectionTimeout: 30000,
     requestTimeout: 30000,
     options: {
-      encrypt: true, // Use encryption for Azure SQL Database
-      trustServerCertificate: process.env.NODE_ENV === 'development', // Trust cert in dev
+      encrypt: process.env.MSSQL_ENCRYPT !== 'false',
+      trustServerCertificate: process.env.MSSQL_TRUST_SERVER_CERTIFICATE === 'true' ||
+                              process.env.NODE_ENV === 'development',
       enableArithAbort: true,
     },
     pool: {
