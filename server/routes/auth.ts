@@ -22,6 +22,24 @@ export function createAuthRoutes() {
   const router = Router();
 
   router.get('/login', (req, res) => {
+    // Prefer IdP-initiated SSO when SAML_IDP_INITIATED_URL is configured.
+    // For RSA SecurID Access, this is the IdP portal launch URL of the form
+    // https://portal.<host>/IdPServlet?idp_id=<id>. Sidesteps SP-initiated
+    // SAMLRequest construction entirely.
+    const idpInitiatedUrl = process.env.SAML_IDP_INITIATED_URL;
+    if (idpInitiatedUrl) {
+      authLogger.info({ idpInitiatedUrl }, 'Redirecting to IdP-initiated SSO');
+      emitAuditEvent({
+        eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
+        action: 'IdP-initiated SSO redirect',
+        outcome: 'success',
+        actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+        correlationId: req.correlationId,
+        module: 'auth',
+      });
+      return res.redirect(idpInitiatedUrl);
+    }
+
     if (isSamlEnabled()) {
       authLogger.info('Redirecting to SP-initiated SAML login');
       emitAuditEvent({
@@ -39,7 +57,7 @@ export function createAuthRoutes() {
     return res.status(200).json({
       message: 'Development mode - SAML not configured',
       samlEnabled: false,
-      hint: 'Set SAML_ENABLED=true and configure SAML_ENTRYPOINT (plus SAML_CALLBACK_URL, SAML_CERT, SAML_ISSUER) for production SSO',
+      hint: 'Set SAML_ENABLED=true and configure SAML_ENTRYPOINT (plus SAML_CALLBACK_URL, SAML_CERT, SAML_ISSUER) for production SSO. Optionally set SAML_IDP_INITIATED_URL to skip SP-initiated and use the IdP portal launch URL instead.',
     });
   });
 
