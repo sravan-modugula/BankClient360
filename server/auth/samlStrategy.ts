@@ -1,11 +1,23 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Strategy as SamlStrategy } from '@node-saml/passport-saml';
-import { db } from '../db';
-import { employee } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
-import { samlRoleMappingService } from '../services/samlRoleMappingService';
+import { ValidateInResponseTo } from '@node-saml/node-saml';
 import logger from '../services/logger';
 
 const fileLogger = logger.child({ module: 'saml-strategy' });
+
+// SAML_CERT may be inline PEM content or a path to a .pem file (resolved relative to CWD).
+function loadSamlCert(): string {
+  const value = process.env.SAML_CERT;
+  if (!value) {
+    throw new Error('SAML_CERT is required when SAML is enabled');
+  }
+  if (value.includes('BEGIN CERTIFICATE')) {
+    return value;
+  }
+  const certPath = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+  return fs.readFileSync(certPath, 'utf-8');
+}
 
 // SAML attribute mappings from RSA IdP
 // UPDATE THESE based on your actual RSA IdP attribute names
@@ -26,7 +38,7 @@ export function createSamlStrategy() {
       entryPoint: process.env.SAML_ENTRYPOINT!,
       issuer: process.env.SAML_ISSUER || 'ClientIQ-Production',
       callbackUrl: process.env.SAML_CALLBACK_URL!,
-      cert: process.env.SAML_CERT!,
+      idpCert: loadSamlCert(),
       
       // Optional: For encrypted assertions
       decryptionPvk: process.env.SAML_DECRYPT_KEY,
@@ -52,18 +64,21 @@ export function createSamlStrategy() {
       // IdP-Initiated SSO Support
       // Set to 'never' to allow SAML assertions without a corresponding AuthnRequest
       // This is required for IdP-initiated flows where the IdP sends users directly to us
-      validateInResponseTo: 'never',
+      validateInResponseTo: ValidateInResponseTo.never,
       
       // Passport options
       passReqToCallback: false
     },
     
-    // Verify callback - called after successful assertion validation
+    // Verify callback — validate required SAML attributes and pass the user
+    // through. The ACS handler in routes/auth.ts is responsible for loading
+    // permissions/roles via permissionService (which works on SQL Server).
+    // Employee-record upsert and SAML→role auto-mapping are deferred until a
+    // SQL Server-aware implementation lands.
     async (profile: any, done: any) => {
       try {
         fileLogger.info({ nameID: profile.nameID, attributes: Object.keys(profile) }, 'Processing authentication for profile');
 
-        // Extract attributes from SAML assertion
         const employeeIdStr = profile[ATTRIBUTE_MAP.employeeId];
         const employeeNumber = profile[ATTRIBUTE_MAP.employeeNumber];
         const firstName = profile[ATTRIBUTE_MAP.firstName];
@@ -71,92 +86,39 @@ export function createSamlStrategy() {
         const email = profile[ATTRIBUTE_MAP.email] || profile.nameID;
         const department = profile[ATTRIBUTE_MAP.department] || null;
         const samlRoleKey = profile[ATTRIBUTE_MAP.role] || null;
-        
-        // Validate required attributes
+
         if (!employeeIdStr || !employeeNumber) {
           fileLogger.error({ employeeId: employeeIdStr, employeeNumber }, 'Missing required SAML attributes');
           return done(new Error('Missing required SAML attributes: employeeId or employeeNumber'));
         }
-        
+
         const employeeId = parseInt(employeeIdStr, 10);
-        
         if (isNaN(employeeId)) {
           fileLogger.error({ employeeIdStr }, 'Invalid employeeId format');
           return done(new Error('Invalid employeeId format'));
         }
 
-        fileLogger.info({ employeeId, employeeNumber, firstName, lastName, email, department, samlRoleKey }, 'Extracted SAML attributes');
-        
-        // Lookup existing employee
-        const existingEmployee = await db
-          .select()
-          .from(employee)
-          .where(eq(employee.employeeId, employeeId))
-          .limit(1);
-        
-        const isFirstLogin = existingEmployee.length === 0;
-        
-        fileLogger.info({ employeeId, isFirstLogin, exists: !isFirstLogin }, 'Employee lookup result');
-        
-        // Upsert employee record
-        await db
-          .insert(employee)
-          .values({
-            employeeId,
-            employeeNumber,
-            firstName,
-            lastName,
-            email,
-            department,
-            lastSeenSamlRole: samlRoleKey,
-            lastLoginAt: new Date()
-          })
-          .onConflictDoUpdate({
-            target: employee.employeeId,
-            set: {
-              firstName,
-              lastName,
-              email,
-              department,
-              lastSeenSamlRole: samlRoleKey,
-              lastLoginAt: new Date()
-            }
-          });
+        fileLogger.info({ employeeId, employeeNumber, firstName, lastName, email, department, samlRoleKey }, 'Authentication successful');
 
-        fileLogger.info('Employee record upserted successfully');
-        
-        // Process SAML role mapping (auto-assign roles)
-        try {
-          const roleResult = await samlRoleMappingService.processSamlRole(
-            employeeId,
-            samlRoleKey,
-            isFirstLogin
-          );
-          
-          fileLogger.info({ success: roleResult.success, assigned: roleResult.assigned, roleName: roleResult.roleName, source: roleResult.source, message: roleResult.message }, 'Role processing result');
-        } catch (roleError) {
-          // Log error but don't block login - admin can manually assign role
-          fileLogger.error({ err: roleError }, 'Failed to process SAML role');
-        }
-        
-        // Return user object for session
-        const user = {
+        return done(null, {
           employeeId,
           employeeNumber,
           firstName,
           lastName,
           email,
           department,
-          samlRoleKey
-        };
-
-        fileLogger.info({ employeeId }, 'Authentication successful');
-        return done(null, user);
-        
+          samlRoleKey,
+        });
       } catch (error) {
         fileLogger.error({ err: error }, 'Authentication error');
         return done(error);
       }
+    },
+
+    // Logout verify callback - acknowledges IdP-initiated LogoutResponse
+    async (profile: any, done: any) => {
+      fileLogger.info({ nameID: profile?.nameID }, 'Processing SAML logout response');
+      return done(null, profile || {});
     }
   );
 }

@@ -9,12 +9,12 @@ export function createSessionMiddleware() {
     password: process.env.MSSQL_PASSWORD || process.env.DB_PASSWORD,
     server: process.env.MSSQL_SERVER || process.env.DB_SERVER || 'localhost',
     database: process.env.MSSQL_DATABASE || process.env.DB_NAME || 'ClientIQ',
+    connectionTimeout: 30000,
+    requestTimeout: 30000,
     options: {
       encrypt: true, // Use encryption for Azure SQL Database
       trustServerCertificate: process.env.NODE_ENV === 'development', // Trust cert in dev
       enableArithAbort: true,
-      connectionTimeout: 30000,
-      requestTimeout: 30000
     },
     pool: {
       max: 10,

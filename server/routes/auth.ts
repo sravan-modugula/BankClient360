@@ -1,8 +1,5 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { db } from '../db';
-import { employeeRole, role } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
 import { permissionService } from '../services/permissionService';
 import logger from '../services/logger';
 import { emitAuditEvent } from '../services/auditService';
@@ -13,8 +10,7 @@ const authLogger = logger.child({ module: 'auth' });
 // Check if SAML is enabled via environment variable
 const isSamlEnabled = () => {
   return process.env.SAML_ENABLED === 'true' &&
-         process.env.SAML_IDP_LOGIN_URL &&
-         process.env.SAML_ENTRYPOINT;
+         !!process.env.SAML_ENTRYPOINT;
 };
 
 export function createAuthRoutes() {
@@ -24,8 +20,8 @@ export function createAuthRoutes() {
    * Login endpoint - Redirects to IdP or returns info for development
    */
   router.get('/login', (req, res) => {
-    if (isSamlEnabled() && process.env.SAML_IDP_LOGIN_URL) {
-      authLogger.info('Redirecting to SAML IdP');
+    if (isSamlEnabled()) {
+      authLogger.info('Redirecting to SP-initiated SAML login');
       emitAuditEvent({
         eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
         action: 'SAML login redirect initiated',
@@ -34,14 +30,14 @@ export function createAuthRoutes() {
         correlationId: req.correlationId,
         module: 'auth',
       });
-      return res.redirect(process.env.SAML_IDP_LOGIN_URL);
+      return res.redirect('/api/auth/saml/login');
     }
 
     authLogger.info('SAML not configured, returning dev mode response');
     return res.status(200).json({
       message: 'Development mode - SAML not configured',
       samlEnabled: false,
-      hint: 'Set SAML_ENABLED=true and configure SAML_IDP_LOGIN_URL for production SSO'
+      hint: 'Set SAML_ENABLED=true and configure SAML_ENTRYPOINT (plus SAML_CALLBACK_URL, SAML_CERT, SAML_ISSUER) for production SSO'
     });
   });
 
@@ -131,25 +127,12 @@ export function createAuthRoutes() {
         req.session.samlRoleKey = req.user.samlRoleKey;
         req.session.lastActivity = new Date();
 
-        // Fetch user roles
-        const userRoles = await db
-          .select({
-            roleName: role.roleName
-          })
-          .from(employeeRole)
-          .innerJoin(role, eq(employeeRole.roleId, role.roleId))
-          .where(
-            and(
-              eq(employeeRole.employeeId, req.user.employeeId),
-              eq(employeeRole.isActive, true)
-            )
-          );
-
-        req.session.roles = userRoles.map(r => r.roleName);
-
-        // Fetch user permissions
+        // Load roles and permissions through permissionService (SQL Server-aware
+        // via getRoleManagementStore). userPermissions.roles is Role[] from the
+        // store; userPermissions.permissions is already string[] of codes.
         const userPermissions = await permissionService.getUserPermissions(req.user.employeeId);
-        req.session.permissions = userPermissions.permissions.map((p: any) => p.permissionKey);
+        req.session.roles = userPermissions.roles.map(r => r.roleName);
+        req.session.permissions = userPermissions.permissions;
 
         authLogger.info({
           employeeId: req.user.employeeId,
