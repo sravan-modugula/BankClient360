@@ -18,12 +18,23 @@ function loadSamlCert(): string {
   }
 
   let certContent: string;
+  let hadBom = false;
   if (value.includes('BEGIN CERTIFICATE')) {
     certContent = value;
   } else {
     const certPath = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
     fileLogger.info({ certPath }, 'Reading SAML cert from file');
-    certContent = fs.readFileSync(certPath, 'utf-8');
+    const raw = fs.readFileSync(certPath);
+    // Detect & strip BOM (UTF-8: EF BB BF, UTF-16 LE: FF FE, UTF-16 BE: FE FF).
+    if (raw.length >= 3 && raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf) {
+      hadBom = true;
+      certContent = raw.slice(3).toString('utf-8');
+    } else if (raw.length >= 2 && raw[0] === 0xff && raw[1] === 0xfe) {
+      hadBom = true;
+      certContent = raw.slice(2).toString('utf16le');
+    } else {
+      certContent = raw.toString('utf-8');
+    }
   }
 
   // Windows-saved files have CRLF, which can break passport-saml PEM parsing.
@@ -55,11 +66,36 @@ function loadSamlCert(): string {
     .toUpperCase()
     .replace(/(.{2})(?=.)/g, '$1:');
 
+  // Parse via X509Certificate (Node 15+) to surface subject/issuer/public-key
+  // details. Confirms the PEM is well-formed and shows what the strategy is
+  // actually using to verify signatures.
+  let certDetails: Record<string, unknown> = {};
+  try {
+    const x509 = new crypto.X509Certificate(firstCert);
+    const pubKeyDer = x509.publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+    const pubKeySha256 = crypto.createHash('sha256').update(pubKeyDer).digest('hex')
+      .toUpperCase().replace(/(.{2})(?=.)/g, '$1:');
+    certDetails = {
+      subject: x509.subject,
+      issuer: x509.issuer,
+      validFrom: x509.validFrom,
+      validTo: x509.validTo,
+      serialNumber: x509.serialNumber,
+      publicKeyAlgorithm: x509.publicKey.asymmetricKeyType,
+      publicKeyBitLength: (x509.publicKey as any).asymmetricKeyDetails?.modulusLength,
+      publicKeySha256: pubKeySha256,
+    };
+  } catch (err: any) {
+    certDetails = { parseError: err?.message || String(err) };
+  }
+
   fileLogger.info({
     certLength: certContent.length,
     certCount,
+    hadBom,
     sha256Fingerprint: fingerprint,
-  }, 'SAML cert loaded — share this SHA-256 fingerprint with the IdP team to confirm match');
+    ...certDetails,
+  }, 'SAML cert loaded — share fingerprint and publicKeySha256 with the IdP team to confirm match');
 
   return certContent;
 }
