@@ -4,6 +4,8 @@ import { permissionService } from '../services/permissionService';
 import logger from '../services/logger';
 import { emitAuditEvent } from '../services/auditService';
 import { AuditEventType } from '../../shared/auditEvents';
+import { getMssqlPool } from '../db';
+import { getEmployeeBySsoSubjectOrEmailSqlServer } from '../storage/sqlServerEmployee';
 
 const authLogger = logger.child({ module: 'auth' });
 
@@ -184,9 +186,37 @@ export function createSamlRoutes() {
           }
 
           try {
+            // Resolve the SAML-authenticated user to a DB employee record.
+            // SAML provides ssoSubject (nameID) and email; we look up the
+            // numeric employeeId from the employee table to use for permissions.
+            let dbEmployeeId: number | null = null;
+            try {
+              const pool = await getMssqlPool();
+              const dbEmployee = await getEmployeeBySsoSubjectOrEmailSqlServer(
+                pool,
+                user.ssoSubject ?? null,
+                user.email ?? null,
+              );
+              if (dbEmployee) {
+                dbEmployeeId = dbEmployee.employeeId;
+                authLogger.info({
+                  ssoSubject: user.ssoSubject,
+                  email: user.email,
+                  resolvedEmployeeId: dbEmployeeId,
+                }, 'Resolved SAML user to DB employee');
+              } else {
+                authLogger.warn({
+                  ssoSubject: user.ssoSubject,
+                  email: user.email,
+                }, 'SAML user not found in employee table — session will have empty permissions until an admin links them');
+              }
+            } catch (lookupErr) {
+              authLogger.error({ err: lookupErr }, 'Failed to look up DB employee for SAML user');
+            }
+
             // Mirror legacy session shape so existing route handlers work.
-            req.session.employeeId = user.employeeId;
-            req.session.employeeNumber = user.employeeNumber;
+            req.session.employeeId = dbEmployeeId ?? undefined;
+            req.session.employeeNumber = user.samlEmployeeNumber ?? user.samlEmployeeId ?? undefined;
             req.session.firstName = user.firstName;
             req.session.lastName = user.lastName;
             req.session.email = user.email;
@@ -194,15 +224,21 @@ export function createSamlRoutes() {
             req.session.samlRoleKey = user.samlRoleKey;
             req.session.lastActivity = new Date();
 
-            // permissionService -> getRoleManagementStore is dialect-aware
-            // (works on SQL Server). Returns roles as Role[] and permissions
-            // as string[] of codes.
-            const userPermissions = await permissionService.getUserPermissions(user.employeeId);
-            req.session.roles = userPermissions.roles.map((r: any) => r.roleName);
-            req.session.permissions = userPermissions.permissions;
+            if (dbEmployeeId) {
+              // permissionService -> getRoleManagementStore is dialect-aware
+              // (works on SQL Server). Returns roles as Role[] and permissions
+              // as string[] of codes.
+              const userPermissions = await permissionService.getUserPermissions(dbEmployeeId);
+              req.session.roles = userPermissions.roles.map((r: any) => r.roleName);
+              req.session.permissions = userPermissions.permissions;
+            } else {
+              req.session.roles = [];
+              req.session.permissions = [];
+            }
 
             authLogger.info({
-              employeeId: user.employeeId,
+              dbEmployeeId,
+              email: user.email,
               roles: req.session.roles,
               permissionCount: req.session.permissions?.length || 0,
             }, 'SAML ACS session established');
@@ -212,12 +248,13 @@ export function createSamlRoutes() {
               action: 'SAML login success',
               outcome: 'success',
               actor: {
-                employeeId: user.employeeId,
+                employeeId: dbEmployeeId ?? undefined,
                 ipAddress: req.ip,
                 userAgent: req.headers['user-agent'],
               },
               correlationId: req.correlationId,
               metadata: {
+                email: user.email,
                 roles: req.session.roles,
                 permissionCount: req.session.permissions?.length || 0,
               },

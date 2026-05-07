@@ -163,44 +163,45 @@ export function createSamlStrategy() {
       passReqToCallback: false,
     },
     
-    // Verify callback — validate required SAML attributes and pass the user
-    // through. The ACS handler in routes/auth.ts is responsible for loading
-    // permissions/roles via permissionService (which works on SQL Server).
-    // Employee-record upsert and SAML→role auto-mapping are deferred until a
-    // SQL Server-aware implementation lands.
+    // Verify callback — extract SAML attributes and pass the user through.
+    // The ACS handler in routes/auth.ts resolves the SAML user to a DB
+    // employee record (by email/ssoSubject) and loads permissions via
+    // permissionService. We deliberately don't require a numeric employeeId
+    // here because RSA SecurID Access for ClientIQ sends an opaque string
+    // (e.g. "fmb02414"), and doesn't always include employeeNumber.
     async (profile: any, done: any) => {
       try {
         fileLogger.info({ nameID: profile.nameID, attributes: Object.keys(profile) }, 'Processing authentication for profile');
 
-        const employeeIdStr = profile[ATTRIBUTE_MAP.employeeId];
-        const employeeNumber = profile[ATTRIBUTE_MAP.employeeNumber];
-        const firstName = profile[ATTRIBUTE_MAP.firstName];
-        const lastName = profile[ATTRIBUTE_MAP.lastName];
-        const email = profile[ATTRIBUTE_MAP.email] || profile.nameID;
-        const department = profile[ATTRIBUTE_MAP.department] || null;
-        const samlRoleKey = profile[ATTRIBUTE_MAP.role] || null;
+        // RSA sends attributes with NameFormat=basic (short names like
+        // "firstName"). Other IdPs send URL-style claim names. Look up by
+        // short name first, fall back to claim URL.
+        const samlEmployeeId = profile.employeeId ?? profile[ATTRIBUTE_MAP.employeeId] ?? null;
+        const samlEmployeeNumber = profile.employeeNumber ?? profile[ATTRIBUTE_MAP.employeeNumber] ?? null;
+        const firstName = profile.firstName ?? profile[ATTRIBUTE_MAP.firstName] ?? null;
+        const lastName = profile.lastName ?? profile[ATTRIBUTE_MAP.lastName] ?? null;
+        const email = profile.email ?? profile[ATTRIBUTE_MAP.email] ?? profile.nameID ?? null;
+        const department = profile.department ?? profile[ATTRIBUTE_MAP.department] ?? null;
+        const samlRoleKey = profile.role ?? profile[ATTRIBUTE_MAP.role] ?? null;
 
-        if (!employeeIdStr || !employeeNumber) {
-          fileLogger.error({ employeeId: employeeIdStr, employeeNumber }, 'Missing required SAML attributes');
-          return done(new Error('Missing required SAML attributes: employeeId or employeeNumber'));
+        if (!email) {
+          fileLogger.error({ profileKeys: Object.keys(profile) }, 'SAML profile missing email/nameID — cannot resolve user');
+          return done(new Error('SAML profile missing email/nameID'));
         }
 
-        const employeeId = parseInt(employeeIdStr, 10);
-        if (isNaN(employeeId)) {
-          fileLogger.error({ employeeIdStr }, 'Invalid employeeId format');
-          return done(new Error('Invalid employeeId format'));
-        }
-
-        fileLogger.info({ employeeId, employeeNumber, firstName, lastName, email, department, samlRoleKey }, 'Authentication successful');
+        fileLogger.info({ email, samlEmployeeId, firstName, lastName, department }, 'SAML profile parsed successfully');
 
         return done(null, {
-          employeeId,
-          employeeNumber,
+          // SAML attributes as-is. The ACS handler will resolve these to a
+          // DB employee record and populate the numeric employeeId.
+          samlEmployeeId,
+          samlEmployeeNumber,
           firstName,
           lastName,
           email,
           department,
           samlRoleKey,
+          ssoSubject: profile.nameID ?? email,
         });
       } catch (error) {
         fileLogger.error({ err: error }, 'Authentication error');
