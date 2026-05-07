@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { Strategy as SamlStrategy } from '@node-saml/passport-saml';
 import { ValidateInResponseTo } from '@node-saml/node-saml';
 import logger from '../services/logger';
@@ -7,16 +8,60 @@ import logger from '../services/logger';
 const fileLogger = logger.child({ module: 'saml-strategy' });
 
 // SAML_CERT may be inline PEM content or a path to a .pem file (resolved relative to CWD).
+// Mirrors TimeTracker's cert loader (which works against the same RSA IdP):
+// trims, normalizes CRLF -> LF, validates markers, logs fingerprint for comparison
+// with what the IdP team registered.
 function loadSamlCert(): string {
   const value = process.env.SAML_CERT;
   if (!value) {
     throw new Error('SAML_CERT is required when SAML is enabled');
   }
+
+  let certContent: string;
   if (value.includes('BEGIN CERTIFICATE')) {
-    return value;
+    certContent = value;
+  } else {
+    const certPath = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+    fileLogger.info({ certPath }, 'Reading SAML cert from file');
+    certContent = fs.readFileSync(certPath, 'utf-8');
   }
-  const certPath = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
-  return fs.readFileSync(certPath, 'utf-8');
+
+  // Windows-saved files have CRLF, which can break passport-saml PEM parsing.
+  certContent = certContent.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  if (!certContent.includes('-----BEGIN CERTIFICATE-----')) {
+    throw new Error('Invalid SAML cert: missing -----BEGIN CERTIFICATE----- marker');
+  }
+  if (!certContent.includes('-----END CERTIFICATE-----')) {
+    throw new Error('Invalid SAML cert: missing -----END CERTIFICATE----- marker');
+  }
+
+  const certCount = (certContent.match(/-----BEGIN CERTIFICATE-----/g) || []).length;
+  if (certCount > 1) {
+    fileLogger.warn({ certCount }, 'SAML cert file contains multiple certificates — only the first will be used for signature verification by passport-saml');
+  }
+
+  // Compute SHA-256 fingerprint of the first cert so the operator can verify
+  // it matches what the IdP team registered for this SP entry.
+  const firstCert = certContent.split(/-----END CERTIFICATE-----/)[0] + '-----END CERTIFICATE-----';
+  const der = firstCert
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\s+/g, '');
+  const fingerprint = crypto
+    .createHash('sha256')
+    .update(Buffer.from(der, 'base64'))
+    .digest('hex')
+    .toUpperCase()
+    .replace(/(.{2})(?=.)/g, '$1:');
+
+  fileLogger.info({
+    certLength: certContent.length,
+    certCount,
+    sha256Fingerprint: fingerprint,
+  }, 'SAML cert loaded — share this SHA-256 fingerprint with the IdP team to confirm match');
+
+  return certContent;
 }
 
 // SAML attribute mappings from RSA IdP

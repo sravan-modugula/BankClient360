@@ -137,14 +137,21 @@ export function createSamlRoutes() {
 
     passport.authenticate('saml', (err: any, user: any, info: any) => {
       if (err) {
-        authLogger.error({ err, info }, 'SAML authentication error in ACS');
+        const errMessage = err?.message || String(err);
+        const errStack = err?.stack;
+        authLogger.error({
+          errMessage,
+          errStack,
+          errName: err?.name,
+          info,
+        }, 'SAML authentication error in ACS');
         emitAuditEvent({
           eventType: AuditEventType.AUTH_LOGIN_FAILED,
           action: 'SAML ACS authentication error',
           outcome: 'failure',
           actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
           correlationId: req.correlationId,
-          metadata: { error: err.message },
+          metadata: { error: errMessage },
           module: 'auth',
         });
         return res.redirect('/api/auth/login-error?reason=auth_error');
