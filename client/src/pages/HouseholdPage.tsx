@@ -44,11 +44,7 @@ import {
 import {
   FamilyRestroom,
   Business,
-  AccountBalance,
-  People,
-  Person,
   ArrowForward,
-  AccountBalanceWallet,
   Note,
   Description,
   PushPin,
@@ -296,15 +292,6 @@ export default function HouseholdPage() {
     return matchesSearch && matchesImportance;
   });
 
-  const getTypeIcon = (type: string) => {
-    return type === 'family' ? <FamilyRestroom /> : <Business />;
-  };
-
-  const getCustomerTypeIcon = (member: HouseholdMember) => {
-    // Business members typically have businessName, families have firstName/lastName
-    return member.firstName ? <Person /> : <Business />;
-  };
-
   // Show message for customers without a household
   if (noHousehold) {
     return (
@@ -451,80 +438,38 @@ export default function HouseholdPage() {
         <BackButton fallback={backFallback} />
       </Container>
 
-      {/* Sticky Header Bar */}
-      <Box
-        sx={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 1100,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          py: 2,
-          mt: 2,
-          mb: 3
-        }}
-      >
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {getTypeIcon(household.householdType)}
-            <Box>
-              <Typography variant="h5" data-testid="text-household-name">
-                {household.householdName}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Est. {new Date(household.establishedDate).toLocaleDateString()}
-              </Typography>
+      <Container maxWidth="xl" sx={{ pt: 2, pb: 4 }}>
+        {/* Hero Card - white surface matching client-page color scheme */}
+        <Card sx={{ mb: 3 }} data-testid="card-hero">
+          <CardContent sx={{ p: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                {household.householdType === 'family' ? (
+                  <FamilyRestroom sx={{ fontSize: 48, color: 'primary.main' }} />
+                ) : (
+                  <Business sx={{ fontSize: 48, color: 'primary.main' }} />
+                )}
+                <Box>
+                  <Typography variant="h4" fontWeight={500} data-testid="text-household-name">
+                    {household.householdName}
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    {titleCase(household.householdType)} • {members.length} Member{members.length !== 1 ? 's' : ''} • {depositAccounts.length} Deposit{depositAccounts.length !== 1 ? 's' : ''} • {loanAccounts.length} Loan{loanAccounts.length !== 1 ? 's' : ''} • Est. {new Date(household.establishedDate).toLocaleDateString()}
+                  </Typography>
+                </Box>
+              </Box>
+              {household.householdStatus && (
+                <Chip
+                  label={household.householdStatus.toUpperCase()}
+                  size="small"
+                  color={household.householdStatus === 'active' ? 'primary' : 'default'}
+                  data-testid="chip-household-status"
+                />
+              )}
             </Box>
-          </Box>
-        </Container>
-      </Box>
 
-      <Container maxWidth="xl" sx={{ pb: 4 }}>
-        {/* Metrics Summary Bar */}
-        <Box sx={{ mb: 3 }}>
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip
-                icon={<People />}
-                label={`${members.length} Member${members.length !== 1 ? 's' : ''}`}
-                sx={{ width: '100%' }}
-                data-testid="chip-member-count"
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip
-                icon={<AccountBalance />}
-                label={`${depositAccounts.length} Deposit${depositAccounts.length !== 1 ? 's' : ''}`}
-                sx={{ width: '100%' }}
-                data-testid="chip-deposit-count"
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip
-                icon={<AccountBalanceWallet />}
-                label={`${loanAccounts.length} Loan${loanAccounts.length !== 1 ? 's' : ''}`}
-                sx={{ width: '100%' }}
-                data-testid="chip-loan-count"
-              />
-            </Grid>
-            <Grid size={{ xs: 6, sm: 3 }}>
-              <Chip
-                icon={household.householdType === 'family' ? <FamilyRestroom /> : <Business />}
-                label={household.householdType.replace('_', ' ')}
-                sx={{ width: '100%', textTransform: 'capitalize' }}
-                data-testid="chip-structure-type"
-              />
-            </Grid>
-          </Grid>
-        </Box>
-
-        {/* Household Overview Metrics */}
-        <Card sx={{ mb: 3 }} data-testid="card-overview">
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 3 }}>Household Overview</Typography>
             <Grid container spacing={3}>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     Total Deposits
@@ -534,32 +479,32 @@ export default function HouseholdPage() {
                   </Typography>
                 </Box>
               </Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     Deposit WAIR
                   </Typography>
-                  <Typography variant="h5" color="primary.main" data-testid="text-deposit-wair">
+                  <Typography variant="h5" color="primary" data-testid="text-deposit-wair">
                     {depositWair !== null ? `${depositWair.toFixed(2)}%` : '—'}
                   </Typography>
                 </Box>
               </Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     Total Loan Balances
                   </Typography>
-                  <Typography variant="h5" color="primary.main" data-testid="text-total-loan-balances">
+                  <Typography variant="h5" color="primary" data-testid="text-total-loan-balances">
                     {formatCurrency(totalLoanBalances)}
                   </Typography>
                 </Box>
               </Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Grid size={{ xs: 6, md: 3 }}>
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     Loan WAIR
                   </Typography>
-                  <Typography variant="h5" color="primary.main" data-testid="text-loan-wair">
+                  <Typography variant="h5" color="primary" data-testid="text-loan-wair">
                     {loanWair !== null ? `${loanWair.toFixed(2)}%` : '—'}
                   </Typography>
                 </Box>
