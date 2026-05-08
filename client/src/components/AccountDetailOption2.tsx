@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
@@ -25,7 +24,6 @@ import {
   InputAdornment
 } from '@mui/material';
 import {
-  ArrowBack,
   Home,
   CreditCard,
   Print,
@@ -40,6 +38,7 @@ import AccountBalanceTrends from './AccountBalanceTrends';
 import { getCardStatusConfig, getCardStatusLabel, getCardBrandConfig, formatCardNumber, isCardActive } from '@/lib/debitCardConstants';
 import type { DebitCardWithLimitProfile } from '@shared/schema';
 import { FormatTransactionAmount } from './FormatTransactionAmount';
+import BackButton from './BackButton';
 
 interface AccountDetailOption2Props {
   accountId?: string;
@@ -49,7 +48,6 @@ interface AccountDetailOption2Props {
 
 export default function AccountDetailOption2({ accountId, onBack, params }: AccountDetailOption2Props) {
   const theme = useTheme();
-  const [, setLocation] = useLocation();
   const { formatCurrency, formatDate, formatPercentage } = useDateFormatter();
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<DebitCardWithLimitProfile | null>(null);
@@ -86,14 +84,6 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
 
   const debitCards = cardsData?.cards || [];
   const transactions = txData?.transactions || [];
-
-  const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else {
-      setLocation('/');
-    }
-  };
 
   const handlePrint = () => {
     window.print();
@@ -182,14 +172,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
     <Box sx={{ p: 3, maxWidth: 1400, margin: '0 auto' }}>
       {/* Top Navigation Bar */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Button
-          startIcon={<ArrowBack />}
-          onClick={handleBack}
-          variant="text"
-          data-testid="btn-back"
-        >
-          BACK TO CLIENT
-        </Button>
+        <BackButton fallback={onBack ?? '/ciq/client'} testId="btn-back" />
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button startIcon={<Print />} variant="outlined" size="small" onClick={handlePrint}>Print</Button>
           <Button startIcon={<Download />} variant="outlined" size="small" onClick={handleExportCsv}>Export CSV</Button>

@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useSearchParams } from 'wouter';
 import { navigateToCustomer, navigateToHousehold } from '@/lib/navigation';
+import BackButton from '@/components/BackButton';
+import { lightTheme } from '@/lib/theme';
+import { ThemeProvider, CssBaseline } from '@mui/material';
 import {
   Container,
   Box,
@@ -48,7 +51,6 @@ import {
   AccountBalanceWallet,
   Note,
   Description,
-  ArrowBack,
   PushPin,
   Add,
   Search,
@@ -142,6 +144,15 @@ const weightedAvgRate = (accounts: Account[]): number | null => {
   return totalWeight > 0 ? weighted / totalWeight : null;
 };
 
+function PageShell({ children }: { children: ReactNode }) {
+  return (
+    <ThemeProvider theme={lightTheme}>
+      <CssBaseline />
+      <Box sx={{ flex: 1, background: '#f0ece4' }}>{children}</Box>
+    </ThemeProvider>
+  );
+}
+
 export default function HouseholdPage() {
   const [searchParams] = useSearchParams();
   const [, setLocation] = useLocation();
@@ -160,17 +171,7 @@ export default function HouseholdPage() {
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
   const [accountTab, setAccountTab] = useState<'all' | 'deposits' | 'loans'>('all');
 
-  const handleBack = () => {
-    if (window.history.length > 1) {
-      window.history.back();
-      return;
-    }
-    if (customerId) {
-      navigateToCustomer(customerId);
-    } else {
-      setLocation('/ciq/client');
-    }
-  };
+  const backFallback = customerId ? `/ciq/client?customerId=${encodeURIComponent(customerId)}` : '/ciq/client';
 
   // If accessing via customerId, fetch their household first
   const { data: customerHouseholds = [] } = useQuery<any[]>({
@@ -307,9 +308,9 @@ export default function HouseholdPage() {
   // Show message for customers without a household
   if (noHousehold) {
     return (
-      <Box>
-        <Box 
-          sx={{ 
+      <PageShell>
+        <Box
+          sx={{
             bgcolor: 'background.paper',
             borderBottom: 1,
             borderColor: 'divider',
@@ -319,13 +320,7 @@ export default function HouseholdPage() {
         >
           <Container maxWidth="xl">
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <IconButton 
-                onClick={() => navigateToCustomer(customerId)} 
-                data-testid="button-back"
-                sx={{ color: 'text.secondary' }}
-              >
-                <ArrowBack />
-              </IconButton>
+              <BackButton fallback={backFallback} />
               <FamilyRestroom />
               <Typography variant="h5">Household Information</Typography>
             </Box>
@@ -347,23 +342,25 @@ export default function HouseholdPage() {
             </CardContent>
           </Card>
         </Container>
-      </Box>
+      </PageShell>
     );
   }
 
   if (!householdId && !customerId) {
     return (
-      <Container maxWidth="xl" sx={{ py: 3 }}>
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <FamilyRestroom sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 300 }}>
-            No Household Selected
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 300 }}>
-            Please search for and select a customer to view their household details.
-          </Typography>
-        </Box>
-      </Container>
+      <PageShell>
+        <Container maxWidth="xl" sx={{ py: 3 }}>
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <FamilyRestroom sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 300 }}>
+              No Household Selected
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 300 }}>
+              Please search for and select a customer to view their household details.
+            </Typography>
+          </Box>
+        </Container>
+      </PageShell>
     );
   }
 
@@ -373,48 +370,48 @@ export default function HouseholdPage() {
                   (householdError as any)?.response?.status === 404 ||
                   String(householdError).includes('404');
     return (
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Card>
-          <CardContent sx={{ py: 8, textAlign: 'center' }}>
-            <FamilyRestroom sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h5" color="text.secondary" gutterBottom>
-              {is404 ? 'Household Not Found' : 'Error Loading Household'}
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-              {is404 
-                ? `The household with ID "${householdId}" could not be found.`
-                : 'An error occurred while loading household data.'
-              }
-            </Typography>
-            <Button
-              variant="outlined"
-              onClick={handleBack}
-              startIcon={<ArrowBack />}
-            >
-              Go Back
-            </Button>
-          </CardContent>
-        </Card>
-      </Container>
+      <PageShell>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+          <Card>
+            <CardContent sx={{ py: 8, textAlign: 'center' }}>
+              <FamilyRestroom sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h5" color="text.secondary" gutterBottom>
+                {is404 ? 'Household Not Found' : 'Error Loading Household'}
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                {is404
+                  ? `The household with ID "${householdId}" could not be found.`
+                  : 'An error occurred while loading household data.'
+                }
+              </Typography>
+              <BackButton fallback={backFallback} variant="outlined" />
+            </CardContent>
+          </Card>
+        </Container>
+      </PageShell>
     );
   }
 
   if (householdLoading) {
     return (
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Skeleton variant="rectangular" height={200} />
-        <Box sx={{ mt: 3 }}>
-          <Skeleton variant="rectangular" height={400} />
-        </Box>
-      </Container>
+      <PageShell>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+          <Skeleton variant="rectangular" height={200} />
+          <Box sx={{ mt: 3 }}>
+            <Skeleton variant="rectangular" height={400} />
+          </Box>
+        </Container>
+      </PageShell>
     );
   }
 
   if (!household) {
     return (
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Alert severity="warning">Household not found</Alert>
-      </Container>
+      <PageShell>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+          <Alert severity="warning">Household not found</Alert>
+        </Container>
+      </PageShell>
     );
   }
 
@@ -445,12 +442,12 @@ export default function HouseholdPage() {
   }, {} as Record<string, { count: number; totalBalance: number }>);
 
   return (
-    <Box>
+    <PageShell>
       {/* Sticky Header Bar */}
-      <Box 
-        sx={{ 
-          position: 'sticky', 
-          top: 0, 
+      <Box
+        sx={{
+          position: 'sticky',
+          top: 0,
           zIndex: 1100,
           bgcolor: 'background.paper',
           borderBottom: 1,
@@ -462,13 +459,7 @@ export default function HouseholdPage() {
         <Container maxWidth="xl">
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <IconButton
-                onClick={handleBack}
-                data-testid="button-back"
-                sx={{ color: 'text.secondary' }}
-              >
-                <ArrowBack />
-              </IconButton>
+              <BackButton fallback={backFallback} />
               {getTypeIcon(household.householdType)}
               <Box>
                 <Typography variant="h5" data-testid="text-household-name">
@@ -1224,6 +1215,6 @@ export default function HouseholdPage() {
           targetId={noteTargetId}
         />
       </Container>
-    </Box>
+    </PageShell>
   );
 }

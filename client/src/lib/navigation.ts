@@ -84,8 +84,28 @@ export function navigateToHousehold(householdId: number | string): void {
   }
 }
 
+/**
+ * Walk back in history when possible, else navigate to a fallback.
+ * Used by the unified BackButton so deep-link / direct-load arrivals
+ * still resolve to a sensible destination instead of a dead button.
+ */
+export function smartBack(
+  setLocation: (to: string) => void,
+  fallback: string | (() => void)
+): void {
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+  if (typeof fallback === 'function') {
+    fallback();
+  } else {
+    setLocation(fallback);
+  }
+}
+
 /*
-* Navigate to a url and keep the current search parameters when calling the 
+* Navigate to a url and keep the current search parameters when calling the
 * going to the new url
 */
 export function navigateWithMergedSearch(navigate : (url: string) => void, to : string) {

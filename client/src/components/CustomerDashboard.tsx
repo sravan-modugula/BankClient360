@@ -52,6 +52,7 @@ import TotalRelationshipSummary from './TotalRelationshipSummary';
 import RecentContactHistoryVariantC from './RecentContactHistory_VariantC';
 import NotesSection from './NotesSection';
 import PermissionGuard from './PermissionGuard';
+import BackButton from './BackButton';
 import { Link, useLocation, useParams, useSearchParams } from 'wouter';
 import { IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText } from '@mui/material';
 import { AdminPanelSettings } from '@mui/icons-material';
@@ -605,20 +606,15 @@ export default function CustomerDashboard() {
         {/* Customer Search */}
         {/* <CustomerSearch /> */}
 
-        {/* Back to Household button - show when navigated from household page */}
+        {/* Back button - show when navigated from household page */}
         {fromHouseholdId && (
           <Box sx={{ pt: 3, background: 'white', width: "100%", maxWidth: "none", display: "flex", justifyContent: "center", alignItems: "center" }}>
             <Box sx={{ mt: 2, mb: 1 }}>
-              <Button
-                startIcon={<ArrowBack />}
-                onClick={() => navigateToHousehold(fromHouseholdId)}
+              <BackButton
+                fallback={() => navigateToHousehold(fromHouseholdId)}
                 variant="outlined"
-                size="small"
-                data-testid="button-back-to-household"
-                sx={{ textTransform: 'none' }}
-              >
-                Back to Household
-              </Button>
+                testId="button-back-to-household"
+              />
             </Box>
           </Box>
         )}
