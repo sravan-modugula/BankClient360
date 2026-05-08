@@ -138,7 +138,7 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
         </Typography>
 
         {/* Login Information - Clean Stats Bar Style. Hidden when no online banking row. */}
-        {hasOnlineBanking && (
+        {/*hasOnlineBanking && (
           <Box sx={{
             display: 'flex',
             gap: 3,
@@ -159,7 +159,7 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
               </Typography>
             </Box>
           </Box>
-        )}
+        )*/}
 
         {/* 30 Day Activity - Horizontal Metric Bars */}
         <Box sx={{ flex: 1 }}>

@@ -144,6 +144,10 @@ export default function CustomerDashboard() {
       navigateWithMergedSearch(navigate, "/ciq/client");
       // setActiveTab('client');
     }
+
+    if (activeTab === "client") {
+       setSelectedDetailAccountId(null);
+    }
   }, [activeTab, hasHouseholdPermission, hasAccountsPermission]);
 
 

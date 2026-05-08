@@ -36,48 +36,6 @@ export async function getEmployeeSqlServer(
 }
 
 /**
- * Resolve a SAML-authenticated user to a DB employee record. Tries
- * sso_subject first (preferred — populated when employees are linked
- * to a SAML identity), falls back to email.
- */
-export async function getEmployeeBySsoSubjectOrEmailSqlServer(
-  pool: sql.ConnectionPool,
-  ssoSubject: string | null,
-  email: string | null,
-): Promise<Employee | null> {
-  try {
-    if (ssoSubject) {
-      const request = pool.request();
-      request.input('ssoSubject', sql.NVarChar, ssoSubject);
-      const result = await request.query(`
-        SELECT TOP 1 * FROM employee
-        WHERE sso_subject = @ssoSubject AND deleted_at IS NULL
-      `);
-      if (result.recordset.length > 0) {
-        return mapEmployeeFromDb(result.recordset[0]);
-      }
-    }
-
-    if (email) {
-      const request = pool.request();
-      request.input('email', sql.NVarChar, email);
-      const result = await request.query(`
-        SELECT TOP 1 * FROM employee
-        WHERE email = @email AND deleted_at IS NULL
-      `);
-      if (result.recordset.length > 0) {
-        return mapEmployeeFromDb(result.recordset[0]);
-      }
-    }
-
-    return null;
-  } catch (error) {
-    fileLogger.error({ err: error, ssoSubject, email }, 'Get employee by SSO/email error');
-    throw error;
-  }
-}
-
-/**
  * Get all employees (optionally filtered by branch)
  */
 export async function getEmployeesSqlServer(

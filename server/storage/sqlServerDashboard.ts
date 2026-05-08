@@ -603,7 +603,7 @@ export async function getContactHistorySqlServer(
     const result = await request.query(`
       SELECT TOP (@limit)
         contact_type,
-        occurred_at,
+        created_at as occurred_at,
         employee_name,
         summary
       FROM contact_history

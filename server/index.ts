@@ -1,5 +1,4 @@
 import express, { type Request, Response, NextFunction } from "express";
-import passport from "passport";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeServerTimezone } from "./utils/timezone";
@@ -7,7 +6,6 @@ import { samlRoleMappingService } from "./services/samlRoleMappingService";
 import logger from "./services/logger";
 import { correlationIdMiddleware } from "./middleware/correlationId";
 import { requestLoggerMiddleware } from "./middleware/requestLogger";
-import { createSessionMiddleware, createSamlStrategy } from "./auth";
 
 const app = express();
 
@@ -17,46 +15,18 @@ app.use(correlationIdMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-const samlEnabled = process.env.SAML_ENABLED === 'true';
-
-if (samlEnabled) {
-  logger.info({ module: 'auth' }, 'SAML SSO enabled — mounting session, passport, and SAML strategy');
-
-  app.use(createSessionMiddleware());
-  // Cast to any: @types/passport's Strategy interface is narrower than the
-  // actual passport-saml Strategy class, which is a known type-package gap.
-  passport.use(createSamlStrategy() as any);
-
-  // Round-trip the entire user object through the session — we don't have a
-  // SQL Server-aware employee store yet (Option B), so there's no DB lookup
-  // to deserialize against.
-  passport.serializeUser((user: any, done) => done(null, user));
-  passport.deserializeUser((user: any, done) => done(null, user));
-
-  app.use(passport.initialize());
-  app.use(passport.session());
-
-  // Bridge: legacy route handlers read req.employeeId. The ACS handler sets
-  // both session.employeeId (legacy) and req.user (via req.logIn).
-  app.use((req, _res, next) => {
-    const sessionEmployeeId = (req as any).session?.employeeId;
-    const userEmployeeId = (req.user as any)?.employeeId;
-    const employeeId = sessionEmployeeId || userEmployeeId;
-    if (employeeId) {
-      req.employeeId = employeeId;
-    }
-    next();
-  });
-} else if (process.env.NODE_ENV === 'development') {
+// DEVELOPMENT ONLY: Mock user session
+// Only active when NODE_ENV=development and SAML is not enabled
+if (process.env.NODE_ENV === 'development' && process.env.SAML_ENABLED !== 'true') {
   logger.info({ module: 'auth' }, 'Using mock authentication (development mode)');
 
-  app.use(async (req, _res, next) => {
+  app.use(async (req, res, next) => {
     // Mock authenticated user for development testing
     req.employeeId = 1; // Sarah Johnson, System Admin
     next();
   });
 } else {
-  logger.warn({ module: 'auth' }, 'No authentication configured (SAML_ENABLED=false in non-development env)');
+  logger.info({ module: 'auth' }, 'Mock authentication disabled - using real authentication');
 }
 
 // Structured request logging (replaces old custom logger)

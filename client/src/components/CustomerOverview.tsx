@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import CustomerDetailModal from './CustomerDetailModal';
 import PanelTitle from "./PanelTitle";
+import { formatFlatDate } from '@/helpers';
 
 interface Customer {
   id: string;
@@ -63,17 +64,6 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
     }
   };
 
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'N/A';
-
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return 'N/A';
-    }
-
-    return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-  };
-
   const isBirthday = (dateOfBirth: string | undefined) => {
     if (!dateOfBirth) return false;
 
@@ -81,8 +71,8 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
     if (isNaN(birthDate.getTime())) return false;
 
     const today = new Date();
-    return birthDate.getMonth() === today.getMonth() &&
-      birthDate.getDate() === today.getDate();
+    return birthDate.getUTCMonth() === today.getMonth() &&
+      birthDate.getUTCDate() === today.getDate();
   };
 
   const isBirthdayToday = isBirthday(customer.dateOfBirth);
@@ -222,7 +212,7 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
                 Date of Birth
               </Typography>
               <Typography variant="body1" data-testid="text-date-of-birth" sx={{ fontWeight: 400, mt: 0.5 }}>
-                {formatDate(customer.dateOfBirth)}
+                {formatFlatDate(customer.dateOfBirth)}
               </Typography>
             </Box>
           )}
@@ -233,7 +223,7 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
               Customer Since
             </Typography>
             <Typography variant="body1" data-testid="text-customer-since" sx={{ fontWeight: 400, mt: 0.5 }}>
-              {formatDate(customer.customerSince)}
+              {formatFlatDate(customer.customerSince)}
             </Typography>
           </Box>
 

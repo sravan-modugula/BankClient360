@@ -120,12 +120,12 @@ export default function Middle({ customerId }: MiddleProps) {
                     value={engagement?.lastLoginAt || 'Never'}
                     sub={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <Typography variant="caption" sx={{ fontSize: 14 }}>
+                            {/*<Typography variant="caption" sx={{ fontSize: 14 }}>
                                 Login ID:
                             </Typography>
                             <Typography variant="caption" sx={{ fontSize: 14 }} data-testid="text-quarter-change">
-                                {engagement?.loginId}
-                            </Typography>
+                                {engagement?.loginId || "N/A"}
+                            </Typography>*/}
                         </Box>
                     }
                     accent="#2d6a2d"

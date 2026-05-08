@@ -39,6 +39,7 @@ import DebitCardDetailModal from './DebitCardDetailModal';
 import AccountBalanceTrends from './AccountBalanceTrends';
 import { getCardStatusConfig, getCardStatusLabel, getCardBrandConfig, formatCardNumber, isCardActive } from '@/lib/debitCardConstants';
 import type { DebitCardWithLimitProfile } from '@shared/schema';
+import { FormatTransactionAmount } from './FormatTransactionAmount';
 
 interface AccountDetailOption2Props {
   accountId?: string;
@@ -565,7 +566,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                           const amount = parseFloat(tx.amount) || 0;
                           return (
                             <TableRow key={tx.transactionId || idx} hover>
-                              <TableCell>{formatDate(tx.transactionDate)}</TableCell>
+                              <TableCell>{tx.postingDate ? formatDate(tx.postingDate) : "N/A"}</TableCell>
                               <TableCell>{tx.description || tx.merchantName || '—'}</TableCell>
                               <TableCell>
                                 {tx.transactionType ? (
@@ -573,16 +574,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                                 ) : '—'}
                               </TableCell>
                               <TableCell align="right">
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    color: amount > 0 ? 'success.main' : amount < 0 ? 'error.main' : 'text.primary',
-                                    fontWeight: 500,
-                                    fontFamily: 'Roboto Mono'
-                                  }}
-                                >
-                                  {amount > 0 ? '+' : amount < 0 ? '-' : ''}{formatCurrency(Math.abs(amount))}
-                                </Typography>
+                                <FormatTransactionAmount amount={amount} />
                               </TableCell>
                             </TableRow>
                           );

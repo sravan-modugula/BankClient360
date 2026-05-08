@@ -272,6 +272,7 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
                 Customer Notes
               </Typography>
               <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                {/*
                 <ToggleButtonGroup
                   value={showDeleted ? 'deleted' : 'active'}
                   exclusive
@@ -289,6 +290,7 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
                     Deleted
                   </ToggleButton>
                 </ToggleButtonGroup>
+                */}
                 <Tooltip title="Filters">
                   <IconButton
                     size="small"

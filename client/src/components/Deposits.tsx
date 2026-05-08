@@ -45,6 +45,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useDateFormatter } from '@/lib/dateFormatters';
 import SectionLabel from "./SectionLabel";
+import { FormatTransactionAmount } from "./FormatTransactionAmount";
 
 interface DepositAnalytics {
   totalBalance: number;
@@ -208,7 +209,16 @@ export default function Deposits({ customerId }: DepositsProps) {
   }
 
   // Check if user has no deposit accounts
-  const hasDeposits = analytics && analytics.totalBalance > 0;
+  /* Check if any of the analytics data is available. */
+  const hasDeposits = (
+    analytics && 
+    (
+      Object.keys(analytics.balanceByType || {}).length > 0 || 
+      (analytics.recentTransactions || []).length > 0 ||
+      (analytics.trendData || []).length > 0 ||
+      (analytics.totalBalance || 0) !== 0 
+    )
+  );
 
   if (!hasDeposits && !isLoading) {
     return (
@@ -504,15 +514,9 @@ export default function Deposits({ customerId }: DepositsProps) {
                               </Typography>
                             </Box>
                             <Box sx={{ textAlign: 'right' }}>
-                              <Typography 
-                                variant="body2" 
-                                fontWeight="400"
-                                color="primary.main"
-                              >
-                                {(transaction.amount || 0) >= 0 ? '+' : ''}{formatCurrency(Math.abs(transaction.amount || 0))}
-                              </Typography>
+                              <FormatTransactionAmount amount={transaction.amount} /> 
                               <Typography variant="caption" color="text.secondary">
-                                {formatDate(transaction.date)}
+                                {transaction.date ? formatDate(transaction.date.replace("Z", "")) : "N/A"}
                               </Typography>
                             </Box>
                           </Box>
