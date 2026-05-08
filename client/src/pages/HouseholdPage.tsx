@@ -160,6 +160,18 @@ export default function HouseholdPage() {
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
   const [accountTab, setAccountTab] = useState<'all' | 'deposits' | 'loans'>('all');
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    if (customerId) {
+      navigateToCustomer(customerId);
+    } else {
+      setLocation('/ciq/client');
+    }
+  };
+
   // If accessing via customerId, fetch their household first
   const { data: customerHouseholds = [] } = useQuery<any[]>({
     queryKey: ['/api/customers', customerId, 'households'],
@@ -341,8 +353,16 @@ export default function HouseholdPage() {
 
   if (!householdId && !customerId) {
     return (
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Alert severity="error">Invalid household ID</Alert>
+      <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <FamilyRestroom sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+          <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 300 }}>
+            No Household Selected
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 300 }}>
+            Please search for and select a customer to view their household details.
+          </Typography>
+        </Box>
       </Container>
     );
   }
@@ -366,9 +386,9 @@ export default function HouseholdPage() {
                 : 'An error occurred while loading household data.'
               }
             </Typography>
-            <Button 
-              variant="outlined" 
-              onClick={() => window.history.back()}
+            <Button
+              variant="outlined"
+              onClick={handleBack}
               startIcon={<ArrowBack />}
             >
               Go Back
@@ -442,8 +462,8 @@ export default function HouseholdPage() {
         <Container maxWidth="xl">
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <IconButton 
-                onClick={() => window.history.back()} 
+              <IconButton
+                onClick={handleBack}
                 data-testid="button-back"
                 sx={{ color: 'text.secondary' }}
               >

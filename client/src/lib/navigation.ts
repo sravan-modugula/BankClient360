@@ -25,7 +25,7 @@ function validateAndEncodeId(id: number | string): string {
 
 export function generateCustomerUrl(customerId: number | string, fromHouseholdId?: number | string) : string {
     const encodedId = validateAndEncodeId(customerId);
-    let newUrl = `ciq/client?customerId=${encodedId}`;
+    let newUrl = `/ciq/client?customerId=${encodedId}`;
     
     // Add household ID if provided for back navigation
     if (fromHouseholdId) {

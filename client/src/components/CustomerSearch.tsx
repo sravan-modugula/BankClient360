@@ -77,7 +77,7 @@ export default function CustomerSearch() {
       console.log('Customer selected:', customer);
       setSearchQuery("");
       setShowResults(false);
-      setLocation("/" + generateCustomerUrl(customer.customerId || customer.id));
+      setLocation(generateCustomerUrl(customer.customerId || customer.id));
     } else if (entity.entityType === 'household') {
       // Navigate to household page
       console.log('Household selected:', entity);

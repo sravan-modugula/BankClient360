@@ -167,12 +167,12 @@ function Router({ drawerOpen }: RouterProps) {
           <Route path="/ciq/household" component={HouseholdPage} />
           <Route path="/ciq/:tabView" component={CustomerDashboard} />
           <Route path="/admin/users" component={UserManagement} />
-          {/* 
+          <Route path="/account/:accountId">{(params) => <AccountDetailOption2 accountId={params.accountId} />}</Route>
+          {/*
             <Route path="/household/customer/:customerId" component={HouseholdPage} />
             <Route path="/household/:id" component={HouseholdPage} />
-            <Route path="/household/option1" component={HouseholdPageOption1} /> 
-            <Route path="/household/option2" component={HouseholdPageOption2} /> 
-            <Route path="/account/:accountId">{(params) => <AccountDetailOption2 accountId={params.accountId} />}</Route> 
+            <Route path="/household/option1" component={HouseholdPageOption1} />
+            <Route path="/household/option2" component={HouseholdPageOption2} />
           */}
           <Route component={NotFound} />
         </Switch>
