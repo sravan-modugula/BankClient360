@@ -126,7 +126,6 @@ export default function CustomerSearch() {
                 <SearchIcon color="secondary" />
               </InputAdornment>
             ),
-            disableUnderline: true,
             size: "small"
           }
         }}
