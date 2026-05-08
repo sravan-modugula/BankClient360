@@ -102,25 +102,34 @@ export function createAuthRoutes() {
   });
 
   router.get('/status', (req, res) => {
-    // Authenticated = SAML ACS populated session identity (email or req.user).
-    // Linked = the user has a DB employee row with at least one assigned role
-    // — this is the gating check for "can use the app". Without roles, the
-    // SPA shows an "awaiting role assignment" screen instead of an empty
-    // app shell.
+    // Authenticated identity sources, in priority order:
+    //   - SAML ACS populated session.employeeId (post-login)
+    //   - passport's req.user (post-login, before bridge runs)
+    //   - req.employeeId (dev mock middleware, when SAML_ENABLED !== 'true'
+    //     and NODE_ENV === 'development', or our bridge in index.ts)
     const sessionEmployeeId = req.session?.employeeId;
     const userEmployeeId = (req.user as any)?.employeeId;
-    const employeeId = sessionEmployeeId || userEmployeeId || null;
+    const reqEmployeeId = (req as any).employeeId;
+    const employeeId = sessionEmployeeId || userEmployeeId || reqEmployeeId || null;
     const sessionEmail = req.session?.email;
     const sessionRoles = req.session?.roles ?? [];
+    const samlEnabled = isSamlEnabled();
+
     const isAuthenticated = !!employeeId || !!sessionEmail || !!req.user;
-    const isLinked = !!employeeId && sessionRoles.length > 0;
+    // isLinked = "can use the app". When SAML is enabled (production), gate
+    // on an assigned role so the SPA can show "Awaiting Role Assignment".
+    // When SAML is disabled (dev mock), trust the mock and treat any
+    // employeeId as linked — the dev user (employee_id=1) is fully provisioned.
+    const isLinked = samlEnabled
+      ? !!employeeId && sessionRoles.length > 0
+      : !!employeeId;
 
     res.json({
       isAuthenticated,
       employeeId,
       email: sessionEmail || null,
       isLinked,
-      samlEnabled: isSamlEnabled(),
+      samlEnabled,
     });
   });
 
