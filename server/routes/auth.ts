@@ -31,10 +31,10 @@ export function createAuthRoutes() {
   const router = Router();
 
   router.get('/login', (req, res) => {
-    // Prefer IdP-initiated SSO when SAML_IDP_INITIATED_URL is set (RSA's
-    // portal launcher, e.g. https://portal.fmb.com/IdPServlet?idp_id=<id>).
-    // Sidesteps SP-initiated SAMLRequest construction entirely.
-    const idpInitiatedUrl = process.env.SAML_IDP_INITIATED_URL;
+    // Prefer IdP-initiated SSO when set (RSA's portal launcher, e.g.
+    // https://portal.fmb.com/IdPServlet?idp_id=<id>). Sidesteps SP-initiated
+    // SAMLRequest construction entirely. Accept either env var name.
+    const idpInitiatedUrl = process.env.SAML_IDP_INITIATED_URL || process.env.SAML_IDP_INITIATED;
     if (idpInitiatedUrl) {
       authLogger.info({ idpInitiatedUrl }, 'Redirecting to IdP-initiated SSO');
       emitAuditEvent({
@@ -98,13 +98,20 @@ export function createAuthRoutes() {
   });
 
   router.get('/status', (req, res) => {
+    // A user is authenticated once SAML ACS has populated session identity.
+    // session.employeeId may be null when the SAML user has no matching
+    // row in the employee table — they're still authenticated, just unlinked.
     const sessionEmployeeId = req.session?.employeeId;
     const userEmployeeId = (req.user as any)?.employeeId;
     const employeeId = sessionEmployeeId || userEmployeeId || null;
+    const sessionEmail = req.session?.email;
+    const isAuthenticated = !!employeeId || !!sessionEmail || !!req.user;
 
     res.json({
-      isAuthenticated: !!employeeId,
+      isAuthenticated,
       employeeId,
+      email: sessionEmail || null,
+      isLinked: !!employeeId, // false = SAML auth ok but no employee record yet
       samlEnabled: isSamlEnabled(),
     });
   });

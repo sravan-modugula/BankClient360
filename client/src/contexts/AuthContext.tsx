@@ -17,11 +17,15 @@ interface UserInfo {
 interface AuthStatus {
   isAuthenticated: boolean;
   employeeId: number | null;
+  email: string | null;
+  isLinked: boolean;
   samlEnabled: boolean;
 }
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isLinked: boolean;
+  email: string | null;
   isLoading: boolean;
   user: UserInfo | null;
   samlEnabled: boolean;
@@ -50,6 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const isAuthenticated = authStatus?.isAuthenticated ?? false;
+  const isLinked = authStatus?.isLinked ?? false;
+  const email = authStatus?.email ?? null;
   const samlEnabled = authStatus?.samlEnabled ?? false;
   const isLoading = isStatusLoading || (isAuthenticated && isUserLoading);
 
@@ -80,6 +86,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthContextType = {
     isAuthenticated,
+    isLinked,
+    email,
     isLoading: isLoading || isLoggingOut,
     user: userInfo || null,
     samlEnabled,

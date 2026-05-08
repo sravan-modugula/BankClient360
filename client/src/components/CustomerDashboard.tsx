@@ -101,7 +101,7 @@ export default function CustomerDashboard() {
   const { data: permissions } = usePermissions();
   const maxPrivilegeLevel = permissions?.maxPrivilegeLevel || 0;
 
-  const { isAuthenticated, isLoading: authLoading, login } = useAuth();
+  const { isAuthenticated, isLinked, email: authEmail, isLoading: authLoading, login, logout } = useAuth();
 
   /* 
     We are changing the component structure so the URL controls the 
@@ -550,6 +550,45 @@ export default function CustomerDashboard() {
                 data-testid="button-login-required"
               >
                 Login Now
+              </Button>
+            </CardContent>
+          </Card>
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (isAuthenticated && !isLinked) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{
+          minHeight: '100%',
+          bgcolor: 'background.default',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Card sx={{ maxWidth: 440, textAlign: 'center', p: 3 }}>
+            <CardContent>
+              <LockIcon sx={{ fontSize: 64, color: 'warning.main', mb: 2 }} />
+              <Typography variant="h5" gutterBottom sx={{ fontWeight: 500 }}>
+                Account Not Linked
+              </Typography>
+              <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }}>
+                You signed in successfully{authEmail ? ` as ${authEmail}` : ''}, but your
+                account isn't linked to an employee record yet, so no permissions
+                are available. Please contact your administrator to complete setup.
+              </Alert>
+              <Button
+                variant="outlined"
+                color="primary"
+                size="large"
+                onClick={logout}
+                sx={{ textTransform: 'none' }}
+                data-testid="button-logout-unlinked"
+              >
+                Sign out
               </Button>
             </CardContent>
           </Card>

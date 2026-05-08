@@ -2688,11 +2688,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/permissions", async (req, res) => {
     try {
       // Support both query param (for checking other users) and session (for current user)
-      const employeeId = req.query.employeeId 
-        ? parseInt(req.query.employeeId as string) 
+      const employeeId = req.query.employeeId
+        ? parseInt(req.query.employeeId as string)
         : req.employeeId;
+      const sessionAny = req as any;
+      const sessionEmail = sessionAny?.session?.email;
+      const isSamlAuthenticated = !!sessionEmail || !!req.user;
 
       if (!employeeId) {
+        // SAML-authenticated user without a linked employee record: return
+        // an empty permissions response (200) so the SPA can render an
+        // "account not yet linked" state rather than treating this as
+        // unauthenticated.
+        if (isSamlAuthenticated) {
+          return res.json({
+            employeeId: null,
+            firstName: sessionAny?.session?.firstName || null,
+            lastName: sessionAny?.session?.lastName || null,
+            email: sessionEmail || null,
+            primaryRoleName: null,
+            privilegeLevel: null,
+            permissions: [],
+            maxPrivilegeLevel: 0,
+            roles: [],
+            isLinked: false,
+          });
+        }
         return res.status(401).json({ error: "Authentication required" });
       }
 
