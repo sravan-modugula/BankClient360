@@ -116,6 +116,8 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
     { label: 'Zelle', count: engagement.thirtyDayActivity.zelle, icon: Send }
   ];
 
+  const totalActivity = activityItems.reduce((sum, item) => sum + item.count, 0);
+
   return (
     <Card elevation={2} sx={{ 
       width: '100%', 
@@ -166,6 +168,16 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontWeight: 400 }}>
             30-Day Activity Summary
           </Typography>
+          {totalActivity === 0 ? (
+            <Box
+              sx={{ py: 4, textAlign: 'center' }}
+              data-testid="text-engagement-empty"
+            >
+              <Typography variant="body2" color="text.secondary">
+                No transactions in the last 30 days
+              </Typography>
+            </Box>
+          ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             {(() => {
               const maxCount = Math.max(...activityItems.map(i => i.count), 1);
@@ -236,6 +248,7 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
               });
             })()}
           </Box>
+          )}
         </Box>
       </CardContent>
     </Card>
