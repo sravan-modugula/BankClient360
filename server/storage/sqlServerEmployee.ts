@@ -78,6 +78,109 @@ export async function getEmployeeBySsoSubjectOrEmailSqlServer(
 }
 
 /**
+ * Find-or-create the employee row for a SAML-authenticated user.
+ * Resolution order:
+ *   1. existing row with matching sso_subject or email
+ *   2. existing row with matching employee_number (link it to the SAML identity)
+ *   3. insert a new row from the SAML attributes
+ *
+ * Existing rows have their last_login_at and last_seen_saml_role refreshed,
+ * and any null sso_subject/email/department gets backfilled from the SAML
+ * profile. Returns null if the upsert fails (the caller falls back to a
+ * read-only "no permissions" session).
+ */
+export async function upsertEmployeeFromSamlSqlServer(
+  pool: sql.ConnectionPool,
+  samlData: {
+    employeeNumber: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    ssoSubject: string;
+    department: string | null;
+    samlRoleKey: string | null;
+  },
+): Promise<Employee | null> {
+  try {
+    let existing = await getEmployeeBySsoSubjectOrEmailSqlServer(
+      pool, samlData.ssoSubject, samlData.email,
+    );
+
+    if (!existing && samlData.employeeNumber) {
+      const r = pool.request();
+      r.input('en', sql.NVarChar, samlData.employeeNumber);
+      const result = await r.query(`
+        SELECT TOP 1 * FROM employee
+        WHERE employee_number = @en AND deleted_at IS NULL
+      `);
+      if (result.recordset.length > 0) {
+        existing = mapEmployeeFromDb(result.recordset[0]);
+      }
+    }
+
+    if (existing) {
+      const r = pool.request();
+      r.input('id', sql.BigInt, existing.employeeId);
+      r.input('ssoSubject', sql.NVarChar, samlData.ssoSubject);
+      r.input('email', sql.NVarChar, samlData.email);
+      r.input('firstName', sql.NVarChar, samlData.firstName);
+      r.input('lastName', sql.NVarChar, samlData.lastName);
+      r.input('department', sql.NVarChar, samlData.department);
+      r.input('samlRoleKey', sql.NVarChar, samlData.samlRoleKey);
+
+      await r.query(`
+        UPDATE employee
+        SET
+          sso_subject = ISNULL(sso_subject, @ssoSubject),
+          email = ISNULL(email, @email),
+          department = ISNULL(department, @department),
+          last_seen_saml_role = @samlRoleKey,
+          last_login_at = GETDATE(),
+          updated_at = GETDATE()
+        WHERE employee_id = @id
+      `);
+
+      fileLogger.info({ employeeId: existing.employeeId, email: samlData.email }, 'Updated existing employee from SAML');
+      return { ...existing, lastLoginAt: new Date() };
+    }
+
+    const r = pool.request();
+    r.input('en', sql.NVarChar, samlData.employeeNumber);
+    r.input('firstName', sql.NVarChar, samlData.firstName);
+    r.input('lastName', sql.NVarChar, samlData.lastName);
+    r.input('email', sql.NVarChar, samlData.email);
+    r.input('ssoSubject', sql.NVarChar, samlData.ssoSubject);
+    r.input('department', sql.NVarChar, samlData.department);
+    r.input('samlRoleKey', sql.NVarChar, samlData.samlRoleKey);
+
+    const result = await r.query(`
+      INSERT INTO employee (
+        employee_number, first_name, last_name, email, sso_subject,
+        department, last_seen_saml_role, is_active, last_login_at,
+        created_at, updated_at
+      )
+      OUTPUT INSERTED.*
+      VALUES (
+        @en, @firstName, @lastName, @email, @ssoSubject,
+        @department, @samlRoleKey, 1, GETDATE(),
+        GETDATE(), GETDATE()
+      )
+    `);
+
+    const created = mapEmployeeFromDb(result.recordset[0]);
+    fileLogger.info({
+      employeeId: created.employeeId,
+      employeeNumber: created.employeeNumber,
+      email: created.email,
+    }, 'Auto-created employee from SAML — admin must assign roles');
+    return created;
+  } catch (error) {
+    fileLogger.error({ err: error, email: samlData.email }, 'Failed to upsert employee from SAML');
+    return null;
+  }
+}
+
+/**
  * Get all employees (optionally filtered by branch)
  */
 export async function getEmployeesSqlServer(

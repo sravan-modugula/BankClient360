@@ -5,7 +5,10 @@ import logger from '../services/logger';
 import { emitAuditEvent } from '../services/auditService';
 import { AuditEventType } from '../../shared/auditEvents';
 import { getMssqlPool } from '../db';
-import { getEmployeeBySsoSubjectOrEmailSqlServer } from '../storage/sqlServerEmployee';
+import {
+  getEmployeeBySsoSubjectOrEmailSqlServer,
+  upsertEmployeeFromSamlSqlServer,
+} from '../storage/sqlServerEmployee';
 
 const authLogger = logger.child({ module: 'auth' });
 
@@ -98,20 +101,24 @@ export function createAuthRoutes() {
   });
 
   router.get('/status', (req, res) => {
-    // A user is authenticated once SAML ACS has populated session identity.
-    // session.employeeId may be null when the SAML user has no matching
-    // row in the employee table — they're still authenticated, just unlinked.
+    // Authenticated = SAML ACS populated session identity (email or req.user).
+    // Linked = the user has a DB employee row with at least one assigned role
+    // — this is the gating check for "can use the app". Without roles, the
+    // SPA shows an "awaiting role assignment" screen instead of an empty
+    // app shell.
     const sessionEmployeeId = req.session?.employeeId;
     const userEmployeeId = (req.user as any)?.employeeId;
     const employeeId = sessionEmployeeId || userEmployeeId || null;
     const sessionEmail = req.session?.email;
+    const sessionRoles = req.session?.roles ?? [];
     const isAuthenticated = !!employeeId || !!sessionEmail || !!req.user;
+    const isLinked = !!employeeId && sessionRoles.length > 0;
 
     res.json({
       isAuthenticated,
       employeeId,
       email: sessionEmail || null,
-      isLinked: !!employeeId, // false = SAML auth ok but no employee record yet
+      isLinked,
       samlEnabled: isSamlEnabled(),
     });
   });
@@ -188,34 +195,55 @@ export function createSamlRoutes() {
           }
 
           try {
-            // Resolve SAML identity to a DB employee row (SQL Server-aware,
-            // read-only). If the row exists, populate session.employeeId
-            // with the numeric DB id and load roles/permissions. Otherwise
-            // create the session anyway with empty permissions — admin can
-            // link the employee row later.
+            // Find or create the DB employee row for this SAML identity.
+            // Existing rows have last_login_at and last_seen_saml_role
+            // refreshed; missing rows are inserted from SAML attributes.
+            // Auto-creation is safe because RSA already gates who can
+            // authenticate — anyone reaching ACS has an admin-approved
+            // identity in the IdP.
             let dbEmployeeId: number | null = null;
             try {
               const pool = await getMssqlPool();
-              const dbEmployee = await getEmployeeBySsoSubjectOrEmailSqlServer(
-                pool,
-                user.ssoSubject ?? null,
-                user.email ?? null,
-              );
+
+              // Build safe defaults: SAML may omit firstName/lastName/etc.
+              // employee_number is NOT NULL UNIQUE — use the SAML id if
+              // available, otherwise fall back to an email-derived value.
+              const employeeNumber = String(
+                user.samlEmployeeNumber ??
+                user.samlEmployeeId ??
+                (user.email ? user.email.split('@')[0] : '') ?? '',
+              ).slice(0, 20) || `SAML-${Date.now()}`.slice(0, 20);
+
+              const emailLocal = (user.email || '').split('@')[0] || '';
+              const [emailFirst, emailLast] = emailLocal.includes('.')
+                ? emailLocal.split('.', 2)
+                : [emailLocal, ''];
+              const firstName = (user.firstName || emailFirst || 'Unknown').slice(0, 100);
+              const lastName = (user.lastName || emailLast || 'User').slice(0, 100);
+
+              const dbEmployee = await upsertEmployeeFromSamlSqlServer(pool, {
+                employeeNumber,
+                firstName,
+                lastName,
+                email: user.email,
+                ssoSubject: user.ssoSubject || user.email,
+                department: user.department ?? null,
+                samlRoleKey: user.samlRoleKey ?? null,
+              });
+
               if (dbEmployee) {
                 dbEmployeeId = dbEmployee.employeeId;
                 authLogger.info({
-                  ssoSubject: user.ssoSubject,
                   email: user.email,
                   resolvedEmployeeId: dbEmployeeId,
-                }, 'Resolved SAML user to DB employee');
+                }, 'Resolved/created DB employee for SAML user');
               } else {
                 authLogger.warn({
-                  ssoSubject: user.ssoSubject,
                   email: user.email,
-                }, 'SAML user not found in employee table — session will have empty permissions until an admin links them');
+                }, 'Could not create/resolve DB employee — session will have empty permissions');
               }
             } catch (lookupErr) {
-              authLogger.error({ err: lookupErr }, 'Failed to look up DB employee for SAML user');
+              authLogger.error({ err: lookupErr }, 'Failed to upsert DB employee for SAML user');
             }
 
             req.session.employeeId = dbEmployeeId ?? undefined;

@@ -569,16 +569,17 @@ export default function CustomerDashboard() {
           alignItems: 'center',
           justifyContent: 'center'
         }}>
-          <Card sx={{ maxWidth: 440, textAlign: 'center', p: 3 }}>
+          <Card sx={{ maxWidth: 480, textAlign: 'center', p: 3 }}>
             <CardContent>
               <LockIcon sx={{ fontSize: 64, color: 'warning.main', mb: 2 }} />
               <Typography variant="h5" gutterBottom sx={{ fontWeight: 500 }}>
-                Account Not Linked
+                Awaiting Role Assignment
               </Typography>
               <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }}>
-                You signed in successfully{authEmail ? ` as ${authEmail}` : ''}, but your
-                account isn't linked to an employee record yet, so no permissions
-                are available. Please contact your administrator to complete setup.
+                You signed in successfully{authEmail ? ` as ${authEmail}` : ''}.
+                Your account exists, but no application roles have been assigned
+                yet — please contact your administrator to grant access. Once a
+                role is assigned, sign out and back in to refresh your permissions.
               </Alert>
               <Button
                 variant="outlined"
