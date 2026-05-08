@@ -608,15 +608,12 @@ export default function CustomerDashboard() {
 
         {/* Back button - show when navigated from household page */}
         {fromHouseholdId && (
-          <Box sx={{ pt: 3, background: 'white', width: "100%", maxWidth: "none", display: "flex", justifyContent: "center", alignItems: "center" }}>
-            <Box sx={{ mt: 2, mb: 1 }}>
-              <BackButton
-                fallback={() => navigateToHousehold(fromHouseholdId)}
-                variant="outlined"
-                testId="button-back-to-household"
-              />
-            </Box>
-          </Box>
+          <Container maxWidth="xl" sx={{ pt: 3 }}>
+            <BackButton
+              fallback={() => navigateToHousehold(fromHouseholdId)}
+              testId="button-back-to-household"
+            />
+          </Container>
         )}
 
         {/* Navigation Tabs - only show when customer is selected */}

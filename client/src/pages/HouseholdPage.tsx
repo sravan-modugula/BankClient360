@@ -309,18 +309,21 @@ export default function HouseholdPage() {
   if (noHousehold) {
     return (
       <PageShell>
+        <Container maxWidth="xl" sx={{ pt: 3 }}>
+          <BackButton fallback={backFallback} />
+        </Container>
         <Box
           sx={{
             bgcolor: 'background.paper',
             borderBottom: 1,
             borderColor: 'divider',
             py: 2,
+            mt: 2,
             mb: 3
           }}
         >
           <Container maxWidth="xl">
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <BackButton fallback={backFallback} />
               <FamilyRestroom />
               <Typography variant="h5">Household Information</Typography>
             </Box>
@@ -443,6 +446,11 @@ export default function HouseholdPage() {
 
   return (
     <PageShell>
+      {/* Back row - matches Accounts page placement */}
+      <Container maxWidth="xl" sx={{ pt: 3 }}>
+        <BackButton fallback={backFallback} />
+      </Container>
+
       {/* Sticky Header Bar */}
       <Box
         sx={{
@@ -453,22 +461,20 @@ export default function HouseholdPage() {
           borderBottom: 1,
           borderColor: 'divider',
           py: 2,
+          mt: 2,
           mb: 3
         }}
       >
         <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <BackButton fallback={backFallback} />
-              {getTypeIcon(household.householdType)}
-              <Box>
-                <Typography variant="h5" data-testid="text-household-name">
-                  {household.householdName}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Est. {new Date(household.establishedDate).toLocaleDateString()}
-                </Typography>
-              </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {getTypeIcon(household.householdType)}
+            <Box>
+              <Typography variant="h5" data-testid="text-household-name">
+                {household.householdName}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Est. {new Date(household.establishedDate).toLocaleDateString()}
+              </Typography>
             </Box>
           </Box>
         </Container>
