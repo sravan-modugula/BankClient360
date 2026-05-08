@@ -88,9 +88,13 @@ export async function getClientEngagementSqlServer(
 
     const user = userResult.recordset[0];
 
-    // Get 30-day transaction activity grouped by transaction_category.group_code
+    // Get 30-day transaction activity grouped by transaction_category.group_code.
+    // Snap to start-of-day so a transaction posted at 00:00 on the cutoff day
+    // is inside the window — without this, the boundary is the current time of
+    // day, which silently excludes midnight-stamped rows on day 30.
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
 
     const activityRequest = pool.request();
     activityRequest.input('customerId', sql.BigInt, customerId);
@@ -194,9 +198,11 @@ export async function getRelationshipSummarySqlServer(
     const currentDeposits = parseFloat(depositResult.recordset[0].total || '0');
     const currentLoans = parseFloat(loanResult.recordset[0].total || '0');
 
-    // Calculate Q-1 deposits (90 days ago)
+    // Calculate Q-1 deposits (90 days ago). Snap to start-of-day so the
+    // window boundary doesn't silently drop midnight-stamped rows.
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    ninetyDaysAgo.setHours(0, 0, 0, 0);
 
     const request3 = pool.request();
     request3.input('customerId', sql.BigInt, customerId);

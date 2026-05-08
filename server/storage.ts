@@ -2904,8 +2904,11 @@ export class DatabaseStorage implements IBankingStorage {
 
     const user = bankingUser[0];
 
+    // Snap cutoff to start-of-day so transactions stamped at 00:00 on the
+    // boundary day still fall inside the rolling window.
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
 
     const personAccounts = await this.getCustomerAccounts(customerId);
     const accountIds = personAccounts.map(acc => acc.accountId);
@@ -2929,8 +2932,16 @@ export class DatabaseStorage implements IBankingStorage {
         )
         .groupBy(transactionCategory.groupCode);
 
+      // Case- and separator-insensitive lookup so DB rows like 'ach',
+      // 'Cash Withdrawal', or 'cash_withdrawal' all resolve correctly.
+      const normalizeKey = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '_');
+      const groupCodeLookup = Object.fromEntries(
+        Object.entries(GROUP_CODE_TO_ACTIVITY).map(([k, v]) => [normalizeKey(k), v])
+      );
+
       activityResult.forEach(row => {
-        const key = row.groupCode ? GROUP_CODE_TO_ACTIVITY[row.groupCode.trim()] : undefined;
+        const groupCode = (row.groupCode || '').trim();
+        const key = groupCode ? groupCodeLookup[normalizeKey(groupCode)] : undefined;
         if (key) {
           thirtyDayActivity[key] = Number(row.count) || 0;
         }
