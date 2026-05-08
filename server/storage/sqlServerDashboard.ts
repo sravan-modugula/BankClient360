@@ -111,13 +111,26 @@ export async function getClientEngagementSqlServer(
 
     const activityByCategory = createDefaultActivity();
 
+    // Build a case-insensitive lookup so DB rows like 'ach' or 'CASH WITHDRAWAL'
+    // still resolve to the correct activity key.
+    const groupCodeLookup = Object.fromEntries(
+      Object.entries(GROUP_CODE_TO_ACTIVITY).map(([k, v]) => [k.toLowerCase(), v])
+    );
+
+    const seenGroupCodes: string[] = [];
     activityResult.recordset.forEach(row => {
       const groupCode = (row.group_code || '').toString().trim();
-      const key = GROUP_CODE_TO_ACTIVITY[groupCode];
+      seenGroupCodes.push(groupCode);
+      const key = groupCodeLookup[groupCode.toLowerCase()];
       if (key) {
         activityByCategory[key] += Number(row.count) || 0;
       }
     });
+
+    fileLogger.debug(
+      { customerId, rows: activityResult.recordset.length, seenGroupCodes, activityByCategory },
+      'Client engagement 30-day activity computed'
+    );
 
     return {
       loginId: user?.login_id ?? null,
