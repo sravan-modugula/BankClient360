@@ -182,11 +182,16 @@ export async function upsertEmployeeFromSamlSqlServer(
 
 /**
  * Ensure the employee has at least one active role. If they have none,
- * look up the role by name and insert an employee_role row. Used to
- * auto-grant a default role to users freshly provisioned from SAML.
+ * find a default role and insert an employee_role row.
  *
- * Returns the assigned role name on insert, null if nothing was done
- * (already had a role, or the named role doesn't exist).
+ * Lookup strategy (each is case-insensitive):
+ *   1. exact match on role_name
+ *   2. trimmed equality (handles trailing whitespace in seed data)
+ *   3. LIKE %defaultRoleName% (handles "Branch Manager (Test)" etc.)
+ * If nothing matches, logs the full list of available active role names
+ * so the operator can adjust SAML_DEFAULT_ROLE_NAME or seed the role.
+ *
+ * Returns the assigned role name on insert, null if nothing was done.
  */
 export async function ensureEmployeeHasDefaultRoleSqlServer(
   pool: sql.ConnectionPool,
@@ -211,18 +216,46 @@ export async function ensureEmployeeHasDefaultRoleSqlServer(
       return null;
     }
 
+    const wanted = defaultRoleName.trim();
+
     const findRequest = pool.request();
-    findRequest.input('roleName', sql.NVarChar, defaultRoleName);
+    findRequest.input('roleName', sql.NVarChar, wanted);
+    findRequest.input('roleNameLike', sql.NVarChar, `%${wanted}%`);
     const roleResult = await findRequest.query(`
-      SELECT TOP 1 role_id FROM role
-      WHERE role_name = @roleName AND is_active = 1
+      SELECT TOP 1 role_id, role_name FROM role
+      WHERE is_active = 1
+        AND (
+          UPPER(role_name) = UPPER(@roleName)
+          OR UPPER(LTRIM(RTRIM(role_name))) = UPPER(@roleName)
+          OR UPPER(role_name) LIKE UPPER(@roleNameLike)
+        )
+      ORDER BY
+        CASE
+          WHEN UPPER(role_name) = UPPER(@roleName) THEN 0
+          WHEN UPPER(LTRIM(RTRIM(role_name))) = UPPER(@roleName) THEN 1
+          ELSE 2
+        END,
+        role_id ASC
     `);
 
     if (roleResult.recordset.length === 0) {
-      fileLogger.warn({ defaultRoleName, employeeId }, 'Default role not found in role table — leaving employee without roles');
+      const allRolesRequest = pool.request();
+      const allRolesResult = await allRolesRequest.query(`
+        SELECT role_name, is_active FROM role ORDER BY role_name
+      `);
+      const availableRoles = allRolesResult.recordset.map((r: any) => ({
+        roleName: r.role_name,
+        isActive: !!r.is_active,
+      }));
+      fileLogger.warn({
+        defaultRoleName,
+        employeeId,
+        availableRoles,
+      }, 'Default role not found — set SAML_DEFAULT_ROLE_NAME to one of the available role names, or seed the role table');
       return null;
     }
 
+    const matchedRoleName = roleResult.recordset[0].role_name as string;
     const roleId = roleResult.recordset[0].role_id;
 
     const assignRequest = pool.request();
@@ -236,8 +269,8 @@ export async function ensureEmployeeHasDefaultRoleSqlServer(
       )
     `);
 
-    fileLogger.info({ employeeId, defaultRoleName }, 'Auto-assigned default role to employee');
-    return defaultRoleName;
+    fileLogger.info({ employeeId, defaultRoleName, matchedRoleName }, 'Auto-assigned default role to employee');
+    return matchedRoleName;
   } catch (error) {
     fileLogger.error({ err: error, employeeId, defaultRoleName }, 'Failed to assign default role');
     return null;
