@@ -8,6 +8,7 @@ import { getMssqlPool } from '../db';
 import {
   getEmployeeBySsoSubjectOrEmailSqlServer,
   upsertEmployeeFromSamlSqlServer,
+  ensureEmployeeHasDefaultRoleSqlServer,
 } from '../storage/sqlServerEmployee';
 
 const authLogger = logger.child({ module: 'auth' });
@@ -237,6 +238,20 @@ export function createSamlRoutes() {
                   email: user.email,
                   resolvedEmployeeId: dbEmployeeId,
                 }, 'Resolved/created DB employee for SAML user');
+
+                // Auto-grant a default role if the user has none yet.
+                // Configurable via SAML_DEFAULT_ROLE_NAME (defaults to
+                // "Branch Manager" while the org figures out per-user
+                // assignments). Set to empty string to disable.
+                const defaultRoleName = process.env.SAML_DEFAULT_ROLE_NAME ?? 'Branch Manager';
+                if (defaultRoleName) {
+                  const assigned = await ensureEmployeeHasDefaultRoleSqlServer(
+                    pool, dbEmployeeId, defaultRoleName,
+                  );
+                  if (assigned) {
+                    authLogger.info({ dbEmployeeId, defaultRoleName: assigned }, 'Granted default role to new SAML user');
+                  }
+                }
               } else {
                 authLogger.warn({
                   email: user.email,

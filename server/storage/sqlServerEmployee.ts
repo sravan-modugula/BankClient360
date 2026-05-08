@@ -181,6 +181,70 @@ export async function upsertEmployeeFromSamlSqlServer(
 }
 
 /**
+ * Ensure the employee has at least one active role. If they have none,
+ * look up the role by name and insert an employee_role row. Used to
+ * auto-grant a default role to users freshly provisioned from SAML.
+ *
+ * Returns the assigned role name on insert, null if nothing was done
+ * (already had a role, or the named role doesn't exist).
+ */
+export async function ensureEmployeeHasDefaultRoleSqlServer(
+  pool: sql.ConnectionPool,
+  employeeId: number,
+  defaultRoleName: string,
+): Promise<string | null> {
+  try {
+    const checkRequest = pool.request();
+    checkRequest.input('employeeId', sql.BigInt, employeeId);
+    const existing = await checkRequest.query(`
+      SELECT TOP 1 r.role_name
+      FROM employee_role er
+      INNER JOIN role r ON r.role_id = er.role_id
+      WHERE er.employee_id = @employeeId
+        AND er.is_active = 1
+        AND r.is_active = 1
+        AND er.effective_date <= GETDATE()
+        AND (er.expiration_date IS NULL OR er.expiration_date >= GETDATE())
+    `);
+
+    if (existing.recordset.length > 0) {
+      return null;
+    }
+
+    const findRequest = pool.request();
+    findRequest.input('roleName', sql.NVarChar, defaultRoleName);
+    const roleResult = await findRequest.query(`
+      SELECT TOP 1 role_id FROM role
+      WHERE role_name = @roleName AND is_active = 1
+    `);
+
+    if (roleResult.recordset.length === 0) {
+      fileLogger.warn({ defaultRoleName, employeeId }, 'Default role not found in role table — leaving employee without roles');
+      return null;
+    }
+
+    const roleId = roleResult.recordset[0].role_id;
+
+    const assignRequest = pool.request();
+    assignRequest.input('employeeId', sql.BigInt, employeeId);
+    assignRequest.input('roleId', sql.BigInt, roleId);
+    await assignRequest.query(`
+      INSERT INTO employee_role (
+        employee_id, role_id, is_primary, assigned_date, effective_date, is_active
+      ) VALUES (
+        @employeeId, @roleId, 1, GETDATE(), CAST(GETDATE() AS DATE), 1
+      )
+    `);
+
+    fileLogger.info({ employeeId, defaultRoleName }, 'Auto-assigned default role to employee');
+    return defaultRoleName;
+  } catch (error) {
+    fileLogger.error({ err: error, employeeId, defaultRoleName }, 'Failed to assign default role');
+    return null;
+  }
+}
+
+/**
  * Get all employees (optionally filtered by branch)
  */
 export async function getEmployeesSqlServer(
