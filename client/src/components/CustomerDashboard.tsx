@@ -18,7 +18,8 @@ import {
   Button,
   Card,
   CardContent,
-  CircularProgress
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import {
@@ -65,6 +66,25 @@ import { navigate } from 'wouter/use-browser-location';
 import NotFound from '@/pages/not-found';
 
 type TabView = 'household' | 'client' | 'accounts' | 'accountSummary';
+
+// Map server-side login_error reason codes (set in server/routes/auth.ts) to
+// user-facing messages.
+function loginErrorReasonText(reason: string): string {
+  switch (reason) {
+    case 'auth_error':
+      return 'We could not verify your identity with the identity provider. Please try logging in again, or contact your administrator if the problem persists.';
+    case 'no_user':
+      return 'The identity provider did not return a user profile. Please contact your administrator.';
+    case 'saml_login_failed':
+      return 'Single sign-on initiation failed. Please try again or contact your administrator.';
+    case 'session_error':
+      return 'A session error occurred while logging you in. Please try again.';
+    case 'login_error':
+      return 'Login failed unexpectedly. Please try again.';
+    default:
+      return 'An authentication error occurred. Please try again or contact your administrator.';
+  }
+}
 
 export default function CustomerDashboard() {
 
@@ -494,6 +514,8 @@ export default function CustomerDashboard() {
   }
 
   if (!isAuthenticated) {
+    const loginError = params.get('login_error');
+    const loginErrorMessage = loginError ? loginErrorReasonText(loginError) : null;
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
@@ -510,6 +532,11 @@ export default function CustomerDashboard() {
               <Typography variant="h5" gutterBottom sx={{ fontWeight: 500 }}>
                 Login Required
               </Typography>
+              {loginErrorMessage && (
+                <Alert severity="error" sx={{ mb: 2, textAlign: 'left' }} data-testid="login-error-banner">
+                  {loginErrorMessage}
+                </Alert>
+              )}
               <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
                 Please log in to search and view customer information.
               </Typography>
