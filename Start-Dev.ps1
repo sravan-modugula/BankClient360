@@ -11,7 +11,7 @@ $env:DB_VENDOR = "mssql"
 
 # SQL Server connection (update these values)
 $env:MSSQL_SERVER = "HUB-SQL1TST-LIS"
-$env:MSSQL_DATABASE = "ClientIQ"
+$env:MSSQL_DATABASE = "ClientIQdev"
 $env:MSSQL_USER = "ClientIQ"
 $env:MSSQL_PASSWORD = "&|mb*f?!snqhY~pM4j&0"
 $env:MSSQL_PORT = "1433"

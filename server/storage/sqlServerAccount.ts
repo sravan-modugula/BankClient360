@@ -57,7 +57,7 @@ export async function getCustomerAccountsSqlServer(
     request.input('customerId', sql.BigInt, customerId);
 
     const result = await request.query(`
-      SELECT DISTINCT a.*
+      SELECT DISTINCT a.*, ao.customer_id
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
@@ -344,6 +344,7 @@ function mapAccountFromDb(row: any): Account & { branchName?: string; branchCode
     lastMaintenanceDate: row.last_maintenance_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    customerId: row.customer_id,
     ...(row.branch_name && { branchName: row.branch_name }),
     ...(row.branch_code && { branchCode: row.branch_code }),
   };

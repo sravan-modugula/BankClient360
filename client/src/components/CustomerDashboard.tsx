@@ -130,6 +130,7 @@ export default function CustomerDashboard() {
 
   // Get customer ID from URL parameter - this is the source of truth
   const customerIdParam = params.get('customerId');
+  const accountIdParam = params.get('accountId');
   const fromHouseholdId = params.get('fromHouseholdId');
 
   // Auto-load customer from URL parameter
@@ -150,11 +151,6 @@ export default function CustomerDashboard() {
     setSelectedAccountLabel(accountLabel);
   };
 
-  // Reset account selection when customer changes
-  useEffect(() => {
-    setSelectedAccountId(null);
-    setSelectedAccountLabel('All Accounts');
-  }, [customerIdParam]);
 
   // Reset active tab if user loses permission for currently selected tab
   useEffect(() => {
@@ -167,9 +163,21 @@ export default function CustomerDashboard() {
     }
 
     if (activeTab === "client") {
-       setSelectedDetailAccountId(null);
+      setSelectedDetailAccountId(null);
     }
   }, [activeTab, hasHouseholdPermission, hasAccountsPermission]);
+
+  // Reset account selection when customer changes
+  useEffect(() => {
+    if (activeTab === 'client') {
+      setSelectedAccountId(null);
+      setSelectedAccountLabel('All Accounts');
+    } else if (!!accountIdParam) {
+      const accountIdInt = parseInt(accountIdParam);
+      console.log("Setting account", accountIdInt, activeTab);
+      setSelectedDetailAccountId(accountIdInt);
+    }
+  }, [customerIdParam, accountIdParam, activeTab]);
 
 
 

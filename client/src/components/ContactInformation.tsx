@@ -233,10 +233,10 @@ export default function ContactInformation({ contacts }: ContactInformationProps
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <ContactPhone sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
                 <Typography variant="h6" color="text.secondary">
-                  No Contact Information
+                  No Primary Contact Information
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  No contact details available for this customer.
+                  No primary contact details available for this customer.
                 </Typography>
               </Box>
             )}

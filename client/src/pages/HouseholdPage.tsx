@@ -94,6 +94,7 @@ interface HouseholdMember {
 
 interface Account {
   accountId: number;
+  customerId: number;
   accountNumber: string;
   accountType: string;
   accountSubtype: string | null;
@@ -729,7 +730,7 @@ export default function HouseholdPage() {
                         <TableRow
                           key={account.accountId}
                           hover
-                          onClick={() => setLocation(`/account/${account.accountId}`)}
+                          onClick={() => setLocation(`/ciq/accounts?accountId=${account.accountId}&customerId=${account.customerId}`)}
                           sx={{ cursor: 'pointer' }}
                           data-testid={`account-row-${account.accountId}`}
                         >
