@@ -37,17 +37,23 @@ import { useHasPermission } from '@/hooks/usePermissions';
 import type { Account } from '@shared/schema';
 
 interface AccountListProps {
-  customerId: number;
+  customerId?: number;
+  accounts?: Account[];
+  title?: string;
   onAccountSelect?: (accountId: number | null, accountLabel: string) => void;
   selectedAccountId?: number | null;
   onViewAccountDetail?: (accountId: number) => void;
+  onRowClick?: (account: Account) => void;
 }
 
 export default function AccountList({
   customerId,
+  accounts: accountsProp,
+  title = 'Accounts',
   onAccountSelect,
   selectedAccountId = null,
-  onViewAccountDetail
+  onViewAccountDetail,
+  onRowClick
 }: AccountListProps) {
   const theme = useTheme();
   const [, setLocation] = useLocation();
@@ -138,11 +144,15 @@ export default function AccountList({
     return isNaN(parsed) ? null : parsed;
   };
 
-  // Fetch accounts from API
-  const { data: accounts = [], isLoading, error } = useQuery<Account[]>({
+  // Fetch accounts from API only when no pre-supplied accounts and customerId is provided
+  const { data: fetchedAccounts = [], isLoading: queryLoading, error: queryError } = useQuery<Account[]>({
     queryKey: [`/api/customers/${customerId}/accounts`],
-    enabled: !!customerId && Number.isFinite(customerId)
+    enabled: !accountsProp && !!customerId && Number.isFinite(customerId)
   });
+
+  const accounts = accountsProp ?? fetchedAccounts;
+  const isLoading = accountsProp ? false : queryLoading;
+  const error = accountsProp ? null : queryError;
 
   // Get account icon based on type
   const getAccountIcon = (accountType: string) => {
@@ -194,7 +204,9 @@ export default function AccountList({
 
   // Handle row click - navigate to account details page or call callback
   const handleRowClick = (account: Account) => {
-    if (onViewAccountDetail) {
+    if (onRowClick) {
+      onRowClick(account);
+    } else if (onViewAccountDetail) {
       onViewAccountDetail(account.accountId);
     } else {
       setLocation(`/account/${account.accountId}`);
@@ -296,7 +308,7 @@ export default function AccountList({
             }}
           >
             <AccountBalance sx={{ color: theme.palette.primary.main }} />
-            Accounts ({accounts.length})
+            {title} ({accounts.length})
           </Typography>
         </Box>
 

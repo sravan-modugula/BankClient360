@@ -58,6 +58,8 @@ import {
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import NoteEditorModal from '@/components/NoteEditorModal';
+import AccountList from '@/components/AccountList';
+import type { Account as AccountSchema } from '@shared/schema';
 
 interface Household {
   householdId: number;
@@ -166,7 +168,6 @@ export default function HouseholdPage() {
   const [filterImportance, setFilterImportance] = useState('');
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
-  const [accountTab, setAccountTab] = useState<'all' | 'deposits' | 'loans'>('all');
 
   const backFallback = customerId ? `/ciq/client?customerId=${encodeURIComponent(customerId)}` : '/ciq/client';
 
@@ -414,12 +415,6 @@ export default function HouseholdPage() {
   const totalAccountBalance = totalDeposits + totalLoanBalances;
   const depositWair = weightedAvgRate(depositAccounts);
   const loanWair = weightedAvgRate(loanAccounts);
-
-  const filteredAccounts =
-    accountTab === 'deposits' ? depositAccounts :
-    accountTab === 'loans' ? loanAccounts :
-    allAccounts;
-  const filteredAccountsTotal = filteredAccounts.reduce((sum, a) => sum + toNumber(a.balance), 0);
 
   // Group deposits by type (deposits only — loan widgets removed per spec)
   const depositsByType = depositAccounts.reduce((acc, account) => {
@@ -676,101 +671,25 @@ export default function HouseholdPage() {
           </Card>
         )}
 
-        {/* Aggregated Accounts Card */}
-        <Card sx={{ mb: 3 }} data-testid="card-accounts">
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 2 }}>
-              <Typography variant="h6">Aggregated Accounts</Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                {(['all', 'deposits', 'loans'] as const).map(key => (
-                  <Chip
-                    key={key}
-                    label={key === 'all' ? 'All' : key === 'deposits' ? 'Deposits' : 'Loans'}
-                    size="small"
-                    onClick={() => setAccountTab(key)}
-                    color={accountTab === key ? 'primary' : 'default'}
-                    variant={accountTab === key ? 'filled' : 'outlined'}
-                    data-testid={`tab-accounts-${key}`}
-                  />
-                ))}
-              </Box>
-            </Box>
-            {accountsLoading ? (
+        {/* Aggregated Accounts — reuses Client page's AccountList for parity (search, sort, pagination, default Status sort) */}
+        {accountsLoading ? (
+          <Card sx={{ mb: 3 }} data-testid="card-accounts">
+            <CardContent>
               <Skeleton variant="rectangular" height={300} />
-            ) : filteredAccounts.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No {accountTab === 'all' ? '' : accountTab} accounts found for household members.
-              </Typography>
-            ) : (
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Account Number</TableCell>
-                      <TableCell>Product</TableCell>
-                      <TableCell>Open Date</TableCell>
-                      <TableCell align="right">Balance</TableCell>
-                      {accountTab === 'loans' ? (
-                        <TableCell align="right">Commitment</TableCell>
-                      ) : (
-                        <TableCell align="right">MTD Avg Balance</TableCell>
-                      )}
-                      <TableCell align="right">Interest Rate</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {filteredAccounts.map((account) => {
-                      const openDate = account.openedDate ? new Date(account.openedDate) : null;
-                      const openValid = openDate && !isNaN(openDate.getTime());
-                      const product = titleCase(account.accountSubtype) || titleCase(account.accountType);
-                      const rate = account.interestRate;
-                      const rateNum = rate === null || rate === undefined || rate === '' ? null
-                        : (typeof rate === 'string' ? parseFloat(rate) : rate);
-                      return (
-                        <TableRow
-                          key={account.accountId}
-                          hover
-                          onClick={() => setLocation(`/ciq/accounts?accountId=${account.accountId}&customerId=${account.customerId}`)}
-                          sx={{ cursor: 'pointer' }}
-                          data-testid={`account-row-${account.accountId}`}
-                        >
-                          <TableCell>{account.accountNumber}</TableCell>
-                          <TableCell>{product || '—'}</TableCell>
-                          <TableCell>{openValid ? openDate!.toLocaleDateString() : '—'}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 500 }}>
-                            {formatCurrency(account.balance)}
-                          </TableCell>
-                          <TableCell align="right">
-                            {accountTab === 'loans'
-                              ? (toNumber(account.creditLimit) > 0 ? formatCurrency(account.creditLimit as any) : '—')
-                              : (toNumber(account.averageBalance) > 0 ? formatCurrency(account.averageBalance as any) : '—')}
-                          </TableCell>
-                          <TableCell align="right">
-                            {rateNum !== null && !isNaN(rateNum) ? `${rateNum.toFixed(2)}%` : '—'}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    <TableRow key="total-row">
-                      <TableCell colSpan={3} align="right">
-                        <Typography variant="subtitle2" fontWeight="bold">
-                          Total Balance:
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography variant="subtitle2" fontWeight="bold" color="primary">
-                          {formatCurrency(filteredAccountsTotal)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell />
-                      <TableCell />
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Box data-testid="card-accounts">
+            <AccountList
+              accounts={allAccounts as unknown as AccountSchema[]}
+              title="Aggregated Accounts"
+              onRowClick={(account) => {
+                const customerIdForRow = (account as unknown as { customerId: number }).customerId;
+                setLocation(`/ciq/accounts?accountId=${account.accountId}&customerId=${customerIdForRow}`);
+              }}
+            />
+          </Box>
+        )}
 
         {/* Deposits Overview Card */}
         {Object.keys(depositsByType).length > 0 && (
