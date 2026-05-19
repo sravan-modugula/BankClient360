@@ -1357,7 +1357,7 @@ export type SearchField = 'fullName' | 'firstName' | 'lastName' | 'silverlakeCus
 
 export type MatchType = 'exact' | 'fuzzy' | 'partial';
 
-export type EntityType = 'customer' | 'household';
+export type EntityType = 'customer' | 'household' | 'account';
 
 // Lean search result for performance
 export interface CustomerListItem {
@@ -1373,7 +1373,7 @@ export interface CustomerListItem {
   matchedField?: string; // Which field matched
 }
 
-// Household search result item
+// Account search result item
 export interface HouseholdListItem {
   householdId: number;
   householdName: string;
@@ -1383,6 +1383,20 @@ export interface HouseholdListItem {
   totalLiabilities: string; // Decimal as string
   memberCount: number; // Aggregated count of members
   riskRating: string | null;
+  matchScore?: number; // 0-100 relevance score
+  matchType?: MatchType;
+  matchedField?: string;
+}
+
+// Household search result item
+export interface AccountListItem {
+  accountId: number;
+  accountNumber: string;
+  accountType: string;
+  accountStatus: string;
+  accountSubtype: string; 
+  balance: number; 
+  customerId: number | null;
   matchScore?: number; // 0-100 relevance score
   matchType?: MatchType;
   matchedField?: string;
@@ -1401,6 +1415,7 @@ export interface SearchEntityItem {
   // Entity-specific optional fields
   customer?: CustomerListItem;
   household?: HouseholdListItem;
+  account?: AccountListItem;
 }
 
 export interface SmartSearchDiagnostics {
@@ -1433,7 +1448,7 @@ export const smartSearchParamsSchema = z.object({
   q: z.string().min(1, "Search query is required").max(200),
   fields: z.array(z.enum(['firstName', 'lastName', 'silverlakeCustomerId', 'taxIdentifier', 'governmentId', 'customerId', 'cifNumber', 'householdName'])).optional(),
   type: z.enum(['name', 'taxId', 'govId', 'silverlakeId', 'customerId', 'cif', 'household', 'auto']).default('auto'),
-  entityTypes: z.array(z.enum(['customer', 'household'])).optional(), // Filter by entity type
+  entityTypes: z.array(z.enum(['customer', 'household', 'account'])).optional(), // Filter by entity type
   exact: z.boolean().default(false),
   fuzzyThreshold: z.number().min(0.1).max(1.0).default(0.3),
   limit: z.number().min(1).max(100).default(25),

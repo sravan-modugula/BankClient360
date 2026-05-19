@@ -1,4 +1,4 @@
-import type { CustomerListItem, HouseholdListItem, SearchType, SmartSearchParams } from '@shared/schema';
+import type { CustomerListItem, HouseholdListItem, SearchEntityItem, SearchType, SmartSearchParams } from '@shared/schema';
 
 /**
  * Database-agnostic search provider interface
@@ -134,6 +134,14 @@ export interface ISearchProvider {
    * Get recommended fuzzy threshold for this database
    */
   getDefaultFuzzyThreshold(): number;
+  
+  /**
+   * Search all fields (CIF, account number, name, etc.) globally 
+   * @param query - string that represents the query 
+   * @param limit - Maximum results to return
+   * @returns SearchEntityItem to pass back to API
+   */
+  prefixSearchGlobal(query: string, limit: number): Promise<SearchEntityItem[]>
 }
 
 /**

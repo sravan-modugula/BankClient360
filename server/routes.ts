@@ -119,32 +119,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      const result = await storage.prefixSearch(
+        validation.data
+      );
+
+      res.json(result);
+
       // Use unified search if entityTypes includes household, otherwise use customer-only search for backward compatibility
-      const useUnifiedSearch = validation.data.entityTypes && validation.data.entityTypes.includes('household');
+      // const useUnifiedSearch = validation.data.entityTypes && validation.data.entityTypes.includes('household');
       
-      if (useUnifiedSearch) {
-        const result = await storage.searchEntities(validation.data);
-        logger.debug({
-          module: 'routes',
-          count: result.data.length,
-          detectedType: result.diagnostics.detectedType,
-          hasMore: result.page.hasMore,
-          entityTypes: result.data.reduce((acc, item) => {
-            acc[item.entityType] = (acc[item.entityType] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>)
-        }, 'Unified search completed');
-        res.json(result);
-      } else {
-        const result = await storage.smartSearchCustomers(validation.data);
-        logger.debug({
-          module: 'routes',
-          count: result.data.length,
-          detectedType: result.diagnostics.detectedType,
-          hasMore: result.page.hasMore
-        }, 'Smart search completed');
-        res.json(result);
-      }
+      // if (useUnifiedSearch) {
+      //   const result = await storage.searchEntities(validation.data);
+      //   logger.debug({
+      //     module: 'routes',
+      //     count: result.data.length,
+      //     detectedType: result.diagnostics.detectedType,
+      //     hasMore: result.page.hasMore,
+      //     entityTypes: result.data.reduce((acc, item) => {
+      //       acc[item.entityType] = (acc[item.entityType] || 0) + 1;
+      //       return acc;
+      //     }, {} as Record<string, number>)
+      //   }, 'Unified search completed');
+      //   res.json(result);
+      // } else {
+      //   const result = await storage.smartSearchCustomers(validation.data);
+      //   logger.debug({
+      //     module: 'routes',
+      //     count: result.data.length,
+      //     detectedType: result.diagnostics.detectedType,
+      //     hasMore: result.page.hasMore
+      //   }, 'Smart search completed');
+      //   res.json(result);
+      // }
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error in smart search');
       res.status(500).json({ error: "Internal server error" });

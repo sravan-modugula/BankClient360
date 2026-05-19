@@ -263,6 +263,7 @@ export interface IBankingStorage {
   // Smart search operations
   smartSearchCustomers(params: SmartSearchParams): Promise<SmartSearchResult>;
   searchEntities(params: SmartSearchParams): Promise<UnifiedSearchResult>;
+  prefixSearch(params: SmartSearchParams): Promise<UnifiedSearchResult>;
   getCustomerByGovernmentId(govId: string): Promise<Customer | undefined>;
 
   // Transaction operations
@@ -2244,6 +2245,29 @@ export class DatabaseStorage implements IBankingStorage {
           ? (customerResults.length > 0 ? [customerResults[0].matchedField || detectedType] : [detectedType as string])
           : ['fullName', ...(shouldSearchHouseholds ? ['householdName'] : [])],
         queryNormalized: normalizedQuery
+      }
+    };
+  }
+
+  async prefixSearch(params: SmartSearchParams): Promise<UnifiedSearchResult> {
+    const { q, limit = 25 } = params;
+
+    const results: SearchEntityItem[] = await this.searchProvider.prefixSearchGlobal(q, limit);
+
+    return {
+      data: results,
+
+      /* 
+        The below results are hardcoded to match the existing return type 
+        TODO: decide to either remove the unecessary or to keep it and make it functional
+      */
+      page: {
+        hasMore: false,
+      },
+      diagnostics: {
+        detectedType: "auto",
+        fieldsUsed: [],
+        queryNormalized: q 
       }
     };
   }

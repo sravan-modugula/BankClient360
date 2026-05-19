@@ -1,5 +1,5 @@
 import { eq, ilike, or, and, asc, sql, isNotNull, count } from 'drizzle-orm';
-import type { CustomerListItem, HouseholdListItem } from '@shared/schema';
+import type { CustomerListItem, HouseholdListItem, SearchEntityItem } from '@shared/schema';
 import type { ISearchProvider, SearchProviderCapabilities } from './ISearchProvider';
 import { db } from '../../db';
 import { customer, household, householdMembership } from '@shared/schema';
@@ -201,6 +201,12 @@ export class PostgresSearchProvider implements ISearchProvider {
 
     return result.map(this.maskPII);
   }
+
+  
+  async prefixSearchGlobal(query: string, limit: number): Promise<SearchEntityItem[]> {
+    // DUMMY function to satsify type constraints
+    return []
+  }; 
 
   async searchByCifNumber(
     cif: string,

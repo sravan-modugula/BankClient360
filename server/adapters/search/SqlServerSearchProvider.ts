@@ -1,4 +1,4 @@
-import type { CustomerListItem, HouseholdListItem } from '@shared/schema';
+import type { AccountListItem, CustomerListItem, HouseholdListItem, SearchEntityItem } from '@shared/schema';
 import type { ISearchProvider, SearchProviderCapabilities } from './ISearchProvider';
 import { getMssqlPool } from '../../dbConnection';
 import sqlServer from 'mssql';
@@ -269,7 +269,7 @@ class SqlServerSearchProvider implements ISearchProvider {
     request.input('govId', sqlServer.NVarChar, exact ? govId : `${govId}%`);
     request.input('limit', sqlServer.Int, limit);
 
-    const whereClause = exact 
+    const whereClause = exact
       ? 'WHERE government_id = @govId'
       : 'WHERE government_id COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @govId';
 
@@ -301,7 +301,7 @@ class SqlServerSearchProvider implements ISearchProvider {
     request.input('silverlakeId', sqlServer.NVarChar, exact ? silverlakeId : `${silverlakeId}%`);
     request.input('limit', sqlServer.Int, limit);
 
-    const whereClause = exact 
+    const whereClause = exact
       ? 'WHERE silverlake_customer_id = @silverlakeId'
       : 'WHERE silverlake_customer_id COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @silverlakeId';
 
@@ -333,7 +333,7 @@ class SqlServerSearchProvider implements ISearchProvider {
     request.input('cif', sqlServer.NVarChar, exact ? cif : `${cif}%`);
     request.input('limit', sqlServer.Int, limit);
 
-    const whereClause = exact 
+    const whereClause = exact
       ? 'WHERE jack_henry_cif_number COLLATE SQL_Latin1_General_CP1_CI_AS = @cif'
       : 'WHERE jack_henry_cif_number COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @cif';
 
@@ -420,6 +420,228 @@ class SqlServerSearchProvider implements ISearchProvider {
       return this.searchHouseholdsByNameLegacy(nameQuery, threshold, limit);
     }
   }
+
+  private snakeCaseToProperCase(value: string): string {
+    if (typeof value !== "string" || value.length === 0) {
+      return "";
+    }
+
+    return value
+      .split("_")
+      .filter(Boolean)
+      .map(
+        (word) =>
+          word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      )
+      .join(" ");
+  }
+
+  private formatCurrency(amount: number): string {
+    if (amount >= 1_000_000) {
+      return `$${(amount / 1_000_000).toFixed(1)}M`;
+    } else if (amount >= 1_000) {
+      return `$${(amount / 1_000).toFixed(1)}K`;
+    } else {
+      return `$${amount.toFixed(0)}`;
+    }
+  }
+
+  async prefixSearchGlobal(query: string, limit: number): Promise<SearchEntityItem[]> {
+
+    const pool = await this.poolPromise;
+    const request = pool.request();
+    request.input('query', sqlServer.NVarChar, query);
+    request.input('limit', sqlServer.Int, limit);
+
+    // First, run a SQL query with the query string and the limit to fetch all entity results
+    // also include the additional data that needs to be extracted for each entity type
+
+    const entities = await request.query(`
+      /* 
+        Customer Record
+          entity_type, 
+          entity_id, 
+          display_name, 
+          status, 
+          customer_id (field_1), 
+          full_name (field_2), 
+          customer_type (field_3), 
+          customer_status (field_4), 
+          silver_lake_customer_id (field_5), 
+          tax_identifier_last_4 (field_6),
+          government_id_last_4 (field_7), 
+          jack_henry_cif_number (field_8)
+      */
+
+      select distinct top (@limit)
+        search.entity_type,
+        search.entity_id,
+        customer.full_name as display_name,
+        customer.customer_status as status,
+        customer.customer_id as field_1,
+        convert(varchar(100), customer.full_name) as field_2,
+        convert(varchar(100), customer.customer_type) as field_3,
+        convert(varchar(100), customer.customer_status) as field_4,
+        convert(varchar(100), customer.silverlake_customer_id) as field_5,
+        convert(varchar(100), right(customer.tax_identifier, 4)) as field_6,
+        convert(varchar(100), right(customer.government_id, 4)) as field_7,
+        convert(varchar(100), customer.jack_henry_cif_number) as field_8
+      from ClientIQ.dbo.search search
+      join ClientIq.dbo.customer customer
+      on customer.customer_id = search.customer_id
+      where search.search_value like @query + '%' and search.entity_type = 2
+
+      /* 
+        Household Record
+          entity_type, 
+          entity_id, 
+          display_name, 
+          status, 
+          household_id (field_1), 
+          household_name (field_2), 
+          household_type (field_3), 
+          household_status (field_4), 
+          total_assets (field_5), 
+          total_liabilities (field_6),
+          member_count (field_7),
+          risk_rating (field_8)
+      */
+
+      union
+
+      select distinct top (@limit)
+        search.entity_type,
+        search.entity_id,
+        household.household_name as display_name,
+        household.household_status as status,
+        household.household_id as field_1,
+        convert(varchar(100), household.household_name) as field_2,
+        convert(varchar(100), household.household_type) as field_3,
+        convert(varchar(100), household.household_status) as field_4,
+        convert(varchar(100), household.total_assets) as field_5,
+        convert(varchar(100), household.total_liabilities) as field_6,
+        convert(varchar(100), coalesce((select count(*) from ClientIQ.dbo.household_membership where household_membership.household_id = household.household_id), 0)) as field_7,
+        convert(varchar(100), household.risk_rating) as field_8
+      from ClientIQ.dbo.search search
+      join ClientIq.dbo.household household
+      on household.household_id = search.household_id
+      where search.search_value like @query + '%' and search.entity_type = 3
+
+      /* 
+        Account Record
+          entity_type, 
+          entity_id, 
+          display_name, 
+          status, 
+          account_id (field_1), 
+          account_number (field_2), 
+          account_type (field_3), 
+          household_status (field_4), 
+          account_subtype (field_5), 
+          balance (field_6),
+          interest_rate (field_7),
+          null (field_8)
+      */
+
+      union
+
+      select top (@limit) 
+        search.entity_type,
+        search.entity_id,
+        account.account_number as display_name,
+        account.account_status as status,
+        account.account_id as field_1,
+        convert(varchar(100), account.account_number) as field_2,
+        convert(varchar(100), account.account_type) as field_3,
+        convert(varchar(100), account.account_status) as field_4,
+        convert(varchar(100), account.account_subtype) as field_5,
+        convert(varchar(100), account.balance) as field_6,
+        ao.customer_id as field_7,
+        null as field_8
+      from ClientIQ.dbo.search search
+      join ClientIq.dbo.account account
+      on account.account_id = search.account_id
+      inner join account_ownership ao ON ao.account_id = account.account_id
+      where search.search_value like @query + '%' and search.entity_type = 1;
+    `)
+
+    return entities.recordset.map((r: any) => {
+      if (r.entity_type === 1) {
+        // entity_type = Account
+        return {
+          entityType: 'account',
+          entityId: r.entity_id,
+          displayName: r.display_name,
+          primaryIdentifiers: [
+            this.snakeCaseToProperCase(r.field_5 || 'Unknown'),
+            `Balance: ${this.formatCurrency(r.field_6)}`
+          ],
+          status: r.status,
+          account: {
+            accountId: r.field_1,
+            accountNumber: r.field_2,
+            accountType: r.field_3,
+            accountStatus: r.field_4,
+            accountSubtype: r.field_5,
+            balance: r.field_6,
+            customerId: r.field_7
+          } as AccountListItem
+        } as SearchEntityItem
+      } else if (r.entity_type === 2) {
+        // entity_type = Customer 
+        return {
+          entityType: 'customer',
+          entityId: r.entity_id,
+          displayName: r.display_name,
+          primaryIdentifiers: [
+            // cif
+            `CIF: ${r.field_8}`,
+            // customer type
+            this.snakeCaseToProperCase(r.field_3 || 'Unknown'),
+            // customer status
+            this.snakeCaseToProperCase(r.field_4 || 'Unknown')
+          ].filter(Boolean),
+          status: r.status,
+          customer: this.maskPII({
+            customerId: r.field_1,
+            fullName: r.field_2,
+            customerType: r.field_3,
+            customerStatus: r.field_4,
+            silverlakeCustomerId: r.field_5,
+            taxIdentifierLast4: r.field_6,
+            governmentIdLast4: r.field_7,
+          } as CustomerListItem)
+        } as SearchEntityItem
+      } else {
+        // if (r.entity_type === 3)
+        // entity_type = Household
+
+        const memberText = r.field_7 === 1 ? '1 member' : `${r.field_7} members`;
+        const assetsText = this.formatCurrency(parseFloat(r.field_5));
+
+        return {
+          entityType: 'household',
+          entityId: r.entity_id,
+          displayName: r.display_name,
+          primaryIdentifiers: [
+            memberText,
+            `${assetsText} assets`
+          ].filter(Boolean),
+          status: r.status,
+          household: {
+            householdId: r.field_1,
+            householdName: r.field_2,
+            householdType: r.field_3,
+            householdStatus: r.field_4,
+            totalAssets: r.field_5,
+            totalLiabilities: r.field_6,
+            memberCount: r.field_7,
+            riskRating: r.field_8,
+          } as HouseholdListItem
+        } as SearchEntityItem
+      }
+    })
+  };
 
   async searchHouseholdsByName(
     nameQuery: string,
