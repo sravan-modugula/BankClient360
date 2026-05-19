@@ -570,7 +570,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         // entity_type = Account
         return {
           entityType: 'account',
-          entityId: r.entity_id,
+          entityId: r.field_1,
           displayName: r.display_name,
           primaryIdentifiers: [
             this.snakeCaseToProperCase(r.field_5 || 'Unknown'),
@@ -588,10 +588,10 @@ class SqlServerSearchProvider implements ISearchProvider {
           } as AccountListItem
         } as SearchEntityItem
       } else if (r.entity_type === 2) {
-        // entity_type = Customer 
+        // entity_type = Customer
         return {
           entityType: 'customer',
-          entityId: r.entity_id,
+          entityId: r.field_1,
           displayName: r.display_name,
           primaryIdentifiers: [
             // cif
@@ -621,7 +621,7 @@ class SqlServerSearchProvider implements ISearchProvider {
 
         return {
           entityType: 'household',
-          entityId: r.entity_id,
+          entityId: r.field_1,
           displayName: r.display_name,
           primaryIdentifiers: [
             memberText,
