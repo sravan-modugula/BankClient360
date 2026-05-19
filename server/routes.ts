@@ -1660,23 +1660,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const engagement = await storage.getClientEngagement(customerId);
+      // Parse the rolling-window days (30/60/90, default 30). Anything else
+      // is rejected so the contract literal in ClientEngagementDTO holds.
+      const rawDays = req.query.days;
+      const parsedDays = rawDays === undefined ? 30 : parseInt(String(rawDays), 10);
+      if (![30, 60, 90].includes(parsedDays)) {
+        return res.status(400).json({
+          code: "INVALID_DAYS_PARAM",
+          message: "days must be 30, 60, or 90",
+          correlationId: req.headers['x-correlation-id']?.toString() || 'unknown',
+          timestamp: new Date().toISOString()
+        });
+      }
+      const days = parsedDays as 30 | 60 | 90;
+
+      const engagement = await storage.getClientEngagement(customerId, days);
 
       // Transform to DTO with PST formatting
       const engagementDTO: ClientEngagementType = {
         loginId: engagement.loginId,
         lastLoginAt: engagement.lastLoginAt ? DateFormatter.formatDateTimeWithTZ(engagement.lastLoginAt) : null,
-        thirtyDayActivity: {
-          ach: engagement.thirtyDayActivity.ach || 0,
-          cash_withdrawal: engagement.thirtyDayActivity.cash_withdrawal || 0,
-          check_deposit: engagement.thirtyDayActivity.check_deposit || 0,
-          check_payment: engagement.thirtyDayActivity.check_payment || 0,
-          debit_card_payment: engagement.thirtyDayActivity.debit_card_payment || 0,
-          deposit: engagement.thirtyDayActivity.deposit || 0,
-          lockbox: engagement.thirtyDayActivity.lockbox || 0,
-          transfer: engagement.thirtyDayActivity.transfer || 0,
-          wire: engagement.thirtyDayActivity.wire || 0,
-          zelle: engagement.thirtyDayActivity.zelle || 0
+        days: engagement.days,
+        activity: {
+          ach: engagement.activity.ach || 0,
+          cash_withdrawal: engagement.activity.cash_withdrawal || 0,
+          check_deposit: engagement.activity.check_deposit || 0,
+          check_payment: engagement.activity.check_payment || 0,
+          debit_card_payment: engagement.activity.debit_card_payment || 0,
+          deposit: engagement.activity.deposit || 0,
+          lockbox: engagement.activity.lockbox || 0,
+          transfer: engagement.activity.transfer || 0,
+          wire: engagement.activity.wire || 0,
+          zelle: engagement.activity.zelle || 0
         }
       };
 

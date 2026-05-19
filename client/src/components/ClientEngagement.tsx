@@ -1,15 +1,18 @@
-import { 
-  Card, 
-  CardContent, 
-  Typography, 
-  Box, 
-  Chip, 
+import { useState } from 'react';
+import {
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  Chip,
   Grid,
   Divider,
   useTheme,
   Skeleton,
   Alert,
-  LinearProgress
+  LinearProgress,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import {
   Computer,
@@ -31,15 +34,26 @@ interface ClientEngagementProps {
   customerId: number;
 }
 
+type ActivityWindow = 30 | 60 | 90;
+
 export default function ClientEngagement({ customerId }: ClientEngagementProps) {
   const theme = useTheme();
-  
-  const { 
-    data: engagement, 
-    isLoading, 
-    error 
+  const [days, setDays] = useState<ActivityWindow>(30);
+
+  const {
+    data: engagement,
+    isLoading,
+    error
   } = useQuery<ClientEngagementDTO>({
-    queryKey: [`/api/customers/${customerId}/client-engagement`],
+    queryKey: [`/api/customers/${customerId}/client-engagement`, days],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/customers/${customerId}/client-engagement?days=${days}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error(`Failed to load client engagement (${res.status})`);
+      return res.json();
+    },
     enabled: !!customerId
   });
 
@@ -104,16 +118,16 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
   const hasOnlineBanking = !!engagement.loginId;
 
   const activityItems = [
-    { label: 'ACH', count: engagement.thirtyDayActivity.ach, icon: AccountBalanceWallet },
-    { label: 'Cash Withdrawal', count: engagement.thirtyDayActivity.cash_withdrawal, icon: LocalAtm },
-    { label: 'Check Deposit', count: engagement.thirtyDayActivity.check_deposit, icon: ReceiptLong },
-    { label: 'Check Payment', count: engagement.thirtyDayActivity.check_payment, icon: Description },
-    { label: 'Debit Card Payment', count: engagement.thirtyDayActivity.debit_card_payment, icon: CreditCard },
-    { label: 'Deposit', count: engagement.thirtyDayActivity.deposit, icon: AccountBalance },
-    { label: 'Lockbox', count: engagement.thirtyDayActivity.lockbox, icon: Inbox },
-    { label: 'Transfer', count: engagement.thirtyDayActivity.transfer, icon: SwapHoriz },
-    { label: 'Wire', count: engagement.thirtyDayActivity.wire, icon: FlashOn },
-    { label: 'Zelle', count: engagement.thirtyDayActivity.zelle, icon: Send }
+    { label: 'ACH', count: engagement.activity.ach, icon: AccountBalanceWallet },
+    { label: 'Cash Withdrawal', count: engagement.activity.cash_withdrawal, icon: LocalAtm },
+    { label: 'Check Deposit', count: engagement.activity.check_deposit, icon: ReceiptLong },
+    { label: 'Check Payment', count: engagement.activity.check_payment, icon: Description },
+    { label: 'Debit Card Payment', count: engagement.activity.debit_card_payment, icon: CreditCard },
+    { label: 'Deposit', count: engagement.activity.deposit, icon: AccountBalance },
+    { label: 'Lockbox', count: engagement.activity.lockbox, icon: Inbox },
+    { label: 'Transfer', count: engagement.activity.transfer, icon: SwapHoriz },
+    { label: 'Wire', count: engagement.activity.wire, icon: FlashOn },
+    { label: 'Zelle', count: engagement.activity.zelle, icon: Send }
   ];
 
   const totalActivity = activityItems.reduce((sum, item) => sum + item.count, 0);
@@ -163,18 +177,33 @@ export default function ClientEngagement({ customerId }: ClientEngagementProps) 
           </Box>
         )*/}
 
-        {/* 30 Day Activity - Horizontal Metric Bars */}
+        {/* Activity window toggle + metric bars */}
         <Box sx={{ flex: 1 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontWeight: 400 }}>
-            30-Day Activity Summary
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 400 }}>
+              {engagement.days}-Day Activity Summary
+            </Typography>
+            <ToggleButtonGroup
+              value={days}
+              exclusive
+              size="small"
+              onChange={(_e, value) => {
+                if (value !== null) setDays(value as ActivityWindow);
+              }}
+              aria-label="activity window"
+            >
+              <ToggleButton value={30} data-testid="toggle-days-30">30d</ToggleButton>
+              <ToggleButton value={60} data-testid="toggle-days-60">60d</ToggleButton>
+              <ToggleButton value={90} data-testid="toggle-days-90">90d</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
           {totalActivity === 0 ? (
             <Box
               sx={{ py: 4, textAlign: 'center' }}
               data-testid="text-engagement-empty"
             >
               <Typography variant="body2" color="text.secondary">
-                No transactions in the last 30 days
+                No transactions in the last {engagement.days} days
               </Typography>
             </Box>
           ) : (

@@ -67,11 +67,13 @@ export async function getCustomerOfficersWithDetailsSqlServer(
  */
 export async function getClientEngagementSqlServer(
   pool: sql.ConnectionPool,
-  customerId: number
+  customerId: number,
+  days: 30 | 60 | 90,
 ): Promise<{
   loginId: string | null;
   lastLoginAt: Date | null;
-  thirtyDayActivity: Record<string, number>;
+  days: 30 | 60 | 90;
+  activity: Record<string, number>;
 }> {
   try {
     // Get online banking user (optional — on-prem may not have a row)
@@ -88,17 +90,17 @@ export async function getClientEngagementSqlServer(
 
     const user = userResult.recordset[0];
 
-    // Get 30-day transaction activity grouped by transaction_category.group_code.
+    // Get rolling-window transaction activity grouped by transaction_category.group_code.
     // Snap to start-of-day so a transaction posted at 00:00 on the cutoff day
     // is inside the window — without this, the boundary is the current time of
-    // day, which silently excludes midnight-stamped rows on day 30.
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    // day, which silently excludes midnight-stamped rows on the final day.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
 
     const activityRequest = pool.request();
     activityRequest.input('customerId', sql.BigInt, customerId);
-    activityRequest.input('thirtyDaysAgo', sql.DateTime2, thirtyDaysAgo);
+    activityRequest.input('cutoff', sql.DateTime2, cutoff);
 
     const activityResult = await activityRequest.query(`
       SELECT
@@ -108,7 +110,7 @@ export async function getClientEngagementSqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
       INNER JOIN transaction_category tc ON tc.category_id = ft.category_id
       WHERE ao.customer_id = @customerId
-        AND ft.transaction_date >= @thirtyDaysAgo
+        AND ft.transaction_date >= @cutoff
         AND tc.group_code IS NOT NULL
       GROUP BY tc.group_code
     `);
@@ -137,14 +139,15 @@ export async function getClientEngagementSqlServer(
     });
 
     fileLogger.info(
-      { customerId, rows: activityResult.recordset.length, unmappedCount, seenGroupCodes, activityByCategory },
-      'Client engagement 30-day activity computed'
+      { customerId, days, rows: activityResult.recordset.length, unmappedCount, seenGroupCodes, activityByCategory },
+      `Client engagement ${days}-day activity computed`,
     );
 
     return {
       loginId: user?.login_id ?? null,
       lastLoginAt: user?.last_login_at ?? null,
-      thirtyDayActivity: activityByCategory
+      days,
+      activity: activityByCategory,
     };
   } catch (error) {
     fileLogger.error({ err: error }, 'Get client engagement error');

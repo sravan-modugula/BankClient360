@@ -280,10 +280,11 @@ export interface IBankingStorage {
   getTransactionCategories(): Promise<TransactionCategory[]>;
 
   // Dashboard Cards operations
-  getClientEngagement(customerId: number): Promise<{
+  getClientEngagement(customerId: number, days: 30 | 60 | 90): Promise<{
     loginId: string | null;
     lastLoginAt: Date | null;
-    thirtyDayActivity: Record<string, number>;
+    days: 30 | 60 | 90;
+    activity: Record<string, number>;
   }>;
   getRelationshipSummary(customerId: number): Promise<{
     totalDeposits: number;
@@ -2906,17 +2907,18 @@ export class DatabaseStorage implements IBankingStorage {
   }
 
   // Dashboard Cards operations
-  async getClientEngagement(customerId: number): Promise<{
+  async getClientEngagement(customerId: number, days: 30 | 60 | 90): Promise<{
     loginId: string | null;
     lastLoginAt: Date | null;
-    thirtyDayActivity: Record<string, number>;
+    days: 30 | 60 | 90;
+    activity: Record<string, number>;
   }> {
     // SQL Server implementation
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
       const { getClientEngagementSqlServer } = await import('./storage/sqlServerDashboard');
       const pool = await getMssqlPool();
-      return await getClientEngagementSqlServer(pool, customerId);
+      return await getClientEngagementSqlServer(pool, customerId, days);
     }
 
     // PostgreSQL implementation
@@ -2930,14 +2932,14 @@ export class DatabaseStorage implements IBankingStorage {
 
     // Snap cutoff to start-of-day so transactions stamped at 00:00 on the
     // boundary day still fall inside the rolling window.
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
 
     const personAccounts = await this.getCustomerAccounts(customerId);
     const accountIds = personAccounts.map(acc => acc.accountId);
 
-    const thirtyDayActivity = createDefaultActivity();
+    const activity = createDefaultActivity();
 
     if (accountIds.length > 0) {
       const activityResult = await db
@@ -2950,7 +2952,7 @@ export class DatabaseStorage implements IBankingStorage {
         .where(
           and(
             sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`,
-            sql`${financialTransaction.transactionDate} >= ${thirtyDaysAgo}`,
+            sql`${financialTransaction.transactionDate} >= ${cutoff}`,
             sql`${transactionCategory.groupCode} IS NOT NULL`
           )
         )
@@ -2967,7 +2969,7 @@ export class DatabaseStorage implements IBankingStorage {
         const groupCode = (row.groupCode || '').trim();
         const key = groupCode ? groupCodeLookup[normalizeKey(groupCode)] : undefined;
         if (key) {
-          thirtyDayActivity[key] = Number(row.count) || 0;
+          activity[key] = Number(row.count) || 0;
         }
       });
     }
@@ -2975,7 +2977,8 @@ export class DatabaseStorage implements IBankingStorage {
     return {
       loginId: user?.loginId ?? null,
       lastLoginAt: user?.lastLoginAt ?? null,
-      thirtyDayActivity
+      days,
+      activity
     };
   }
 

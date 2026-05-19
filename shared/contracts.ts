@@ -138,10 +138,13 @@ export type ErrorResponseDTO = z.infer<typeof ErrorResponseDTO>;
 // ============================================================================
 
 // Client Engagement DTO - Online banking activity and transaction summaries
+// The activity window is selectable (30/60/90 days). `days` echoes back the
+// window actually used so the client doesn't need to keep its own bookkeeping.
 export const ClientEngagementDTO = z.object({
   loginId: z.string().nullable(),
   lastLoginAt: z.string().nullable(), // PST formatted date/time or null
-  thirtyDayActivity: z.object({
+  days: z.union([z.literal(30), z.literal(60), z.literal(90)]),
+  activity: z.object({
     ach: z.number(),
     cash_withdrawal: z.number(),
     check_deposit: z.number(),
