@@ -150,7 +150,13 @@ export function createSamlStrategy() {
         const lastName = profile.lastName ?? profile[ATTRIBUTE_MAP.lastName] ?? null;
         const email = profile.email ?? profile[ATTRIBUTE_MAP.email] ?? profile.nameID ?? null;
         const department = profile.department ?? profile[ATTRIBUTE_MAP.department] ?? null;
-        const samlRoleKey = profile.role ?? profile[ATTRIBUTE_MAP.role] ?? null;
+        const rawSamlRole = profile.role ?? profile[ATTRIBUTE_MAP.role] ?? null;
+        // IdPs occasionally send the user's full AD group list (multi-kilobyte) as the role
+        // attribute. Cap defensively so a runaway value can't blow past sensible bounds
+        // even after the column was widened to NVARCHAR(MAX).
+        const samlRoleKey = typeof rawSamlRole === 'string' && rawSamlRole.length > 4000
+          ? rawSamlRole.slice(0, 4000)
+          : rawSamlRole;
 
         if (!email) {
           fileLogger.error({ profileKeys: Object.keys(profile) }, 'SAML profile missing email/nameID');

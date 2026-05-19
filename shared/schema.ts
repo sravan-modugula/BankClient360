@@ -57,7 +57,7 @@ export const employee = pgTable("employee", {
   ssoSubject: varchar("sso_subject", { length: 255 }).unique(),
   email: varchar("email", { length: 255 }),
   phone: varchar("phone", { length: 20 }),
-  lastSeenSamlRole: varchar("last_seen_saml_role", { length: 255 }),
+  lastSeenSamlRole: text("last_seen_saml_role"),
   lastLoginAt: timestamp("last_login_at"),
   deletedAt: timestamp("deleted_at"),
   modifiedBy: bigint("modified_by", { mode: "number" }),
