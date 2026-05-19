@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useSearchParams } from 'wouter';
 import { navigateToCustomer, navigateToHousehold } from '@/lib/navigation';
@@ -25,7 +25,9 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
+  TableSortLabel,
   IconButton,
   LinearProgress,
   Skeleton,
@@ -169,6 +171,23 @@ export default function HouseholdPage() {
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState<any | null>(null);
 
+  // Members table state — mirrors AccountList: search, sort, pagination
+  type MemberSortColumn = 'member' | 'role' | 'ownership' | 'since';
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [memberOrderBy, setMemberOrderBy] = useState<MemberSortColumn>('role');
+  const [memberOrder, setMemberOrder] = useState<'asc' | 'desc'>('asc');
+  const [memberPage, setMemberPage] = useState(0);
+  const [memberRowsPerPage, setMemberRowsPerPage] = useState(10);
+
+  const handleMemberSort = (column: MemberSortColumn) => {
+    if (memberOrderBy === column) {
+      setMemberOrder(memberOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setMemberOrderBy(column);
+      setMemberOrder('asc');
+    }
+  };
+
   const backFallback = customerId ? `/ciq/client?customerId=${encodeURIComponent(customerId)}` : '/ciq/client';
 
   // If accessing via customerId, fetch their household first
@@ -192,6 +211,71 @@ export default function HouseholdPage() {
     queryKey: ['/api/households', actualHouseholdId, 'members'],
     enabled: !!actualHouseholdId,
   });
+
+  // Members table: reset page when filters/sort change
+  useEffect(() => {
+    setMemberPage(0);
+  }, [memberSearchQuery, memberOrderBy, memberOrder]);
+
+  // Format a snake_case relationship role for display ("head_of_household" → "Head Of Household").
+  const formatRelationshipRole = (member: HouseholdMember): string => {
+    if (member.isHeadOfHousehold) return 'Head of Household';
+    const raw = (member.relationshipRole || '').trim();
+    if (!raw) return member.isPrimaryMember ? 'Primary Member' : 'Member';
+    return raw
+      .split(/[_\s]+/)
+      .filter(Boolean)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  // Sort rank so Heads / Primaries surface first under default asc sort.
+  const memberRoleRank = (member: HouseholdMember): number => {
+    if (member.isHeadOfHousehold) return 0;
+    if (member.isPrimaryMember) return 1;
+    return 2;
+  };
+
+  const parseOwnership = (raw: string | null | undefined): number => {
+    if (raw === null || raw === undefined || raw === '') return 0;
+    const parsed = parseFloat(raw);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const formatOwnership = (raw: string | null | undefined): string => {
+    if (raw === null || raw === undefined || raw === '') return '—';
+    const parsed = parseFloat(raw);
+    if (isNaN(parsed) || parsed === 0) return '—';
+    return `${parsed.toFixed(parsed % 1 === 0 ? 0 : 2)}%`;
+  };
+
+  const filteredMembers = members.filter((m) => {
+    if (!memberSearchQuery) return true;
+    const q = memberSearchQuery.toLowerCase();
+    return (m.fullName || '').toLowerCase().includes(q);
+  });
+
+  const sortedMembers = [...filteredMembers].sort((a, b) => {
+    let cmp = 0;
+    if (memberOrderBy === 'member') {
+      cmp = (a.fullName || '').localeCompare(b.fullName || '');
+    } else if (memberOrderBy === 'role') {
+      cmp = memberRoleRank(a) - memberRoleRank(b);
+      if (cmp === 0) cmp = formatRelationshipRole(a).localeCompare(formatRelationshipRole(b));
+    } else if (memberOrderBy === 'ownership') {
+      cmp = parseOwnership(a.ownershipPercentage) - parseOwnership(b.ownershipPercentage);
+    } else if (memberOrderBy === 'since') {
+      const ta = a.customerSince ? new Date(a.customerSince).getTime() : 0;
+      const tb = b.customerSince ? new Date(b.customerSince).getTime() : 0;
+      cmp = ta - tb;
+    }
+    return memberOrder === 'asc' ? cmp : -cmp;
+  });
+
+  const paginatedMembers = sortedMembers.slice(
+    memberPage * memberRowsPerPage,
+    memberPage * memberRowsPerPage + memberRowsPerPage,
+  );
 
   // Fetch household accounts (aggregated)
   const { data: allAccounts = [], isLoading: accountsLoading } = useQuery<Account[]>({
@@ -512,7 +596,9 @@ export default function HouseholdPage() {
         {/* Household Members Card */}
         <Card sx={{ mb: 3 }} data-testid="card-members">
           <CardContent>
-            <Typography variant="h6" sx={{ mb: 3 }}>Household Members</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Household Members ({members.length})
+            </Typography>
             {membersLoading ? (
               <Skeleton variant="rectangular" height={300} />
             ) : members.length === 0 ? (
@@ -520,48 +606,138 @@ export default function HouseholdPage() {
                 No members found in this household.
               </Typography>
             ) : (
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Member</TableCell>
-                      <TableCell>Open Date</TableCell>
-                      <TableCell align="right">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {members.map((member, index) => {
-                      const isHead = member.isHeadOfHousehold || member.isPrimaryMember;
-                      const since = member.customerSince ? new Date(member.customerSince) : null;
-                      const sinceValid = since && !isNaN(since.getTime());
-                      return (
-                        <TableRow
-                          key={member.membershipId || `member-${member.customerId}-${index}`}
-                          data-testid={`row-member-${member.customerId}`}
-                          onClick={() => navigateToCustomer(member.customerId, householdId || undefined)}
-                          sx={{
-                            cursor: 'pointer',
-                            '&:hover': { bgcolor: 'action.hover' }
-                          }}
+              <>
+                <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <TextField
+                    placeholder="Search members..."
+                    value={memberSearchQuery}
+                    onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    size="small"
+                    sx={{ width: 250 }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Search fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    }}
+                    data-testid="input-search-members"
+                  />
+                </Box>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sortDirection={memberOrderBy === 'member' ? memberOrder : false}>
+                          <TableSortLabel
+                            active={memberOrderBy === 'member'}
+                            direction={memberOrderBy === 'member' ? memberOrder : 'asc'}
+                            onClick={() => handleMemberSort('member')}
+                            data-testid="sort-member"
+                          >
+                            Member
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell sortDirection={memberOrderBy === 'role' ? memberOrder : false}>
+                          <TableSortLabel
+                            active={memberOrderBy === 'role'}
+                            direction={memberOrderBy === 'role' ? memberOrder : 'asc'}
+                            onClick={() => handleMemberSort('role')}
+                            data-testid="sort-member-role"
+                          >
+                            Role
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sortDirection={memberOrderBy === 'ownership' ? memberOrder : false}
                         >
-                          <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="body2">{member.fullName}</Typography>
-                              {isHead && <Chip label="Head of Household" size="small" color="primary" />}
-                            </Box>
-                          </TableCell>
-                          <TableCell>
-                            {sinceValid ? since!.toLocaleDateString() : '—'}
-                          </TableCell>
-                          <TableCell align="right">
-                            <ArrowForward fontSize="small" color="action" />
+                          <TableSortLabel
+                            active={memberOrderBy === 'ownership'}
+                            direction={memberOrderBy === 'ownership' ? memberOrder : 'asc'}
+                            onClick={() => handleMemberSort('ownership')}
+                            data-testid="sort-member-ownership"
+                          >
+                            Ownership %
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell sortDirection={memberOrderBy === 'since' ? memberOrder : false}>
+                          <TableSortLabel
+                            active={memberOrderBy === 'since'}
+                            direction={memberOrderBy === 'since' ? memberOrder : 'asc'}
+                            onClick={() => handleMemberSort('since')}
+                            data-testid="sort-member-since"
+                          >
+                            Since
+                          </TableSortLabel>
+                        </TableCell>
+                        <TableCell align="right">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {paginatedMembers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5}>
+                            <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                              No members match "{memberSearchQuery}"
+                            </Typography>
                           </TableCell>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                      ) : paginatedMembers.map((member, index) => {
+                        const isHead = member.isHeadOfHousehold || member.isPrimaryMember;
+                        const since = member.customerSince ? new Date(member.customerSince) : null;
+                        const sinceValid = since && !isNaN(since.getTime());
+                        return (
+                          <TableRow
+                            key={member.membershipId || `member-${member.customerId}-${index}`}
+                            data-testid={`row-member-${member.customerId}`}
+                            onClick={() => navigateToCustomer(member.customerId, householdId || undefined)}
+                            sx={{
+                              cursor: 'pointer',
+                              '&:hover': { bgcolor: 'action.hover' }
+                            }}
+                          >
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="body2">{member.fullName}</Typography>
+                                {isHead && <Chip label="Head of Household" size="small" color="primary" />}
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">{formatRelationshipRole(member)}</Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" fontFamily="monospace">
+                                {formatOwnership(member.ownershipPercentage)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              {sinceValid ? since!.toLocaleDateString() : '—'}
+                            </TableCell>
+                            <TableCell align="right">
+                              <ArrowForward fontSize="small" color="action" />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                {filteredMembers.length > 10 && (
+                  <TablePagination
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    component="div"
+                    count={filteredMembers.length}
+                    rowsPerPage={memberRowsPerPage}
+                    page={memberPage}
+                    onPageChange={(_e, newPage) => setMemberPage(newPage)}
+                    onRowsPerPageChange={(e) => {
+                      setMemberRowsPerPage(parseInt(e.target.value, 10));
+                      setMemberPage(0);
+                    }}
+                  />
+                )}
+              </>
             )}
           </CardContent>
         </Card>
