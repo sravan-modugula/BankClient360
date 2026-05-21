@@ -296,227 +296,288 @@ export async function getRelationshipSummarySqlServer(
   }
 }
 
-/**
- * Get deposit account analytics with trend data
- */
-export async function getDepositAccountAnalyticsSqlServer(
-  pool: sql.ConnectionPool,
-  customerId: number
-): Promise<{
+// Deposit account-type filter used by every deposit endpoint. Keep in sync
+// with the Postgres path in storage.ts so both DB paths see the same accounts.
+const DEPOSIT_ACCOUNT_TYPES_SQL = `
+  'checking', 'deposit checking', 'savings', 'money_market',
+  'cd', 'time deposit', 'christmas club depo'
+`;
+
+// Subquery that resolves a customer's active deposit account ids via
+// account_ownership. Parameterized through @customerId so the optimizer can
+// reuse plans across customers and avoid the 3 KB IN-list problem we hit at
+// 167 accounts.
+const DEPOSIT_ACCOUNTS_SUBQUERY = `
+  SELECT a.account_id, a.account_type, a.interest_rate, a.balance
+  FROM account a
+  INNER JOIN account_ownership ao ON ao.account_id = a.account_id
+  WHERE ao.customer_id = @customerId
+    AND LOWER(a.account_status) = 'active'
+    AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
+`;
+
+function bucketAccountType(accType: string | null | undefined): 'checking' | 'savings' | 'cd' | null {
+  const t = accType?.toLowerCase();
+  if (t === 'checking' || t === 'deposit checking') return 'checking';
+  if (t === 'savings' || t === 'money_market' || t === 'christmas club depo') return 'savings';
+  if (t === 'cd' || t === 'time deposit') return 'cd';
+  return null;
+}
+
+export interface DepositSummary {
   totalBalance: number;
   accounts: any[];
   balanceByType: { checking: number; savings: number; cd: number };
-  trendData: Array<{
-    month: string;
-    date: string;
-    balance: number;
-    checking: number;
-    savings: number;
-    cd: number;
-    weightedAverage: number;
-    weightedAvgChecking: number;
-    weightedAvgSavings: number;
-    weightedAvgCD: number;
-  }>;
-  recentTransactions: Array<{
-    accountType: string;
-    date: string;
-    type: string;
-    description: string;
-    amount: number;
-    balance: number;
-  }>;
-}> {
+}
+
+export interface DepositTrendPoint {
+  month: string;
+  date: string;
+  balance: number;
+  checking: number;
+  savings: number;
+  cd: number;
+  weightedAverage: number;
+  weightedAvgChecking: number;
+  weightedAvgSavings: number;
+  weightedAvgCD: number;
+}
+
+export interface DepositRecentTransaction {
+  accountType: string;
+  date: string;
+  type: string;
+  description: string;
+  amount: number;
+  balance: number;
+}
+
+/**
+ * Deposit summary — totals + balanceByType, plus the raw account rows so
+ * downstream code can use them for follow-up queries. Pure SUM over the
+ * customer's active deposit accounts; sub-second even for 1000+ accounts.
+ */
+export async function getDepositSummarySqlServer(
+  pool: sql.ConnectionPool,
+  customerId: number,
+): Promise<DepositSummary> {
   try {
-    fileLogger.debug({ customerId }, 'getDepositAccountAnalyticsSqlServer called');
-    
+    const start = Date.now();
     const request = pool.request();
     request.input('customerId', sql.BigInt, customerId);
 
-    // Get deposit accounts for customer (using LOWER for case-insensitive comparison)
-    const accountsResult = await request.query(`
+    const result = await request.query(`
       SELECT a.*
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_status) = 'active'
-        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+        AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
       ORDER BY a.account_type, a.account_number
     `);
 
-    const accounts = accountsResult.recordset;
-    const accountIds = accounts.map(a => a.account_id);
-    
-    fileLogger.debug({ customerId, count: accounts.length, accountIds }, 'Found deposit accounts');
-
-    if (accountIds.length === 0) {
-      fileLogger.debug({ customerId }, 'No deposit accounts found, returning empty result');
-      return {
-        totalBalance: 0,
-        accounts: [],
-        balanceByType: { checking: 0, savings: 0, cd: 0 },
-        trendData: [],
-        recentTransactions: []
-      };
-    }
-
-    // Calculate current balances by type
+    const accounts = result.recordset;
     let totalBalance = 0;
-    const balanceByType = {
-      checking: 0,
-      savings: 0,
-      cd: 0
-    };
+    const balanceByType = { checking: 0, savings: 0, cd: 0 };
 
     accounts.forEach(acc => {
       const balance = parseFloat(acc.balance || '0');
       totalBalance += balance;
-
-      const accType = acc.account_type?.toLowerCase();
-      if (accType === 'checking' || accType === 'deposit checking') {
-        balanceByType.checking += balance;
-      } else if (accType === 'savings' || accType === 'money_market' || accType === 'christmas club depo') {
-        balanceByType.savings += balance;
-      } else if (accType === 'cd' || accType === 'time deposit') {
-        balanceByType.cd += balance;
-      }
+      const bucket = bucketAccountType(acc.account_type);
+      if (bucket) balanceByType[bucket] += balance;
     });
 
-    // Get 12-month trend data from actual transaction history per account
-    const accountIdList = accountIds.map(id => Number(id)).join(',');
-    const request2 = pool.request();
+    fileLogger.info(
+      { customerId, accountCount: accounts.length, durationMs: Date.now() - start },
+      'Deposit summary computed',
+    );
 
-    const trendResult = await request2.query(`
-      WITH month_series AS (
-        SELECT DATEADD(month, n, DATEADD(month, -11, DATEADD(day, 1-DAY(GETDATE()), GETDATE()))) as month
-        FROM (
-          SELECT 0 as n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
-          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
-          SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
-        ) numbers
+    return { totalBalance, accounts, balanceByType };
+  } catch (error) {
+    fileLogger.error({ err: error, customerId }, 'Deposit summary error');
+    throw error;
+  }
+}
+
+/**
+ * Deposit trend — N-month time series of ending balances per account type,
+ * with weighted-by-interest-rate averages. Set-based ROW_NUMBER picks the
+ * last ledger balance per (account, month); carry-forward across months is
+ * done in TypeScript so we avoid the per-cell correlated subquery that
+ * blew up the previous implementation at 167 accounts.
+ */
+export async function getDepositTrendSqlServer(
+  pool: sql.ConnectionPool,
+  customerId: number,
+  months: number = 12,
+): Promise<DepositTrendPoint[]> {
+  try {
+    const start = Date.now();
+    const monthCount = Math.max(1, Math.min(12, Math.floor(months)));
+    const request = pool.request();
+    request.input('customerId', sql.BigInt, customerId);
+    request.input('months', sql.Int, monthCount);
+
+    // One row per (account, month) with that month's last ledger balance.
+    // Plus current account metadata (interest_rate, account_type, balance)
+    // so we don't need a second query. Months are emitted as the first of
+    // the month so the JS side can group them deterministically.
+    const result = await request.query(`
+      WITH customer_accounts AS (
+        ${DEPOSIT_ACCOUNTS_SUBQUERY}
       ),
-      account_monthly_balances AS (
-        SELECT DISTINCT
-          ft.account_id,
-          a.account_type,
-          a.interest_rate,
-          DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date) as month,
-          FIRST_VALUE(ft.ledger_balance_after) OVER (
-            PARTITION BY ft.account_id, DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date)
-            ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
-          ) as ledger_balance_after
-        FROM financial_transaction ft
-        INNER JOIN account a ON a.account_id = ft.account_id
-        WHERE ft.account_id IN (${accountIdList})
-          AND ft.transaction_date >= DATEADD(month, -12, GETDATE())
-      ),
-      filled_balances AS (
+      monthly_endings AS (
         SELECT
-          ms.month,
-          acc.account_id,
-          acc.account_type,
-          acc.interest_rate,
-          COALESCE(
-            amb.ledger_balance_after,
-            (
-              SELECT TOP 1 amb2.ledger_balance_after
-              FROM account_monthly_balances amb2
-              WHERE amb2.account_id = acc.account_id
-                AND amb2.month < ms.month
-              ORDER BY amb2.month DESC
-            )
-          ) as balance
-        FROM month_series ms
-        CROSS JOIN (
-          SELECT account_id, account_type, interest_rate
-          FROM account
-          WHERE account_id IN (${accountIdList})
-        ) acc
-        LEFT JOIN account_monthly_balances amb
-          ON amb.account_id = acc.account_id
-          AND amb.month = ms.month
+          ft.account_id,
+          DATEFROMPARTS(YEAR(ft.transaction_date), MONTH(ft.transaction_date), 1) AS month,
+          ft.ledger_balance_after,
+          ROW_NUMBER() OVER (
+            PARTITION BY ft.account_id,
+              DATEFROMPARTS(YEAR(ft.transaction_date), MONTH(ft.transaction_date), 1)
+            ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
+          ) AS rn
+        FROM financial_transaction ft
+        WHERE ft.account_id IN (SELECT account_id FROM customer_accounts)
+          AND ft.transaction_date >= DATEADD(month, -@months, GETDATE())
       )
       SELECT
-        month,
-        account_type,
-        SUM(COALESCE(balance, 0)) as balance,
-        SUM(COALESCE(balance, 0) * CASE
-          WHEN COALESCE(interest_rate, 0) <= 1 THEN COALESCE(interest_rate, 0) * 100
-          ELSE COALESCE(interest_rate, 0)
-        END) as weighted_balance_sum,
-        SUM(COALESCE(balance, 0)) as total_balance_for_weighted
-      FROM filled_balances
-      GROUP BY month, account_type
-      ORDER BY month ASC, account_type
+        ca.account_id,
+        ca.account_type,
+        ca.interest_rate,
+        ca.balance AS current_balance,
+        me.month,
+        me.ledger_balance_after
+      FROM customer_accounts ca
+      LEFT JOIN monthly_endings me
+        ON me.account_id = ca.account_id AND me.rn = 1
+      ORDER BY ca.account_id, me.month;
     `);
 
-    // Build 12-month trend data from query results
-    const monthMap = new Map<string, any>();
-    for (let i = 11; i >= 0; i--) {
-      const monthDate = new Date();
-      monthDate.setMonth(monthDate.getMonth() - i);
-      monthDate.setDate(1);
-      monthDate.setHours(0, 0, 0, 0);
-      const monthKey = monthDate.toISOString().substring(0, 7);
-      monthMap.set(monthKey, {
-        month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
-        date: monthDate.toISOString(),
-        balance: 0,
-        checking: 0,
-        savings: 0,
-        cd: 0,
-        weightedBalanceSum: 0,
-        totalBalanceForWeighted: 0,
-        wbsChecking: 0, tbwChecking: 0,
-        wbsSavings: 0, tbwSavings: 0,
-        wbsCD: 0, tbwCD: 0
+    // Build the month axis (oldest first).
+    const monthKeys: string[] = [];
+    const monthLabels: Array<{ key: string; month: string; date: string }> = [];
+    for (let i = monthCount - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      d.setDate(1);
+      d.setHours(0, 0, 0, 0);
+      const key = d.toISOString().substring(0, 7);
+      monthKeys.push(key);
+      monthLabels.push({
+        key,
+        month: d.toLocaleString('default', { month: 'short', year: '2-digit' }),
+        date: d.toISOString(),
       });
     }
+    const monthIndex = new Map(monthKeys.map((k, i) => [k, i]));
 
-    for (const row of trendResult.recordset) {
-      const monthDate = new Date(row.month);
-      const monthKey = monthDate.toISOString().substring(0, 7);
-      const data = monthMap.get(monthKey);
-      if (data) {
-        const accType = row.account_type?.toLowerCase();
-        const balance = parseFloat(row.balance) || 0;
-        const wbs = parseFloat(row.weighted_balance_sum) || 0;
-        const tbw = parseFloat(row.total_balance_for_weighted) || 0;
+    // Group rows by account, then carry-forward ledger_balance_after across
+    // months that have no transactions (matches the previous semantics).
+    interface AcctRow {
+      accountType: string | null;
+      interestRate: number;
+      currentBalance: number;
+      byMonth: Map<string, number>;
+    }
+    const byAccount = new Map<string, AcctRow>();
 
-        if (accType === 'checking' || accType === 'deposit checking') {
-          data.checking += balance;
-          data.wbsChecking += wbs; data.tbwChecking += tbw;
-        } else if (accType === 'savings' || accType === 'money_market' || accType === 'christmas club depo') {
-          data.savings += balance;
-          data.wbsSavings += wbs; data.tbwSavings += tbw;
-        } else if (accType === 'cd' || accType === 'time deposit') {
-          data.cd += balance;
-          data.wbsCD += wbs; data.tbwCD += tbw;
+    for (const row of result.recordset) {
+      const acctId = String(row.account_id);
+      let acct = byAccount.get(acctId);
+      if (!acct) {
+        const rawRate = parseFloat(row.interest_rate ?? '0') || 0;
+        acct = {
+          accountType: row.account_type,
+          // Normalize 0–1 decimals to percent so display math is consistent.
+          interestRate: rawRate <= 1 ? rawRate * 100 : rawRate,
+          currentBalance: parseFloat(row.current_balance ?? '0') || 0,
+          byMonth: new Map(),
+        };
+        byAccount.set(acctId, acct);
+      }
+      if (row.month) {
+        const key = new Date(row.month).toISOString().substring(0, 7);
+        if (monthIndex.has(key)) {
+          acct.byMonth.set(key, parseFloat(row.ledger_balance_after ?? '0') || 0);
         }
-
-        data.balance = data.checking + data.savings + data.cd;
-        data.weightedBalanceSum = data.wbsChecking + data.wbsSavings + data.wbsCD;
-        data.totalBalanceForWeighted = data.tbwChecking + data.tbwSavings + data.tbwCD;
       }
     }
 
-    const trendData: Array<any> = Array.from(monthMap.values()).map(d => ({
-      month: d.month,
-      date: d.date,
-      balance: d.balance,
-      checking: d.checking,
-      savings: d.savings,
-      cd: d.cd,
-      weightedAverage: d.totalBalanceForWeighted > 0 ? d.weightedBalanceSum / d.totalBalanceForWeighted : 0,
-      weightedAvgChecking: d.tbwChecking > 0 ? d.wbsChecking / d.tbwChecking : 0,
-      weightedAvgSavings: d.tbwSavings > 0 ? d.wbsSavings / d.tbwSavings : 0,
-      weightedAvgCD: d.tbwCD > 0 ? d.wbsCD / d.tbwCD : 0
+    // For each account, walk months oldest→newest carrying forward the last
+    // seen balance; fall back to the account's current balance for trailing
+    // months still unset (i.e. no transactions during the whole window).
+    const points: DepositTrendPoint[] = monthLabels.map(({ key, month, date }) => ({
+      month, date,
+      balance: 0, checking: 0, savings: 0, cd: 0,
+      weightedAverage: 0, weightedAvgChecking: 0, weightedAvgSavings: 0, weightedAvgCD: 0,
     }));
 
-    // Get recent transactions using parameterized account IDs
-    const request3 = pool.request();
-    const transactionsResult = await request3.query(`
-      SELECT TOP 5
+    // Track weighted sums so we can divide at the end.
+    const wbsTotal = new Array(monthCount).fill(0);
+    const tbwTotal = new Array(monthCount).fill(0);
+    const wbsByBucket = { checking: new Array(monthCount).fill(0), savings: new Array(monthCount).fill(0), cd: new Array(monthCount).fill(0) };
+    const tbwByBucket = { checking: new Array(monthCount).fill(0), savings: new Array(monthCount).fill(0), cd: new Array(monthCount).fill(0) };
+
+    for (const acct of Array.from(byAccount.values())) {
+      const bucket = bucketAccountType(acct.accountType);
+      if (!bucket) continue;
+
+      let lastSeen: number | null = null;
+      for (let i = 0; i < monthCount; i++) {
+        const key = monthKeys[i];
+        const v = acct.byMonth.get(key);
+        if (v !== undefined) lastSeen = v;
+        const bal = lastSeen ?? acct.currentBalance;
+
+        points[i][bucket] += bal;
+        const w = bal * acct.interestRate;
+        wbsTotal[i] += w;
+        tbwTotal[i] += bal;
+        wbsByBucket[bucket][i] += w;
+        tbwByBucket[bucket][i] += bal;
+      }
+    }
+
+    for (let i = 0; i < monthCount; i++) {
+      const p = points[i];
+      p.balance = p.checking + p.savings + p.cd;
+      p.weightedAverage = tbwTotal[i] > 0 ? wbsTotal[i] / tbwTotal[i] : 0;
+      p.weightedAvgChecking = tbwByBucket.checking[i] > 0 ? wbsByBucket.checking[i] / tbwByBucket.checking[i] : 0;
+      p.weightedAvgSavings = tbwByBucket.savings[i] > 0 ? wbsByBucket.savings[i] / tbwByBucket.savings[i] : 0;
+      p.weightedAvgCD = tbwByBucket.cd[i] > 0 ? wbsByBucket.cd[i] / tbwByBucket.cd[i] : 0;
+    }
+
+    fileLogger.info(
+      { customerId, months: monthCount, accounts: byAccount.size, rows: result.recordset.length, durationMs: Date.now() - start },
+      'Deposit trend computed',
+    );
+
+    return points;
+  } catch (error) {
+    fileLogger.error({ err: error, customerId }, 'Deposit trend error');
+    throw error;
+  }
+}
+
+/**
+ * Most recent N transactions across a customer's deposit accounts. Scoped
+ * via account_ownership subquery (not a string-interpolated IN list) so the
+ * optimizer can use IX_account_ownership_customer.
+ */
+export async function getDepositRecentTransactionsSqlServer(
+  pool: sql.ConnectionPool,
+  customerId: number,
+  limit: number = 5,
+): Promise<DepositRecentTransaction[]> {
+  try {
+    const start = Date.now();
+    const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const request = pool.request();
+    request.input('customerId', sql.BigInt, customerId);
+    request.input('limit', sql.Int, cappedLimit);
+
+    const result = await request.query(`
+      SELECT TOP (@limit)
         a.account_type,
         ft.transaction_date,
         ft.transaction_code,
@@ -525,31 +586,53 @@ export async function getDepositAccountAnalyticsSqlServer(
         ft.ledger_balance_after
       FROM financial_transaction ft
       INNER JOIN account a ON a.account_id = ft.account_id
-      WHERE ft.account_id IN (${accountIdList})
+      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
+      WHERE ao.customer_id = @customerId
+        AND LOWER(a.account_status) = 'active'
+        AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
         AND ft.transaction_date IS NOT NULL
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
     `);
 
-    const recentTransactions = transactionsResult.recordset.map(t => ({
+    const txns: DepositRecentTransaction[] = result.recordset.map(t => ({
       accountType: t.account_type,
       date: t.transaction_date ? new Date(t.transaction_date).toISOString() : new Date().toISOString(),
       type: t.transaction_code || 'Transaction',
       description: t.description || 'Transaction',
       amount: parseFloat(t.amount) || 0,
-      balance: parseFloat(t.ledger_balance_after) || 0
+      balance: parseFloat(t.ledger_balance_after) || 0,
     }));
 
-    return {
-      totalBalance,
-      accounts,
-      balanceByType,
-      trendData,
-      recentTransactions
-    };
+    fileLogger.info(
+      { customerId, limit: cappedLimit, returned: txns.length, durationMs: Date.now() - start },
+      'Deposit recent transactions computed',
+    );
+
+    return txns;
   } catch (error) {
-    fileLogger.error({ err: error }, 'Get deposit analytics error');
+    fileLogger.error({ err: error, customerId }, 'Deposit recent transactions error');
     throw error;
   }
+}
+
+/**
+ * Backward-compat shim: fan out the three new endpoints in parallel and
+ * return the combined payload in the legacy shape. Existing callers of
+ * /api/customers/:id/deposit-analytics keep working until they migrate.
+ */
+export async function getDepositAccountAnalyticsSqlServer(
+  pool: sql.ConnectionPool,
+  customerId: number,
+): Promise<DepositSummary & {
+  trendData: DepositTrendPoint[];
+  recentTransactions: DepositRecentTransaction[];
+}> {
+  const [summary, trendData, recentTransactions] = await Promise.all([
+    getDepositSummarySqlServer(pool, customerId),
+    getDepositTrendSqlServer(pool, customerId),
+    getDepositRecentTransactionsSqlServer(pool, customerId),
+  ]);
+  return { ...summary, trendData, recentTransactions };
 }
 
 /**

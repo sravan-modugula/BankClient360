@@ -1,61 +1,73 @@
-# Client Engagement empty on on-prem (2026-05-21)
+# Deposits Overview — scale fix for large account sets (2026-05-21)
 
 ## Problem
-Client Engagement card shows "No transactions in the last 30 days" for customers
-who clearly have transactions visible on the Accounts page (e.g. customerId
-8523990, Mastercard ****5843 — 100 transactions, recent dates in May 2026).
+Customer 8484989 has 167 deposit accounts. `/api/customers/:id/deposit-analytics`
+returns HTTP 500, leaving the entire Deposits Overview region as empty
+skeletons. Other parts of the page load fine. `staleTime: Infinity, retry: false`
+means it stays broken on the client until reload.
 
-## Root cause
-`getClientEngagementSqlServer` (server/storage/sqlServerDashboard.ts:105-116) uses
-an INNER JOIN to `transaction_category` and filters `tc.group_code IS NOT NULL`.
-In FMB's on-prem DB either `financial_transaction.category_id` is NULL or
-`transaction_category.group_code` is not populated with the 10 expected English
-labels. The Accounts "Recent Transactions" UI works because it selects
-`financial_transaction` directly with no category join.
+## Plan summary
+Split the mega-endpoint into three independent endpoints, rewrite the slow trend
+SQL to be set-based with a parameterized customer scope, lazy-load the trend
+chart so it only fires on scroll, and silently hide the trend card if it still
+errors. (Full plan in `~/.claude/plans/image-8-image-9-zippy-yao.md`.)
 
-`financial_transaction.transaction_type` *is* populated with values like
-`ACH Credit`, `ACH Debit`, `POS Debit - DDA`, `POS Credit - DDa`,
-`POS SETTLEMENT Debit - DDA`, `Check\SERIAL` — visible in the AccountDetail
-chips (client/src/components/AccountDetailOption2.tsx:556).
-
-## Plan
-1. **server/storage/sqlServerDashboard.ts** — change the activity query to
-   `LEFT JOIN transaction_category` and also project `ft.transaction_type` and
-   `ft.transaction_code`. Group by all three; remove the `group_code IS NOT NULL`
-   filter. Index on `(account_id, transaction_date)` is already present.
-
-2. **shared/constants.ts** — add `TRANSACTION_TYPE_PATTERNS`: an ordered list of
-   `{ pattern: RegExp, activity: ActivityType }` rules covering the patterns
-   above (ACH, POS / debit card, wire, zelle, ATM / withdrawal, check
-   deposit vs check payment, transfer, lockbox, deposit catch-all).
-
-3. **server/storage/sqlServerDashboard.ts** — in the result loop:
-   - Try `group_code` lookup first (preserves existing behavior).
-   - On miss, try matching `transaction_type` then `transaction_code` against
-     `TRANSACTION_TYPE_PATTERNS`.
-   - If still unmapped, increment `unmappedCount` and capture a sample so the
-     existing `info` log surfaces the unknown value.
-
-4. **Verify** with `npm run check` (typecheck) and `npm test` if engagement has
-   tests.
-
-## Out of scope
-- Backfilling `financial_transaction.category_id` in the on-prem DB.
-- Frontend changes — the same DTO shape is preserved.
+## Tasks
+- [ ] **Backend SQL rewrite + split** (`server/storage/sqlServerDashboard.ts`)
+  - [ ] Add `getDepositSummarySqlServer` (just balances) — extracted from the
+        existing function's first 50 lines
+  - [ ] Add `getDepositRecentTransactionsSqlServer` — scope via
+        `account_ownership` subquery, not a string-interpolated IN list
+  - [ ] Add `getDepositTrendSqlServer` with set-based ROW_NUMBER query +
+        TS carry-forward (single parameter `@customerId`)
+  - [ ] Convert `getDepositAccountAnalyticsSqlServer` into a Promise.all
+        wrapper over the three new functions (backward-compat shim)
+- [ ] **Postgres path** (`server/storage.ts`) — same three-method split
+- [ ] **Routes** (`server/routes.ts`)
+  - [ ] `GET /api/customers/:id/deposit-summary`
+  - [ ] `GET /api/customers/:id/deposit-trend?range=ytd|quarterly|monthly`
+  - [ ] `GET /api/customers/:id/deposit-recent-transactions?limit=5`
+  - [ ] Keep `/deposit-analytics` as parallel fan-out shim
+- [ ] **Frontend** (`client/src/components/Deposits.tsx`)
+  - [ ] Replace single useQuery with three (summary, trend, recent)
+  - [ ] Inline `useInView` hook (no new dep — IntersectionObserver native)
+  - [ ] Gate trend query with `enabled: inView`
+  - [ ] Add `retry: 1` only to trend query
+  - [ ] Silently hide trend card on error (`{!trendError && ...}`)
+  - [ ] Per-card loading states (no whole-section spinner)
+- [ ] **Verify**
+  - [ ] `npx tsc --noEmit` clean (no new errors in modified files)
+  - [ ] Manual: load 8484989, hero + recent appear fast, trend lazy-loads
+  - [ ] Regression: load a small-account customer, looks identical to before
 
 ## Review
-- `shared/constants.ts`: added `TRANSACTION_TYPE_PATTERNS` (ordered RegExp list)
-  and `activityFromTransactionType()` resolver. `Check Deposit` is matched
-  before bare `Check` so check-payment doesn't swallow deposits; bare `Deposit`
-  is last so it doesn't shadow `Check Deposit`.
-- `server/storage/sqlServerDashboard.ts`: switched the activity query to
-  `LEFT JOIN transaction_category`, projects `transaction_type` /
-  `transaction_code`, drops `group_code IS NOT NULL`. Bucketing tries
-  group_code first, then falls back to `transaction_type`/`transaction_code`
-  via `activityFromTransactionType`. Unmapped rows now log a deduped sample
-  list at `info` so unknown FMB types surface in logs.
-- `server/storage.ts`: same change for the Postgres path (LEFT JOIN, project
-  type/code, fallback resolver).
-- Typecheck: pre-existing `db is null` / implicit-any warnings remain; no new
-  errors introduced by this change.
-- No engagement test suite exists to update.
+- `server/storage/sqlServerDashboard.ts`: split the 250-line
+  `getDepositAccountAnalyticsSqlServer` into three exports —
+  `getDepositSummarySqlServer` (pure SUM, sub-second), `getDepositTrendSqlServer`
+  (set-based ROW_NUMBER + parameterized `@customerId` + TS carry-forward —
+  no more correlated subquery or string-interpolated IN list), and
+  `getDepositRecentTransactionsSqlServer` (TOP @limit via account_ownership
+  subquery). Old function kept as a Promise.all shim so existing
+  `/deposit-analytics` callers don't break. Each function emits a structured
+  `info` log with `durationMs` so we can measure the win.
+- `server/storage.ts`: added matching `getDepositTrend` /
+  `getDepositRecentTransactions` storage methods. Postgres path uses the
+  same rewritten set-based SQL with `db.execute(sql\`...\`)` and the same
+  TS carry-forward logic. Interface (lines 204-228) extended.
+- `server/routes.ts`: added three new routes — `/deposit-summary`,
+  `/deposit-trend?months=12`, `/deposit-recent-transactions?limit=5`.
+  Existing `/deposit-analytics` left in place as a back-compat shim.
+- `client/src/components/Deposits.tsx`: replaced the single useQuery with
+  three. Added a tiny inline `useInView` hook (native IntersectionObserver,
+  no new dep). The trend chart is gated by `enabled: trendInView` and
+  `retry: 1`; on error the entire trend Grid is silently hidden
+  (`{!trendError && ...}`). Summary still drives the page-level loading
+  skeleton so hero numbers don't flash $0. Recent transactions show their
+  own inline skeleton inside the Recent Activity card.
+- Typecheck: zero errors in `Deposits.tsx` and `sqlServerDashboard.ts`.
+  `server/storage.ts` and `server/routes.ts` are at the pre-existing error
+  baseline (same `db is possibly null` / `string | string[]` patterns that
+  were already there).
+- Verification still TODO before commit: hit the three endpoints with curl
+  for timing, then a manual smoke test against customer 8484989.
+

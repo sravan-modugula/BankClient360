@@ -1255,6 +1255,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/customers/:id/deposit-summary - Balances + balanceByType only.
+  // Cheap query; used to render the Deposits hero cards immediately while the
+  // trend chart and recent transactions load independently.
+  app.get("/api/customers/:id/deposit-summary", async (req, res) => {
+    try {
+      const customerId = parseInt(req.params.id);
+      if (isNaN(customerId)) {
+        return res.status(400).json({ error: "Invalid person ID" });
+      }
+      const person = await storage.getCustomer(customerId);
+      if (!person) {
+        return res.status(404).json({ error: "Person not found" });
+      }
+      const { totalBalance, balanceByType } = await storage.getDepositAccountAnalytics(customerId);
+      res.json({ totalBalance, balanceByType });
+    } catch (error) {
+      logger.error({ err: error, module: 'routes' }, 'Error fetching deposit summary');
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/customers/:id/deposit-trend?months=12 - 12-month trend series.
+  // Expensive query for very large account sets; loaded lazily on the client
+  // (only when the chart scrolls into view) so it never blocks the rest of
+  // the Deposits region.
+  app.get("/api/customers/:id/deposit-trend", async (req, res) => {
+    try {
+      const customerId = parseInt(req.params.id);
+      if (isNaN(customerId)) {
+        return res.status(400).json({ error: "Invalid person ID" });
+      }
+      const person = await storage.getCustomer(customerId);
+      if (!person) {
+        return res.status(404).json({ error: "Person not found" });
+      }
+      const rawMonths = parseInt(String(req.query.months ?? '12'), 10);
+      const months = Number.isFinite(rawMonths) ? Math.max(1, Math.min(12, rawMonths)) : 12;
+      const trendData = await storage.getDepositTrend(customerId, months);
+      const last = trendData.length > 0 ? trendData[trendData.length - 1] : null;
+      res.json({
+        trendData,
+        weightedAverageBalance: last?.weightedAverage ?? 0,
+      });
+    } catch (error) {
+      logger.error({ err: error, module: 'routes' }, 'Error fetching deposit trend');
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/customers/:id/deposit-recent-transactions?limit=5 - Last N
+  // transactions across the customer's deposit accounts.
+  app.get("/api/customers/:id/deposit-recent-transactions", async (req, res) => {
+    try {
+      const customerId = parseInt(req.params.id);
+      if (isNaN(customerId)) {
+        return res.status(400).json({ error: "Invalid person ID" });
+      }
+      const person = await storage.getCustomer(customerId);
+      if (!person) {
+        return res.status(404).json({ error: "Person not found" });
+      }
+      const rawLimit = parseInt(String(req.query.limit ?? '5'), 10);
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(100, rawLimit)) : 5;
+      const recentTransactions = await storage.getDepositRecentTransactions(customerId, limit);
+      res.json({ recentTransactions });
+    } catch (error) {
+      logger.error({ err: error, module: 'routes' }, 'Error fetching deposit recent transactions');
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // GET /api/customers/:id/deposit-analytics - Get deposit account analytics
   app.get("/api/customers/:id/deposit-analytics", async (req, res) => {
     try {

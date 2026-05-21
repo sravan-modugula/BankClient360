@@ -207,6 +207,26 @@ export interface IBankingStorage {
     accounts: Account[];
     balanceByType: { checking: number; savings: number; cd: number };
   }>;
+  getDepositTrend(customerId: number, months?: number): Promise<Array<{
+    month: string;
+    date: string;
+    balance: number;
+    checking: number;
+    savings: number;
+    cd: number;
+    weightedAverage: number;
+    weightedAvgChecking: number;
+    weightedAvgSavings: number;
+    weightedAvgCD: number;
+  }>>;
+  getDepositRecentTransactions(customerId: number, limit?: number): Promise<Array<{
+    accountType: string;
+    date: string;
+    type: string;
+    description: string;
+    amount: number;
+    balance: number;
+  }>>;
 
   // Debit Card operations
   getAccountDebitCards(accountId: number): Promise<DebitCardWithLimitProfile[]>;
@@ -1369,6 +1389,196 @@ export class DatabaseStorage implements IBankingStorage {
       accounts,
       balanceByType
     };
+  }
+
+  async getDepositTrend(customerId: number, months: number = 12): Promise<Array<{
+    month: string;
+    date: string;
+    balance: number;
+    checking: number;
+    savings: number;
+    cd: number;
+    weightedAverage: number;
+    weightedAvgChecking: number;
+    weightedAvgSavings: number;
+    weightedAvgCD: number;
+  }>> {
+    // SQL Server implementation
+    if (isSQLServer()) {
+      const { getMssqlPool } = await import('./dbConnection');
+      const { getDepositTrendSqlServer } = await import('./storage/sqlServerDashboard');
+      const pool = await getMssqlPool();
+      return await getDepositTrendSqlServer(pool, customerId, months);
+    }
+
+    // PostgreSQL implementation — set-based ROW_NUMBER, TS carry-forward.
+    const monthCount = Math.max(1, Math.min(12, Math.floor(months)));
+    const result = await db.execute(sql`
+      WITH customer_accounts AS (
+        SELECT a.account_id, a.account_type, a.interest_rate, a.balance
+        FROM account a
+        INNER JOIN account_ownership ao ON ao.account_id = a.account_id
+        WHERE ao.customer_id = ${customerId}
+          AND LOWER(a.account_status) = 'active'
+          AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+      ),
+      monthly_endings AS (
+        SELECT
+          ft.account_id,
+          DATE_TRUNC('month', ft.transaction_date) AS month,
+          ft.ledger_balance_after,
+          ROW_NUMBER() OVER (
+            PARTITION BY ft.account_id, DATE_TRUNC('month', ft.transaction_date)
+            ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
+          ) AS rn
+        FROM financial_transaction ft
+        WHERE ft.account_id IN (SELECT account_id FROM customer_accounts)
+          AND ft.transaction_date >= NOW() - (${monthCount}::text || ' months')::interval
+      )
+      SELECT
+        ca.account_id,
+        ca.account_type,
+        ca.interest_rate,
+        ca.balance AS current_balance,
+        me.month,
+        me.ledger_balance_after
+      FROM customer_accounts ca
+      LEFT JOIN monthly_endings me
+        ON me.account_id = ca.account_id AND me.rn = 1
+      ORDER BY ca.account_id, me.month
+    `);
+
+    const bucketOf = (t: string | null | undefined): 'checking' | 'savings' | 'cd' | null => {
+      const x = t?.toLowerCase();
+      if (x === 'checking' || x === 'deposit checking') return 'checking';
+      if (x === 'savings' || x === 'money_market' || x === 'christmas club depo') return 'savings';
+      if (x === 'cd' || x === 'time deposit') return 'cd';
+      return null;
+    };
+
+    const monthKeys: string[] = [];
+    const monthLabels: Array<{ key: string; month: string; date: string }> = [];
+    for (let i = monthCount - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      d.setDate(1);
+      d.setHours(0, 0, 0, 0);
+      const key = d.toISOString().substring(0, 7);
+      monthKeys.push(key);
+      monthLabels.push({ key, month: d.toLocaleString('default', { month: 'short', year: '2-digit' }), date: d.toISOString() });
+    }
+    const monthIndex = new Map(monthKeys.map((k, i) => [k, i]));
+
+    interface AcctRow {
+      accountType: string | null;
+      interestRate: number;
+      currentBalance: number;
+      byMonth: Map<string, number>;
+    }
+    const byAccount = new Map<string, AcctRow>();
+    for (const row of (result as any).rows as any[]) {
+      const acctId = String(row.account_id);
+      let acct = byAccount.get(acctId);
+      if (!acct) {
+        const rawRate = parseFloat(row.interest_rate ?? '0') || 0;
+        acct = {
+          accountType: row.account_type,
+          interestRate: rawRate <= 1 ? rawRate * 100 : rawRate,
+          currentBalance: parseFloat(row.current_balance ?? '0') || 0,
+          byMonth: new Map(),
+        };
+        byAccount.set(acctId, acct);
+      }
+      if (row.month) {
+        const key = new Date(row.month).toISOString().substring(0, 7);
+        if (monthIndex.has(key)) {
+          acct.byMonth.set(key, parseFloat(row.ledger_balance_after ?? '0') || 0);
+        }
+      }
+    }
+
+    const points = monthLabels.map(({ month, date }) => ({
+      month, date,
+      balance: 0, checking: 0, savings: 0, cd: 0,
+      weightedAverage: 0, weightedAvgChecking: 0, weightedAvgSavings: 0, weightedAvgCD: 0,
+    }));
+    const wbsTotal = new Array(monthCount).fill(0);
+    const tbwTotal = new Array(monthCount).fill(0);
+    const wbsByBucket = { checking: new Array(monthCount).fill(0), savings: new Array(monthCount).fill(0), cd: new Array(monthCount).fill(0) };
+    const tbwByBucket = { checking: new Array(monthCount).fill(0), savings: new Array(monthCount).fill(0), cd: new Array(monthCount).fill(0) };
+
+    for (const acct of Array.from(byAccount.values())) {
+      const bucket = bucketOf(acct.accountType);
+      if (!bucket) continue;
+      let lastSeen: number | null = null;
+      for (let i = 0; i < monthCount; i++) {
+        const v = acct.byMonth.get(monthKeys[i]);
+        if (v !== undefined) lastSeen = v;
+        const bal = lastSeen ?? acct.currentBalance;
+        points[i][bucket] += bal;
+        const w = bal * acct.interestRate;
+        wbsTotal[i] += w; tbwTotal[i] += bal;
+        wbsByBucket[bucket][i] += w; tbwByBucket[bucket][i] += bal;
+      }
+    }
+
+    for (let i = 0; i < monthCount; i++) {
+      const p = points[i];
+      p.balance = p.checking + p.savings + p.cd;
+      p.weightedAverage = tbwTotal[i] > 0 ? wbsTotal[i] / tbwTotal[i] : 0;
+      p.weightedAvgChecking = tbwByBucket.checking[i] > 0 ? wbsByBucket.checking[i] / tbwByBucket.checking[i] : 0;
+      p.weightedAvgSavings = tbwByBucket.savings[i] > 0 ? wbsByBucket.savings[i] / tbwByBucket.savings[i] : 0;
+      p.weightedAvgCD = tbwByBucket.cd[i] > 0 ? wbsByBucket.cd[i] / tbwByBucket.cd[i] : 0;
+    }
+
+    return points;
+  }
+
+  async getDepositRecentTransactions(customerId: number, limit: number = 5): Promise<Array<{
+    accountType: string;
+    date: string;
+    type: string;
+    description: string;
+    amount: number;
+    balance: number;
+  }>> {
+    // SQL Server implementation
+    if (isSQLServer()) {
+      const { getMssqlPool } = await import('./dbConnection');
+      const { getDepositRecentTransactionsSqlServer } = await import('./storage/sqlServerDashboard');
+      const pool = await getMssqlPool();
+      return await getDepositRecentTransactionsSqlServer(pool, customerId, limit);
+    }
+
+    // PostgreSQL implementation
+    const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const result = await db.execute(sql`
+      SELECT
+        a.account_type,
+        ft.transaction_date,
+        ft.transaction_code,
+        ft.description,
+        ft.amount,
+        ft.ledger_balance_after
+      FROM financial_transaction ft
+      INNER JOIN account a ON a.account_id = ft.account_id
+      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
+      WHERE ao.customer_id = ${customerId}
+        AND LOWER(a.account_status) = 'active'
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+        AND ft.transaction_date IS NOT NULL
+      ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
+      LIMIT ${cappedLimit}
+    `);
+
+    return ((result as any).rows as any[]).map(t => ({
+      accountType: t.account_type,
+      date: t.transaction_date ? new Date(t.transaction_date).toISOString() : new Date().toISOString(),
+      type: t.transaction_code || 'Transaction',
+      description: t.description || 'Transaction',
+      amount: parseFloat(t.amount) || 0,
+      balance: parseFloat(t.ledger_balance_after) || 0,
+    }));
   }
 
   // Debit Card operations

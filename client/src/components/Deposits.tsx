@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { 
   Card, 
   CardContent, 
@@ -47,34 +47,74 @@ import { useDateFormatter } from '@/lib/dateFormatters';
 import SectionLabel from "./SectionLabel";
 import { FormatTransactionAmount } from "./FormatTransactionAmount";
 
-interface DepositAnalytics {
+interface DepositSummary {
   totalBalance: number;
-  weightedAverageBalance: number;
   balanceByType: {
     checking: number;
     savings: number;
     cd: number;
   };
-  trendData: {
-    month: string;
-    date: string;
-    balance: number;
-    checking: number;
-    savings: number;
-    cd: number;
-    weightedAverage: number;
-    weightedAvgChecking: number;
-    weightedAvgSavings: number;
-    weightedAvgCD: number;
-  }[];
-  recentTransactions: {
-    accountType: string;
-    date: string;
-    type: string;
-    description: string;
-    amount: number;
-    balance: number;
-  }[];
+}
+
+interface DepositTrendPoint {
+  month: string;
+  date: string;
+  balance: number;
+  checking: number;
+  savings: number;
+  cd: number;
+  weightedAverage: number;
+  weightedAvgChecking: number;
+  weightedAvgSavings: number;
+  weightedAvgCD: number;
+}
+
+interface DepositTrendResponse {
+  trendData: DepositTrendPoint[];
+  weightedAverageBalance: number;
+}
+
+interface DepositRecentTransaction {
+  accountType: string;
+  date: string;
+  type: string;
+  description: string;
+  amount: number;
+  balance: number;
+}
+
+interface DepositRecentResponse {
+  recentTransactions: DepositRecentTransaction[];
+}
+
+// Tiny IntersectionObserver hook so the heavy trend query only fires when
+// the chart scrolls into view. Once seen, stays true — we don't want the
+// query to re-disable if the user scrolls away. Inlined to avoid pulling
+// in react-intersection-observer just for this one call site.
+function useInView<T extends Element>(rootMargin: string = '0px'): [React.RefObject<T>, boolean] {
+  const ref = useRef<T>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    if (inView) return;
+    const node = ref.current;
+    if (!node) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [inView, rootMargin]);
+  return [ref, inView];
 }
 
 interface DepositsProps {
@@ -88,16 +128,34 @@ export default function Deposits({ customerId }: DepositsProps) {
   // Use consistent PST date formatting
   const { formatCurrency, formatDate } = useDateFormatter();
 
-  const { data: analytics, isLoading } = useQuery<DepositAnalytics>({
-    queryKey: [`/api/customers/${customerId}/deposit-analytics`],
-    enabled: !!customerId && Number.isFinite(customerId)
+  const enabled = !!customerId && Number.isFinite(customerId);
+
+  // Hero cards + product mix (cheap; loads immediately).
+  const { data: summary, isLoading: summaryLoading } = useQuery<DepositSummary>({
+    queryKey: [`/api/customers/${customerId}/deposit-summary`],
+    enabled,
+  });
+
+  // Recent transactions (cheap; loads immediately).
+  const { data: recent, isLoading: recentLoading } = useQuery<DepositRecentResponse>({
+    queryKey: [`/api/customers/${customerId}/deposit-recent-transactions`],
+    enabled,
+  });
+
+  // Trend chart (expensive at scale) — lazy-loaded on scroll-into-view and
+  // silently hidden if it fails so it can't take down the rest of the region.
+  const [trendCardRef, trendInView] = useInView<HTMLDivElement>('200px');
+  const { data: trend, isLoading: trendLoading, error: trendError } = useQuery<DepositTrendResponse>({
+    queryKey: [`/api/customers/${customerId}/deposit-trend`],
+    enabled: enabled && trendInView,
+    retry: 1,
   });
 
   // Filter trend data based on time range
   const getTrendData = () => {
-    if (!analytics?.trendData) return [];
-    
-    const data = [...analytics.trendData];
+    if (!trend?.trendData) return [];
+
+    const data = [...trend.trendData];
     switch (timeRange) {
       case 'monthly':
         return data.slice(-1);
@@ -111,9 +169,9 @@ export default function Deposits({ customerId }: DepositsProps) {
 
   // Prepare pie chart data
   const getPieData = () => {
-    if (!analytics?.balanceByType) return [];
-    
-    const { checking, savings, cd } = analytics.balanceByType;
+    if (!summary?.balanceByType) return [];
+
+    const { checking, savings, cd } = summary.balanceByType;
     const total = checking + savings + cd;
     
     return [
@@ -155,72 +213,55 @@ export default function Deposits({ customerId }: DepositsProps) {
   };
 
   const calculateGrowth = () => {
-    if (!analytics?.trendData || analytics.trendData.length < 2) return 0;
-    const current = analytics.trendData[analytics.trendData.length - 1].balance;
-    const previous = analytics.trendData[analytics.trendData.length - 2].balance;
-    
+    const trendData = trend?.trendData;
+    if (!trendData || trendData.length < 2) return 0;
+    const current = trendData[trendData.length - 1].balance;
+    const previous = trendData[trendData.length - 2].balance;
+
     // Guard against division by zero
     if (previous === 0) {
       return current > 0 ? 100 : 0;
     }
-    
+
     return ((current - previous) / previous) * 100;
   };
 
   const growth = calculateGrowth();
 
-  if (isLoading) {
+  // Empty-state guard is based on summary + recent only — the trend card is
+  // optional and may still be loading or hidden after an error. We treat the
+  // section as empty only when summary clearly has zero balance and no recent
+  // transactions exist.
+  const summaryReady = !summaryLoading && !!summary;
+  const recentReady = !recentLoading;
+  const hasDeposits = summaryReady && (
+    (summary?.totalBalance || 0) !== 0 ||
+    (recent?.recentTransactions || []).length > 0
+  );
+
+  // Show three skeleton cards while the summary (hero numbers) is still
+  // loading — they're cheap and arrive quickly. Trend and recent will
+  // render their own loading state once we know the customer has deposits.
+  if (!summaryReady) {
     return (
       <Box>
-        {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <AccountBalance color="primary" />
-            Deposits Overview
-          </Typography>
-          <Skeleton variant="text" width={150} height={32} />
-        </Box>
-        */}
         <SectionLabel>Deposits Overview</SectionLabel>
         <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card elevation={2}>
-              <CardContent>
-                <Skeleton variant="rectangular" height={350} />
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card elevation={2}>
-              <CardContent>
-                <Skeleton variant="rectangular" height={350} />
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card elevation={2}>
-              <CardContent>
-                <Skeleton variant="rectangular" height={350} />
-              </CardContent>
-            </Card>
-          </Grid>
+          {[0, 1, 2].map((i) => (
+            <Grid key={i} size={{ xs: 12, md: 4 }}>
+              <Card elevation={2}>
+                <CardContent>
+                  <Skeleton variant="rectangular" height={350} />
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
         </Grid>
       </Box>
     );
   }
 
-  // Check if user has no deposit accounts
-  /* Check if any of the analytics data is available. */
-  const hasDeposits = (
-    analytics && 
-    (
-      Object.keys(analytics.balanceByType || {}).length > 0 || 
-      (analytics.recentTransactions || []).length > 0 ||
-      (analytics.trendData || []).length > 0 ||
-      (analytics.totalBalance || 0) !== 0 
-    )
-  );
-
-  if (!hasDeposits && !isLoading) {
+  if (recentReady && !hasDeposits) {
     return (
       <Box>
         {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -265,20 +306,26 @@ export default function Deposits({ customerId }: DepositsProps) {
 
       {/* Three Cards */}
       <Grid container spacing={3} sx={{ width: '100%', display: 'flex', alignItems: 'stretch' }}>
-        {/* Card 1: Balance Trends */}
-        <Grid size={{ xs: 12, md: 4 }} sx={{ display: 'flex', flex: '1 1 0' }}>
+        {/* Card 1: Balance Trends — lazy-loaded; silently hidden if it errors */}
+        {!trendError && (
+        <Grid size={{ xs: 12, md: 4 }} sx={{ display: 'flex', flex: '1 1 0' }} ref={trendCardRef}>
           <Card elevation={2} sx={{ height: 450, width: '100%', flex: 1 }}>
             <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <TrendingUp color="secondary" />
                 Balance Trends
               </Typography>
-              
+
               <Typography variant="body2" color="text.secondary">Total Deposits</Typography>
               <Typography variant="h4" fontWeight="400" sx={{ mb: 2 }}>
-                {formatCurrency(analytics?.totalBalance || 0)}
+                {formatCurrency(summary?.totalBalance || 0)}
               </Typography>
 
+              {!trendInView || trendLoading || !trend ? (
+                <Box sx={{ flex: 1, minHeight: 200 }}>
+                  <Skeleton variant="rectangular" height="100%" />
+                </Box>
+              ) : (
               <Box sx={{ flex: 1, minHeight: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={getTrendData()} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
@@ -350,6 +397,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                   </ComposedChart>
                 </ResponsiveContainer>
               </Box>
+              )}
 
               <ToggleButtonGroup
                 value={timeRange}
@@ -357,7 +405,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                 onChange={(e, value) => value && setTimeRange(value)}
                 size="small"
                 fullWidth
-                sx={{ 
+                sx={{
                   mt: 1.5,
                   '& .MuiToggleButton-root': {
                     py: 0.25,
@@ -384,6 +432,7 @@ export default function Deposits({ customerId }: DepositsProps) {
             </CardContent>
           </Card>
         </Grid>
+        )}
 
         {/* Card 2: Product Mix */}
         <Grid size={{ xs: 12, md: 4 }} sx={{ display: 'flex', flex: '1 1 0' }}>
@@ -465,7 +514,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                   Total:
                 </Typography>
                 <Typography variant="h6" fontWeight="400" color="primary">
-                  {formatCurrency(analytics?.totalBalance || 0)}
+                  {formatCurrency(summary?.totalBalance || 0)}
                 </Typography>
               </Box>
             </CardContent>
@@ -486,7 +535,10 @@ export default function Deposits({ customerId }: DepositsProps) {
               </Typography>
 
               <List sx={{ flex: 1, overflow: 'auto', py: 0 }}>
-                {analytics?.recentTransactions.map((transaction, index) => (
+                {recentLoading && (
+                  <Skeleton variant="rectangular" height={200} />
+                )}
+                {recent?.recentTransactions.map((transaction, index) => (
                   <Box key={index}>
                     <ListItem 
                       sx={{ 
@@ -523,7 +575,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                         </Box>
                       </Box>
                     </ListItem>
-                    {index < analytics.recentTransactions.length - 1 && <Divider />}
+                    {index < (recent?.recentTransactions.length || 0) - 1 && <Divider />}
                   </Box>
                 ))}
               </List>
