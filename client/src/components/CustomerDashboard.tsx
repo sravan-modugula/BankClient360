@@ -102,7 +102,7 @@ export default function CustomerDashboard() {
   const { data: permissions } = usePermissions();
   const maxPrivilegeLevel = permissions?.maxPrivilegeLevel || 0;
 
-  const { isAuthenticated, isLinked, email: authEmail, isLoading: authLoading, login, logout } = useAuth();
+  const { isAuthenticated, isLinked, email: authEmail, isLoading: authLoading, samlEnabled, login, logout } = useAuth();
 
   /* 
     We are changing the component structure so the URL controls the 
@@ -123,6 +123,16 @@ export default function CustomerDashboard() {
     }
   }, [tabView]);
 
+  // When SSO is enabled and an unauthenticated user lands here directly,
+  // bounce them straight to the IdP (skip the Login Required card). Skip
+  // when ?login_error=... is present so a failed SAML round-trip lands on
+  // the error screen instead of looping back to the IdP.
+  const loginErrorParam = params.get('login_error');
+  React.useEffect(() => {
+    if (!authLoading && !isAuthenticated && samlEnabled && !loginErrorParam) {
+      window.location.replace('/api/auth/login');
+    }
+  }, [authLoading, isAuthenticated, samlEnabled, loginErrorParam]);
 
   // Check if user has permissions for tabs
   const hasHouseholdPermission = permissions?.permissions.includes('household.view') || false;
@@ -523,8 +533,28 @@ export default function CustomerDashboard() {
   }
 
   if (!isAuthenticated) {
-    const loginError = params.get('login_error');
-    const loginErrorMessage = loginError ? loginErrorReasonText(loginError) : null;
+    const loginErrorMessage = loginErrorParam ? loginErrorReasonText(loginErrorParam) : null;
+
+    // SSO redirect in flight (no error to show) — render a spinner instead
+    // of the Login Required card to avoid a brief flash of the card before
+    // window.location.replace navigates to the IdP.
+    if (samlEnabled && !loginErrorParam) {
+      return (
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Box sx={{
+            minHeight: '100%',
+            bgcolor: 'background.default',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <CircularProgress size={48} />
+          </Box>
+        </ThemeProvider>
+      );
+    }
+
     return (
       <ThemeProvider theme={theme}>
         <CssBaseline />
