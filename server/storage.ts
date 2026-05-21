@@ -87,7 +87,7 @@ import {
   noteVersion,
   noteAuditLog
 } from "@shared/schema";
-import { GROUP_CODE_TO_ACTIVITY, createDefaultActivity } from "../shared/constants";
+import { GROUP_CODE_TO_ACTIVITY, createDefaultActivity, activityFromTransactionType } from "../shared/constants";
 
 // Notes helper types
 export interface NoteWithCurrentVersion {
@@ -2942,21 +2942,28 @@ export class DatabaseStorage implements IBankingStorage {
     const activity = createDefaultActivity();
 
     if (accountIds.length > 0) {
+      // LEFT JOIN transaction_category so transactions without a category row
+      // (common on-prem) are still counted via transaction_type fallback.
       const activityResult = await db
         .select({
           groupCode: transactionCategory.groupCode,
+          transactionType: financialTransaction.transactionType,
+          transactionCode: financialTransaction.transactionCode,
           count: sql<number>`count(*)`
         })
         .from(financialTransaction)
-        .innerJoin(transactionCategory, eq(transactionCategory.categoryId, financialTransaction.categoryId))
+        .leftJoin(transactionCategory, eq(transactionCategory.categoryId, financialTransaction.categoryId))
         .where(
           and(
             sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`,
-            sql`${financialTransaction.transactionDate} >= ${cutoff}`,
-            sql`${transactionCategory.groupCode} IS NOT NULL`
+            sql`${financialTransaction.transactionDate} >= ${cutoff}`
           )
         )
-        .groupBy(transactionCategory.groupCode);
+        .groupBy(
+          transactionCategory.groupCode,
+          financialTransaction.transactionType,
+          financialTransaction.transactionCode
+        );
 
       // Case- and separator-insensitive lookup so DB rows like 'ach',
       // 'Cash Withdrawal', or 'cash_withdrawal' all resolve correctly.
@@ -2966,10 +2973,18 @@ export class DatabaseStorage implements IBankingStorage {
       );
 
       activityResult.forEach(row => {
+        const count = Number(row.count) || 0;
         const groupCode = (row.groupCode || '').trim();
-        const key = groupCode ? groupCodeLookup[normalizeKey(groupCode)] : undefined;
-        if (key) {
-          activity[key] = Number(row.count) || 0;
+        const groupKey = groupCode ? groupCodeLookup[normalizeKey(groupCode)] : undefined;
+        if (groupKey) {
+          activity[groupKey] += count;
+          return;
+        }
+        const fallback =
+          activityFromTransactionType(row.transactionType) ||
+          activityFromTransactionType(row.transactionCode);
+        if (fallback) {
+          activity[fallback] += count;
         }
       });
     }

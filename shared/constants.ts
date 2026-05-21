@@ -79,3 +79,36 @@ export function createDefaultActivity(): Record<ActivityType, number> {
     zelle: 0
   };
 }
+
+// Fallback patterns for when transaction_category.group_code is missing on-prem.
+// Matched against financial_transaction.transaction_type / transaction_code
+// (case-insensitive) in declared order, first match wins. Order matters: e.g.
+// "Check Deposit" must beat "Check" so check-payment doesn't swallow deposits.
+export const TRANSACTION_TYPE_PATTERNS: ReadonlyArray<{
+  pattern: RegExp;
+  activity: ActivityType;
+}> = [
+  { pattern: /\bach\b/i, activity: 'ach' },
+  { pattern: /\bwire\b/i, activity: 'wire' },
+  { pattern: /\bzelle\b/i, activity: 'zelle' },
+  { pattern: /\b(pos|debit\s*card)\b/i, activity: 'debit_card_payment' },
+  { pattern: /\b(atm|cash\s*withdrawal|withdrawal)\b/i, activity: 'cash_withdrawal' },
+  { pattern: /\b(transfer|xfer)\b/i, activity: 'transfer' },
+  { pattern: /\block\s*box\b/i, activity: 'lockbox' },
+  { pattern: /\bcheck\b.*\bdeposit\b/i, activity: 'check_deposit' },
+  { pattern: /\bcheck\b/i, activity: 'check_payment' },
+  { pattern: /\bdeposit\b/i, activity: 'deposit' },
+];
+
+/**
+ * Resolve an activity bucket from a raw transaction_type / transaction_code
+ * string by pattern. Returns null when nothing matches so callers can log it.
+ */
+export function activityFromTransactionType(raw: string | null | undefined): ActivityType | null {
+  if (!raw) return null;
+  const s = raw.toString();
+  for (const { pattern, activity } of TRANSACTION_TYPE_PATTERNS) {
+    if (pattern.test(s)) return activity;
+  }
+  return null;
+}

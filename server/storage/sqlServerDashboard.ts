@@ -4,7 +4,11 @@
  */
 
 import sql from 'mssql';
-import { GROUP_CODE_TO_ACTIVITY, createDefaultActivity } from '../../shared/constants';
+import {
+  GROUP_CODE_TO_ACTIVITY,
+  createDefaultActivity,
+  activityFromTransactionType,
+} from '../../shared/constants';
 import logger from '../services/logger';
 
 const fileLogger = logger.child({ module: 'sqlserver-dashboard' });
@@ -102,17 +106,21 @@ export async function getClientEngagementSqlServer(
     activityRequest.input('customerId', sql.BigInt, customerId);
     activityRequest.input('cutoff', sql.DateTime2, cutoff);
 
+    // LEFT JOIN transaction_category so transactions without a category row
+    // (or without category_id set) are still counted — on-prem datasets often
+    // populate ft.transaction_type but leave the category linkage empty.
     const activityResult = await activityRequest.query(`
       SELECT
         tc.group_code,
+        ft.transaction_type,
+        ft.transaction_code,
         COUNT(*) as count
       FROM financial_transaction ft
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
-      INNER JOIN transaction_category tc ON tc.category_id = ft.category_id
+      LEFT JOIN transaction_category tc ON tc.category_id = ft.category_id
       WHERE ao.customer_id = @customerId
         AND ft.transaction_date >= @cutoff
-        AND tc.group_code IS NOT NULL
-      GROUP BY tc.group_code
+      GROUP BY tc.group_code, ft.transaction_type, ft.transaction_code
     `);
 
     const activityByCategory = createDefaultActivity();
@@ -126,20 +134,39 @@ export async function getClientEngagementSqlServer(
     );
 
     const seenGroupCodes: string[] = [];
+    const unmappedSamples: string[] = [];
     let unmappedCount = 0;
     activityResult.recordset.forEach(row => {
+      const count = Number(row.count) || 0;
       const groupCode = (row.group_code || '').toString().trim();
-      seenGroupCodes.push(groupCode);
-      const key = groupCodeLookup[normalizeKey(groupCode)];
-      if (key) {
-        activityByCategory[key] += Number(row.count) || 0;
-      } else {
-        unmappedCount++;
+      const txType = (row.transaction_type || '').toString().trim();
+      const txCode = (row.transaction_code || '').toString().trim();
+
+      if (groupCode) seenGroupCodes.push(groupCode);
+
+      // 1) Prefer category group_code when present and known.
+      const groupKey = groupCode ? groupCodeLookup[normalizeKey(groupCode)] : undefined;
+      if (groupKey) {
+        activityByCategory[groupKey] += count;
+        return;
+      }
+
+      // 2) Fall back to transaction_type, then transaction_code.
+      const fallback = activityFromTransactionType(txType) || activityFromTransactionType(txCode);
+      if (fallback) {
+        activityByCategory[fallback] += count;
+        return;
+      }
+
+      unmappedCount += count;
+      const sample = txType || txCode || groupCode;
+      if (sample && unmappedSamples.length < 10 && !unmappedSamples.includes(sample)) {
+        unmappedSamples.push(sample);
       }
     });
 
     fileLogger.info(
-      { customerId, days, rows: activityResult.recordset.length, unmappedCount, seenGroupCodes, activityByCategory },
+      { customerId, days, rows: activityResult.recordset.length, unmappedCount, unmappedSamples, seenGroupCodes, activityByCategory },
       `Client engagement ${days}-day activity computed`,
     );
 
