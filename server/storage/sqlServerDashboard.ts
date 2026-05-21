@@ -306,13 +306,15 @@ const DEPOSIT_ACCOUNT_TYPES_SQL = `
 // Subquery that resolves a customer's active deposit account ids via
 // account_ownership. Parameterized through @customerId so the optimizer can
 // reuse plans across customers and avoid the 3 KB IN-list problem we hit at
-// 167 accounts.
+// 167 accounts. Narrows to primary ownerships so the deposit endpoints all
+// see the same set of accounts (mirrors getDepositSummarySqlServer).
 const DEPOSIT_ACCOUNTS_SUBQUERY = `
   SELECT a.account_id, a.account_type, a.interest_rate, a.balance
   FROM account a
   INNER JOIN account_ownership ao ON ao.account_id = a.account_id
   WHERE ao.customer_id = @customerId
     AND LOWER(a.account_status) = 'active'
+    AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
     AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
 `;
 
@@ -590,6 +592,7 @@ export async function getDepositRecentTransactionsSqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_status) = 'active'
+        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
         AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
         AND ft.transaction_date IS NOT NULL
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC

@@ -1358,12 +1358,16 @@ export class DatabaseStorage implements IBankingStorage {
     accounts: Account[];
     balanceByType: { checking: number; savings: number; cd: number };
   }> {
-    // SQL Server implementation
+    // SQL Server implementation — call the summary-only function directly.
+    // The legacy shim getDepositAccountAnalyticsSqlServer fans out all three
+    // deposit queries (summary + trend + recent) in parallel and waits for
+    // every one, which makes the /deposit-summary route hang on whatever the
+    // slowest query happens to be. The summary endpoint only needs balances.
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
-      const { getDepositAccountAnalyticsSqlServer } = await import('./storage/sqlServerDashboard');
+      const { getDepositSummarySqlServer } = await import('./storage/sqlServerDashboard');
       const pool = await getMssqlPool();
-      const result = await getDepositAccountAnalyticsSqlServer(pool, customerId);
+      const result = await getDepositSummarySqlServer(pool, customerId);
       return {
         totalBalance: result.totalBalance,
         accounts: result.accounts,
@@ -1432,6 +1436,7 @@ export class DatabaseStorage implements IBankingStorage {
         INNER JOIN account_ownership ao ON ao.account_id = a.account_id
         WHERE ao.customer_id = ${customerId}
           AND LOWER(a.account_status) = 'active'
+          AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
           AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
       ),
       monthly_endings AS (
@@ -1577,6 +1582,7 @@ export class DatabaseStorage implements IBankingStorage {
       INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
       WHERE ao.customer_id = ${customerId}
         AND LOWER(a.account_status) = 'active'
+        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
         AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
         AND ft.transaction_date IS NOT NULL
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
