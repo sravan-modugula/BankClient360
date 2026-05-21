@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { 
   Card, 
   CardContent, 
@@ -91,13 +91,17 @@ interface DepositRecentResponse {
 // the chart scrolls into view. Once seen, stays true — we don't want the
 // query to re-disable if the user scrolls away. Inlined to avoid pulling
 // in react-intersection-observer just for this one call site.
-function useInView<T extends Element>(rootMargin: string = '0px'): [React.RefObject<T>, boolean] {
-  const ref = useRef<T>(null);
+//
+// Returns a *callback ref*, not a useRef object: the trend Grid mounts
+// AFTER the page-level summary skeleton resolves, so a useRef would never
+// trigger the observer-setup effect (deps don't change when ref.current
+// is assigned). The callback ref re-runs the effect when React attaches
+// the node, which is the whole point.
+function useInView<T extends Element>(rootMargin: string = '0px'): [(node: T | null) => void, boolean] {
+  const [node, setNode] = useState<T | null>(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
-    if (inView) return;
-    const node = ref.current;
-    if (!node) return;
+    if (inView || !node) return;
     if (typeof IntersectionObserver === 'undefined') {
       setInView(true);
       return;
@@ -113,8 +117,8 @@ function useInView<T extends Element>(rootMargin: string = '0px'): [React.RefObj
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [inView, rootMargin]);
-  return [ref, inView];
+  }, [inView, rootMargin, node]);
+  return [setNode, inView];
 }
 
 interface DepositsProps {
