@@ -259,7 +259,11 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Statement Cycle</Typography>
-                  <Typography variant="body1">{account.statementCycle || account.statementCodeDesc || 'N/A'}</Typography>
+                  <Typography variant="body1">
+                    {account.statementCycle && account.statementCodeDesc
+                      ? `${account.statementCycle}: ${account.statementCodeDesc}`
+                      : account.statementCycle || account.statementCodeDesc || "N/A"}
+                  </Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Last Activity</Typography>

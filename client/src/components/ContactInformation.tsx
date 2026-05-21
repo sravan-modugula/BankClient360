@@ -170,13 +170,13 @@ export default function ContactInformation({ contacts }: ContactInformationProps
             size="small"
             variant={contact.isPrimary ? 'filled' : 'outlined'}
           />
-          {contact.isPrimary && (
+          {/* {contact.isPrimary && (
             <Chip
               label="Primary"
               color="primary"
               size="small"
             />
-          )}
+          )} */}
         </Box>
         {showActions && (
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -224,7 +224,7 @@ export default function ContactInformation({ contacts }: ContactInformationProps
                       <Box>
                         <Typography sx={{ fontSize: 14, color: '#7a9a7a', textTransform: "uppercase", letterSpacing: "0.07em", mb: 0.25 }}>{contact.type}</Typography>
                         <Typography sx={{ fontSize: 16, color: '#2a4a2a', fontWeight: 400 }}>{formatContactValue(contact)}</Typography>
-                        <Typography sx={{ fontSize: 14, color: '#9ab89a', mt: 0.25 }}>{contact.subtype?.charAt(0).toUpperCase() + contact.subtype?.slice(1)}{contact.isPrimary ? " • Primary" : ""}</Typography>
+                        <Typography sx={{ fontSize: 14, color: '#9ab89a', mt: 0.25 }}>{contact.subtype?.charAt(0).toUpperCase() + contact.subtype?.slice(1)}</Typography>
                       </Box>
                     </ListItem>
                 ))}

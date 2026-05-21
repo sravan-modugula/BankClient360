@@ -111,31 +111,6 @@ export async function getHouseholdMembersSqlServer(
   }
 }
 
-/**
- * Get household accounts
- */
-export async function getHouseholdAccountsSqlServer(
-  pool: sql.ConnectionPool,
-  householdId: number
-): Promise<Account[]> {
-  try {
-    const request = pool.request();
-    request.input('householdId', sql.BigInt, householdId);
-
-    const result = await request.query(`
-      SELECT a.*
-      FROM account a
-      WHERE a.household_id = @householdId
-        AND a.account_status != 'closed'
-      ORDER BY a.account_type, a.account_number
-    `);
-
-    return result.recordset.map(mapAccountFromDb);
-  } catch (error) {
-    fileLogger.error({ err: error }, 'Get household accounts error');
-    throw error;
-  }
-}
 
 /**
  * Get subsidiary households (children) where this household is the parent

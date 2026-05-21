@@ -57,11 +57,40 @@ export async function getCustomerAccountsSqlServer(
     request.input('customerId', sql.BigInt, customerId);
 
     const result = await request.query(`
-      SELECT DISTINCT a.*, ao.customer_id
+      SELECT DISTINCT 
+        a.account_id, 
+        a.account_number,
+        a.account_type, 
+        a.account_subtype,
+        a.account_status,
+        a.balance,
+        a.available_balance,
+        a.currency,
+        a.interest_rate,
+        a.credit_limit,
+        a.branch_id,
+        a.product_code,
+        a.opened_date,
+        a.closed_date,
+        a.last_transaction_date, 
+        a.maturity_date,
+        a.jack_henry_account_id,
+        a.silverlake_account_structure,
+        a.account_class,
+        a.statement_cycle,
+        a.statement_code_desc,
+        a.average_balance,
+        a.last_maintenance_date,
+        a.created_at,
+        a.updated_at,
+        -- a.account_number_bigint,
+        -- a.unique_act_number,
+        ao.customer_id
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND a.account_status != 'closed'
+        AND (ao.ownership_type = 'Primary account owner' or ao.ownership_type = 'primary')
       ORDER BY a.account_type, a.account_number
     `);
 
@@ -71,6 +100,7 @@ export async function getCustomerAccountsSqlServer(
     throw error;
   }
 }
+
 
 /**
  * Get accounts by household ID
@@ -84,11 +114,51 @@ export async function getHouseholdAccountsSqlServer(
     request.input('householdId', sql.BigInt, householdId);
 
     const result = await request.query(`
-      SELECT *
-      FROM account
-      WHERE household_id = @householdId
-        AND account_status != 'closed'
-      ORDER BY account_type, account_number
+      with hh_members as (
+          SELECT
+          c.customer_id
+          FROM household_membership hm
+          INNER JOIN customer c ON c.customer_id = hm.customer_id
+          WHERE hm.household_id = @householdId
+          AND hm.membership_end_date IS NULL
+      )
+      SELECT 
+        a.account_id, 
+        a.account_number,
+        a.account_type, 
+        a.account_subtype,
+        a.account_status,
+        a.balance,
+        a.available_balance,
+        a.currency,
+        a.interest_rate,
+        a.credit_limit,
+        a.branch_id,
+        a.product_code,
+        a.opened_date,
+        a.closed_date,
+        a.last_transaction_date, 
+        a.maturity_date,
+        a.jack_henry_account_id,
+        a.silverlake_account_structure,
+        a.account_class,
+        a.statement_cycle,
+        a.statement_code_desc,
+        a.average_balance,
+        a.last_maintenance_date,
+        a.created_at,
+        a.updated_at,
+        -- a.account_number_bigint,
+        -- a.unique_act_number,
+        ao.customer_id
+      FROM account a
+      INNER JOIN 
+        account_ownership ao ON ao.account_id = a.account_id
+        -- Ownership type is different in dev and test
+	      and (ownership_type = 'Primary account owner' or ownership_type = 'primary')
+      WHERE ao.customer_id in (select customer_id from hh_members)
+      AND account_status != 'closed'
+      ORDER BY account_type, account_number;
     `);
 
     return result.recordset.map(mapAccountFromDb);

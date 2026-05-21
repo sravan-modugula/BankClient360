@@ -372,6 +372,7 @@ export async function getDepositSummarySqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_status) = 'active'
+        and (ao.ownership_type = 'Primary account owner' or ao.ownership_type = 'primary')
         AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
       ORDER BY a.account_type, a.account_number
     `);

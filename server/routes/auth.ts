@@ -152,6 +152,22 @@ export function createAuthRoutes() {
 export function createSamlRoutes() {
   const router = Router();
 
+  /*
+  * This is middleware to prevent any responses from the SAML endpoints 
+  * from being cached
+  */
+  router.use("/saml", (req, res, next) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate"
+    );
+
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    next();
+  });
+
   router.get('/saml/login', (req, res, next) => {
     authLogger.info({ ip: req.ip }, 'SAML SP-initiated login');
     passport.authenticate('saml', {

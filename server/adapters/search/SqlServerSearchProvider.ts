@@ -486,8 +486,8 @@ class SqlServerSearchProvider implements ISearchProvider {
         convert(varchar(100), right(customer.tax_identifier, 4)) as field_6,
         convert(varchar(100), right(customer.government_id, 4)) as field_7,
         convert(varchar(100), customer.jack_henry_cif_number) as field_8
-      from ClientIQ.dbo.search search
-      join ClientIq.dbo.customer customer
+      from search
+      join customer
       on customer.customer_id = search.customer_id
       where search.search_value like @query + '%' and search.entity_type = 2
 
@@ -507,7 +507,7 @@ class SqlServerSearchProvider implements ISearchProvider {
           risk_rating (field_8)
       */
 
-      union
+      union all
 
       select distinct top (@limit)
         search.entity_type,
@@ -520,10 +520,11 @@ class SqlServerSearchProvider implements ISearchProvider {
         convert(varchar(100), household.household_status) as field_4,
         convert(varchar(100), household.total_assets) as field_5,
         convert(varchar(100), household.total_liabilities) as field_6,
-        convert(varchar(100), coalesce((select count(*) from ClientIQ.dbo.household_membership where household_membership.household_id = household.household_id), 0)) as field_7,
-        convert(varchar(100), household.risk_rating) as field_8
-      from ClientIQ.dbo.search search
-      join ClientIq.dbo.household household
+        convert(varchar(100), coalesce((select count(*) from household_membership where household_membership.household_id = household.household_id), 0)) as field_7,
+        -- convert(varchar(100), household.risk_rating) as field_8
+        null as field_8
+      from search
+      join household
       on household.household_id = search.household_id
       where search.search_value like @query + '%' and search.entity_type = 3
 
@@ -543,12 +544,12 @@ class SqlServerSearchProvider implements ISearchProvider {
           null (field_8)
       */
 
-      union
+      union all
 
       select top (@limit) 
         search.entity_type,
         search.entity_id,
-        account.account_number as display_name,
+        convert(varchar(100), account.account_number) as display_name,
         account.account_status as status,
         account.account_id as field_1,
         convert(varchar(100), account.account_number) as field_2,
@@ -558,11 +559,13 @@ class SqlServerSearchProvider implements ISearchProvider {
         convert(varchar(100), account.balance) as field_6,
         ao.customer_id as field_7,
         null as field_8
-      from ClientIQ.dbo.search search
-      join ClientIq.dbo.account account
+      from search
+      join account
       on account.account_id = search.account_id
       inner join account_ownership ao ON ao.account_id = account.account_id
-      where search.search_value like @query + '%' and search.entity_type = 1;
+      where search.search_value like @query + '%' and search.entity_type = 1
+      
+      order by status asc;
     `)
 
     return entities.recordset.map((r: any) => {
@@ -574,7 +577,7 @@ class SqlServerSearchProvider implements ISearchProvider {
           displayName: r.display_name,
           primaryIdentifiers: [
             this.snakeCaseToProperCase(r.field_5 || 'Unknown'),
-            `Balance: ${this.formatCurrency(r.field_6)}`
+            `Balance: ${this.formatCurrency(parseFloat(r.field_6))}`
           ],
           status: r.status,
           account: {

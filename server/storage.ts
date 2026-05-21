@@ -192,6 +192,7 @@ export interface IBankingStorage {
 
   // Account operations
   getAccount(id: number): Promise<Account | undefined>;
+  getHouseholdAccounts(householdId: number): Promise<Account[]>;
   getCustomerAccounts(customerId: number): Promise<Account[]>;
   createAccount(accountData: InsertAccount): Promise<Account>;
   updateAccount(id: number, accountData: Partial<InsertAccount>): Promise<Account | undefined>;
@@ -1116,6 +1117,17 @@ export class DatabaseStorage implements IBankingStorage {
       .limit(1);
 
     return result[0];
+  }
+
+  async getHouseholdAccounts(householdId: number): Promise<Account[]> {
+    if (isSQLServer()) {
+      const { getMssqlPool } = await import('./dbConnection');
+      const { getHouseholdAccountsSqlServer } = await import('./storage/sqlServerAccount');
+      const pool = await getMssqlPool();
+      return await getHouseholdAccountsSqlServer(pool, householdId);
+    }
+
+    return Promise.resolve([]);
   }
 
   async getCustomerAccounts(customerId: number): Promise<Account[]> {

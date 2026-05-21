@@ -16,6 +16,13 @@ type Address = typeof address.$inferSelect;
  * @returns ContactDTO with type='address'
  */
 export function mapAddressToContactDTO(dbAddress: Address, purpose?: string | null): ContactDTO {
+
+  
+  const addressLine2 =
+    dbAddress.addressLine2 && dbAddress.addressLine2.trim() !== ''
+      ? dbAddress.addressLine2
+      : null;
+
   // Combine address fields into a single value string
   const addressParts = [
     dbAddress.addressLine1,

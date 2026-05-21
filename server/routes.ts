@@ -262,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customerId: person.customerId, // Keep numeric customerId for backward compatibility
         name: person.customerType === 'business' || person.customerType === 'trust' 
           ? (person.businessName || 'Unknown Business')
-          : `${person.firstName || ''} ${person.lastName || ''}`.trim() || 'Unknown Customer',
+          : person.fullName || `${person.firstName || ''} ${person.lastName || ''}`.trim() || 'Unknown Customer',
         preferredName: person.preferredName,
         status: person.customerStatus || 'active',
         customerType: person.customerType || 'individual',
@@ -1113,14 +1113,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get all household members
-      const members = await storage.getHouseholdMembers(householdId);
+      // const members = await storage.getHouseholdMembers(householdId);
       
       // Fetch accounts for all members
-      const allAccounts = [];
-      for (const member of members) {
-        const accounts = await storage.getCustomerAccounts(member.customerId);
-        allAccounts.push(...accounts);
-      }
+      const allAccounts = await storage.getHouseholdAccounts(householdId);
 
       res.json(allAccounts);
     } catch (error) {
