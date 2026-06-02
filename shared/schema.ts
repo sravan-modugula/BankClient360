@@ -578,6 +578,7 @@ export const note = pgTable("note", {
   legalHold: boolean("legal_hold").default(false), // Prevent deletion
   retentionYears: bigint("retention_years", { mode: "number" }), // null = indefinite
   isPinned: boolean("is_pinned").default(false), // Pin important notes to top
+  cifNumber: varchar("cif_number", { length: 20 }), // Denormalized Jack Henry CIF for Operations queries
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 }, (table) => ({
@@ -587,6 +588,7 @@ export const note = pgTable("note", {
   categoryIdx: index("idx_note_category").on(table.categoryId),
   importanceIdx: index("idx_note_importance").on(table.importance),
   pinnedIdx: index("idx_note_pinned").on(table.isPinned, table.createdAt),
+  cifNumberIdx: index("idx_note_cif_number").on(table.cifNumber),
   // Enforce exactly one target: either customer_id or account_id must be set
   checkOneTarget: sql`CONSTRAINT check_note_one_target CHECK (
     (customer_id IS NOT NULL AND account_id IS NULL) OR

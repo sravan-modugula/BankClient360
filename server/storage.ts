@@ -3526,6 +3526,38 @@ export class DatabaseStorage implements IBankingStorage {
     }));
   }
 
+  /**
+   * Resolve the Jack Henry CIF number for a note's target (PostgreSQL).
+   * Customer-scoped: direct lookup. Account-scoped: via primary owner.
+   * Returns null when no CIF can be determined; callers must tolerate NULL.
+   */
+  private async resolveCifNumberPg(
+    customerId: number | null | undefined,
+    accountId: number | null | undefined
+  ): Promise<string | null> {
+    if (customerId) {
+      const [row] = await db
+        .select({ cif: customer.jackHenryCifNumber })
+        .from(customer)
+        .where(eq(customer.customerId, customerId))
+        .limit(1);
+      return row?.cif ?? null;
+    }
+    if (accountId) {
+      const [row] = await db
+        .select({ cif: customer.jackHenryCifNumber })
+        .from(accountOwnership)
+        .innerJoin(customer, eq(customer.customerId, accountOwnership.customerId))
+        .where(and(
+          eq(accountOwnership.accountId, accountId),
+          eq(accountOwnership.isPrimaryOwner, true)
+        ))
+        .limit(1);
+      return row?.cif ?? null;
+    }
+    return null;
+  }
+
   async getNote(noteId: number): Promise<NoteWithCurrentVersion | undefined> {
     // SQL Server implementation
     if (isSQLServer()) {
@@ -3597,6 +3629,8 @@ export class DatabaseStorage implements IBankingStorage {
     const authorEmployee = await this.getEmployee(authorEmployeeId);
     const authorName = authorEmployee ? `${authorEmployee.firstName} ${authorEmployee.lastName}` : null;
 
+    const cifNumber = await this.resolveCifNumberPg(noteData.customerId, noteData.accountId);
+
     const [newNote] = await db.insert(note).values({
       customerId: noteData.customerId || null,
       accountId: noteData.accountId || null,
@@ -3606,7 +3640,8 @@ export class DatabaseStorage implements IBankingStorage {
       visibility: noteData.visibility || 'internal',
       legalHold: noteData.legalHold || false,
       retentionYears: noteData.retentionYears || null,
-      isPinned: noteData.isPinned || false
+      isPinned: noteData.isPinned || false,
+      cifNumber
     }).returning();
 
     const [newVersion] = await db.insert(noteVersion).values({
@@ -3674,6 +3709,21 @@ export class DatabaseStorage implements IBankingStorage {
       return undefined;
     }
 
+    // Read raw row for cif_number + ids (NoteWithCurrentVersion shape omits cifNumber)
+    const [existingNoteRow] = await db
+      .select({
+        customerId: note.customerId,
+        accountId: note.accountId,
+        cifNumber: note.cifNumber
+      })
+      .from(note)
+      .where(eq(note.noteId, noteId))
+      .limit(1);
+
+    const cifBackfill = existingNoteRow && !existingNoteRow.cifNumber
+      ? await this.resolveCifNumberPg(existingNoteRow.customerId, existingNoteRow.accountId)
+      : null;
+
     const authorEmployee = await this.getEmployee(authorEmployeeId);
     const authorName = authorEmployee ? `${authorEmployee.firstName} ${authorEmployee.lastName}` : null;
 
@@ -3696,9 +3746,10 @@ export class DatabaseStorage implements IBankingStorage {
       isCurrent: true
     }).returning();
 
-    if (updateData.categoryId !== undefined || updateData.importance !== undefined || 
+    if (updateData.categoryId !== undefined || updateData.importance !== undefined ||
         updateData.visibility !== undefined || updateData.legalHold !== undefined ||
-        updateData.retentionYears !== undefined || updateData.isPinned !== undefined) {
+        updateData.retentionYears !== undefined || updateData.isPinned !== undefined ||
+        cifBackfill) {
       const updateFields: any = {};
       if (updateData.categoryId !== undefined) updateFields.categoryId = updateData.categoryId;
       if (updateData.importance !== undefined) updateFields.importance = updateData.importance;
@@ -3706,6 +3757,7 @@ export class DatabaseStorage implements IBankingStorage {
       if (updateData.legalHold !== undefined) updateFields.legalHold = updateData.legalHold;
       if (updateData.retentionYears !== undefined) updateFields.retentionYears = updateData.retentionYears;
       if (updateData.isPinned !== undefined) updateFields.isPinned = updateData.isPinned;
+      if (cifBackfill) updateFields.cifNumber = cifBackfill;
       updateFields.updatedAt = new Date();
 
       await db.update(note)

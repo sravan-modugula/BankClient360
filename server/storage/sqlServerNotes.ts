@@ -10,6 +10,39 @@ import logger from '../services/logger';
 const fileLogger = logger.child({ module: 'sqlserver-notes' });
 
 /**
+ * Resolve the Jack Henry CIF number for a note's target.
+ * Customer-scoped: direct lookup on customer.
+ * Account-scoped: resolve via account_ownership.is_primary_owner = 1.
+ * Returns null when no CIF can be determined; callers must tolerate NULL.
+ */
+async function resolveCifNumberSqlServer(
+  transaction: sql.Transaction,
+  customerId: number | null | undefined,
+  accountId: number | null | undefined
+): Promise<string | null> {
+  if (customerId) {
+    const req = new sql.Request(transaction);
+    req.input('customerId', sql.BigInt, customerId);
+    const r = await req.query(
+      `SELECT jack_henry_cif_number FROM customer WHERE customer_id = @customerId`
+    );
+    return r.recordset[0]?.jack_henry_cif_number ?? null;
+  }
+  if (accountId) {
+    const req = new sql.Request(transaction);
+    req.input('accountId', sql.BigInt, accountId);
+    const r = await req.query(`
+      SELECT TOP 1 c.jack_henry_cif_number
+      FROM account_ownership ao
+      INNER JOIN customer c ON c.customer_id = ao.customer_id
+      WHERE ao.account_id = @accountId AND ao.is_primary_owner = 1
+    `);
+    return r.recordset[0]?.jack_henry_cif_number ?? null;
+  }
+  return null;
+}
+
+/**
  * Get notes for a customer or account with current version
  */
 export async function getNotesSqlServer(
@@ -141,6 +174,13 @@ export async function createNoteSqlServer(
       ? `${authorResult.recordset[0].first_name} ${authorResult.recordset[0].last_name}`
       : null;
 
+    // Resolve denormalized CIF for Operations queries (NULL-tolerant)
+    const cifNumber = await resolveCifNumberSqlServer(
+      transaction,
+      noteData.customerId,
+      noteData.accountId
+    );
+
     // Create note
     const noteRequest = new sql.Request(transaction);
     noteRequest.input('customerId', sql.BigInt, noteData.customerId || null);
@@ -152,16 +192,17 @@ export async function createNoteSqlServer(
     noteRequest.input('legalHold', sql.Bit, noteData.legalHold ? 1 : 0);
     noteRequest.input('retentionYears', sql.BigInt, noteData.retentionYears || null);
     noteRequest.input('isPinned', sql.Bit, noteData.isPinned ? 1 : 0);
+    noteRequest.input('cifNumber', sql.NVarChar, cifNumber);
 
     const noteResult = await noteRequest.query(`
       INSERT INTO note (
         customer_id, account_id, target_type, category_id,
-        importance, visibility, legal_hold, retention_years, is_pinned
+        importance, visibility, legal_hold, retention_years, is_pinned, cif_number
       )
       OUTPUT INSERTED.*
       VALUES (
         @customerId, @accountId, @targetType, @categoryId,
-        @importance, @visibility, @legalHold, @retentionYears, @isPinned
+        @importance, @visibility, @legalHold, @retentionYears, @isPinned, @cifNumber
       )
     `);
 
@@ -270,17 +311,20 @@ export async function updateNoteSqlServer(
   try {
     await transaction.begin();
 
-    // Check if note exists
+    // Check if note exists; pull target ids + existing CIF for forward-fill
     const checkRequest = new sql.Request(transaction);
     checkRequest.input('noteId', sql.BigInt, noteId);
     const checkResult = await checkRequest.query(`
-      SELECT note_id FROM note WHERE note_id = @noteId
+      SELECT note_id, customer_id, account_id, cif_number
+      FROM note WHERE note_id = @noteId
     `);
 
     if (checkResult.recordset.length === 0) {
       await transaction.rollback();
       return undefined;
     }
+
+    const existingNoteRow = checkResult.recordset[0];
 
     // Get author name
     const authorRequest = new sql.Request(transaction);
@@ -337,10 +381,21 @@ export async function updateNoteSqlServer(
 
     const newVersion = newVersionResult.recordset[0];
 
-    // Update note metadata if provided
+    // Forward-fill cif_number when the existing row has none (legacy data)
+    let cifBackfill: string | null = null;
+    if (!existingNoteRow.cif_number) {
+      cifBackfill = await resolveCifNumberSqlServer(
+        transaction,
+        existingNoteRow.customer_id,
+        existingNoteRow.account_id
+      );
+    }
+
+    // Update note metadata if provided (or if we need to backfill cif_number)
     if (updateData.categoryId !== undefined || updateData.importance !== undefined ||
         updateData.visibility !== undefined || updateData.legalHold !== undefined ||
-        updateData.retentionYears !== undefined || updateData.isPinned !== undefined) {
+        updateData.retentionYears !== undefined || updateData.isPinned !== undefined ||
+        cifBackfill) {
 
       const updateFields: string[] = [];
       const updateRequest = new sql.Request(transaction);
@@ -369,6 +424,10 @@ export async function updateNoteSqlServer(
       if (updateData.isPinned !== undefined) {
         updateRequest.input('isPinned', sql.Bit, updateData.isPinned ? 1 : 0);
         updateFields.push('is_pinned = @isPinned');
+      }
+      if (cifBackfill) {
+        updateRequest.input('cifNumber', sql.NVarChar, cifBackfill);
+        updateFields.push('cif_number = @cifNumber');
       }
 
       updateFields.push('updated_at = GETDATE()');
