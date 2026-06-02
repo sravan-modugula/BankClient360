@@ -399,6 +399,7 @@ export const financialTransaction = pgTable("financial_transaction", {
   sourceSystem: varchar("source_system", { length: 32 }).notNull().default("jack_henry"),
   sourceTransactionId: varchar("source_transaction_id", { length: 128 }),
   rawPayload: jsonb("raw_payload"),
+  accountNumber: varchar("account_number", { length: 50 }), // Denormalized from account for Operations queries
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 }, (table) => ({
@@ -415,6 +416,8 @@ export const financialTransaction = pgTable("financial_transaction", {
   // Category indexes
   merchantCategoryIdx: index("idx_transaction_merchant_category").on(table.merchantCategoryCode),
   categoryIdx: index("idx_transaction_category").on(table.categoryId),
+  // Denormalized account number index for Operations
+  accountNumberIdx: index("idx_transaction_account_number").on(table.accountNumber),
   // Deduplication - unique constraint on source system and transaction ID per account
   uniqueSourceTxn: unique("unq_account_source_txn").on(table.accountId, table.sourceSystem, table.sourceTransactionId)
 }));
