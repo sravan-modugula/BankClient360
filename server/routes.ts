@@ -42,6 +42,7 @@ import { createAuthRoutes, createSamlRoutes } from "./routes/auth";
 import logger from "./services/logger";
 import { AuditEventType, AuditCategory, AuditSeverity, EVENT_CLASSIFICATION } from "@shared/auditEvents";
 import type { ClientAuditEvent } from "@shared/auditEvents";
+import { attachStreamlitProxy } from "./proxy";
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
@@ -3127,5 +3128,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", (_req, res) => res.status(404).json({ error: "API endpoint not found" }));
 
   const httpServer = createServer(app);
+
+  attachStreamlitProxy({
+    app: app, 
+    server: httpServer,
+    route: "/streamlit",
+    targetHost: "https://pyt-tstapp01.fmb.com",
+    targetPort: 443
+  })
+
   return httpServer;
 }

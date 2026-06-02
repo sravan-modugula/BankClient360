@@ -85,8 +85,15 @@ export default function Navbar({ drawerOpen, handleDrawerClose }: NavbarProps) {
   }
 
   // Find the most specific (longest) subroute that matches the current path.
+  // Find the most specific (longest) subroute that matches the current path.
   function getActiveRoute(project: Project): string | null {
     const pathname = location.pathname;
+    const hasVisibleSubroutes = project.subroutes.some(sr => !sr.hidden);
+
+    if (!hasVisibleSubroutes) {
+      return (pathname === project.route || pathname.startsWith(project.route + "/")) ? project.route : null;
+    }
+
     const matches = project.subroutes
       .map(sr => getFullRoute(project, sr))
       .filter(fr => pathname === fr || pathname.startsWith(fr + "/"))
@@ -196,17 +203,20 @@ export default function Navbar({ drawerOpen, handleDrawerClose }: NavbarProps) {
             const activeRoute = getActiveRoute(project);
             const isParentActive = !!activeRoute;
 
+            const hasSubroutes = project.subroutes.some(sr => !sr.hidden);
 
             return (
               <React.Fragment key={project.shorthand}>
                 {/* Project header row */}
                 <ListItemButton
-                  onClick={() => toggleExpanded(project.shorthand)}
+                  onClick={() => {
+                    hasSubroutes ? toggleExpanded(project.shorthand) : navigate(project.route)
+                  }}
                   sx={{ gap: 0.75 }}
                 >
                   {isOpen
-                    ? <ExpandMoreIcon fontSize="small" sx={{ color: isParentActive ? C.textPrimary : C.textSubdued, flexShrink: 0 }} />
-                    : <ChevronRightIcon fontSize="small" sx={{ color: isParentActive ? C.textPrimary : C.textSubdued, flexShrink: 0 }} />
+                    ? <ExpandMoreIcon fontSize="small" sx={{ color: isParentActive ? C.textPrimary : C.textSubdued, flexShrink: 0, 'visibility': hasSubroutes ? 'visible' : 'hidden' }} />
+                    : <ChevronRightIcon fontSize="small" sx={{ color: isParentActive ? C.textPrimary : C.textSubdued, flexShrink: 0, 'visibility': hasSubroutes ? 'visible' : 'hidden' }} />
                   }
                   {<project.icon sx={{ color: isParentActive ? C.textPrimary : C.textSubdued }} />}
                   <ListItemText

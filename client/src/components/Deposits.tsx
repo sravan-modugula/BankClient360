@@ -57,20 +57,25 @@ interface DepositSummary {
 }
 
 interface DepositTrendPoint {
-  month: string;
-  date: string;
+  // month: string;
+  // date: string;
+  xAxis: string; 
   balance: number;
   checking: number;
   savings: number;
   cd: number;
-  weightedAverage: number;
-  weightedAvgChecking: number;
-  weightedAvgSavings: number;
-  weightedAvgCD: number;
+  weightedAverage?: number;
+  weightedAvgChecking?: number;
+  weightedAvgSavings?: number;
+  weightedAvgCD?: number;
 }
 
 interface DepositTrendResponse {
-  trendData: DepositTrendPoint[];
+  trendData: {
+    month: DepositTrendPoint[],
+    quarter: DepositTrendPoint[],
+    year: DepositTrendPoint[],
+  }
   weightedAverageBalance: number;
 }
 
@@ -159,15 +164,15 @@ export default function Deposits({ customerId }: DepositsProps) {
   const getTrendData = () => {
     if (!trend?.trendData) return [];
 
-    const data = [...trend.trendData];
+    const data = trend?.trendData;
     switch (timeRange) {
       case 'monthly':
-        return data.slice(-1);
+        return data?.month;
       case 'quarterly':
-        return data.slice(-3);
+        return data?.quarter;
       case 'ytd':
       default:
-        return data;
+        return data?.year;
     }
   };
 
@@ -217,17 +222,19 @@ export default function Deposits({ customerId }: DepositsProps) {
   };
 
   const calculateGrowth = () => {
-    const trendData = trend?.trendData;
+    console.log("Calculating Growth");
+    const trendData = getTrendData();
+    console.log(trendData);
     if (!trendData || trendData.length < 2) return 0;
-    const current = trendData[trendData.length - 1].balance;
-    const previous = trendData[trendData.length - 2].balance;
+    const start = trendData.at(0)?.balance;
+    const end = trendData.at(-1)?.balance;
 
     // Guard against division by zero
-    if (previous === 0) {
-      return current > 0 ? 100 : 0;
+    if (!end || end === 0 || !start || start === 0) {
+      return 0;
     }
 
-    return ((current - previous) / previous) * 100;
+    return ((end - start) / start) * 100;
   };
 
   const growth = calculateGrowth();
@@ -341,7 +348,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.3)} />
                     <XAxis 
-                      dataKey="month" 
+                      dataKey="xAxis" 
                       tick={{ fontSize: 10 }}
                       stroke={theme.palette.text.secondary}
                     />
@@ -351,13 +358,13 @@ export default function Deposits({ customerId }: DepositsProps) {
                       stroke={theme.palette.text.secondary}
                       tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                     />
-                    <YAxis 
+                    {/* <YAxis 
                       yAxisId="right"
                       orientation="right"
                       tick={{ fontSize: 10 }}
                       stroke={theme.palette.text.secondary}
                       tickFormatter={(value) => `${value.toFixed(1)}%`}
-                    />
+                    />*/}
                     <Tooltip 
                       formatter={(value: number, name: string) => {
                         if (name === 'balance') {
@@ -376,7 +383,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                       wrapperStyle={{ fontSize: '9px' }}
                       formatter={(value) => {
                         if (value === 'balance') return 'Balance';
-                        if (value === 'weightedAverage') return 'Overall %';
+                        // if (value === 'weightedAverage') return 'Overall %';
                         return value;
                       }}
                     />
@@ -389,7 +396,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                       fillOpacity={1}
                       fill="url(#colorBalance)" 
                     />
-                    <Line 
+                    {/* <Line 
                       yAxisId="right"
                       type="monotone" 
                       dataKey="weightedAverage"
@@ -397,7 +404,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                       stroke="#00796b"
                       strokeWidth={2}
                       dot={false}
-                    />
+                    />*/}
                   </ComposedChart>
                 </ResponsiveContainer>
               </Box>
@@ -418,19 +425,21 @@ export default function Deposits({ customerId }: DepositsProps) {
                   }
                 }}
               >
-                <ToggleButton value="monthly" data-testid="button-monthly">Monthly</ToggleButton>
-                <ToggleButton value="quarterly" data-testid="button-quarterly">Quarterly</ToggleButton>
+                <ToggleButton value="monthly" data-testid="button-monthly">Month</ToggleButton>
+                <ToggleButton value="quarterly" data-testid="button-quarterly">Quarter</ToggleButton>
                 <ToggleButton value="ytd" data-testid="button-ytd">YTD</ToggleButton>
               </ToggleButtonGroup>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
-                {growth >= 0 ? (
+                {growth > 0 && (
                   <ArrowUpward fontSize="small" color="primary" />
-                ) : (
-                  <ArrowDownward fontSize="small" color="primary" />
                 )}
-                <Typography variant="body2" color="primary.main">
-                  {growth >= 0 ? '+' : ''}{growth.toFixed(1)}% MoM
+                {growth < 0 && (
+                  <ArrowDownward fontSize="small" color="error" />
+                )}
+                <Typography variant="body2" color={ growth > 0 ? "primary.main" : growth === 0 ? "textPrimary" : "error" }>
+                  {/* Note: toFixed already adds a negative sign in front of the number */}
+                  {growth > 0 ? '+' : ''}{growth === 0 ? "No Change" : `${growth.toFixed(1)}%`}
                 </Typography>
               </Box>
             </CardContent>

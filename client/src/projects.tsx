@@ -1,6 +1,7 @@
 import EmojiObjectsIcon from '@mui/icons-material/EmojiObjects';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import PeopleIcon from '@mui/icons-material/People';
 
 interface IconProps {
   sx: any;
@@ -10,6 +11,7 @@ export interface ProjectSubroute {
   name: string;
   shorthand?: string;
   route: string;
+  hidden: boolean;
 }
 
 export interface Project {
@@ -34,9 +36,27 @@ export const PROJECTS: Project[] = [
       />
     ),
     subroutes: [
-      { name: "Client",        route: "/client"  },
-      { name: "Household",  route: "/household"  },
-      { name: "Accounts",  route: "/accounts"    },
+      { name: "Client",    route: "/client",    hidden: false},
+      { name: "Household", route: "/household", hidden: false  },
+      { name: "Accounts",  route: "/accounts" , hidden: false   },
     ],
   },
+  // only include this in dev and test environment for now
+  ...((
+    window.location.href.includes("dev") || 
+    window.location.href.includes("test") ||
+    window.location.href.includes("localhost")
+  ) ? [{ 
+    name: "Relationship Based Review", 
+    shorthand: "RBR",
+    route: "/rbr",
+    disableRouting: false, 
+    icon: ({ sx } : any) => (
+        <PeopleIcon 
+        fontSize="small" 
+        sx={{ color: 'text.secondary', flexShrink: 0, ...sx }} 
+      />
+    ), 
+    subroutes: []
+  }] : [])
 ];

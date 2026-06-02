@@ -24,6 +24,7 @@ import Navbar from "./components/navbar/Navbar";
 import { drawerWidth } from './constants';
 import { DrawerHeader } from "./components/navbar/Navbar";
 import { styled } from '@mui/material/styles';
+import RBRShell from "./components/RBRShell";
 
 import type { ThemeOptions } from "@mui/material/styles";
 
@@ -168,6 +169,7 @@ function Router({ drawerOpen }: RouterProps) {
           <Route path="/ciq/:tabView" component={CustomerDashboard} />
           <Route path="/admin/users" component={UserManagement} />
           <Route path="/account/:accountId">{(params) => <AccountDetailOption2 accountId={params.accountId} />}</Route>
+          <Route path="/rbr" component={RBRShell} />
           {/*
             <Route path="/household/customer/:customerId" component={HouseholdPage} />
             <Route path="/household/:id" component={HouseholdPage} />

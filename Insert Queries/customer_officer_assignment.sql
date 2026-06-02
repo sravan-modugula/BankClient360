@@ -1,0 +1,32 @@
+INSERT INTO ClientIQPreProd.dbo.customer_officer_assignment
+(
+    customer_id,
+    officer_code,
+    relationship_type
+)
+SELECT DISTINCT
+    c.customer_id,
+    v.officer_code,
+    v.relationship_type
+FROM TheSpot.dbo.CUST_VIEW_CURR cvc
+JOIN ClientIQPreProd.dbo.customer c
+    ON c.jack_henry_cif_number = cvc.CIF_NBR
+CROSS APPLY (
+    VALUES
+        (cvc.BRANCH_OFFCR_CD, 'BRANCH_OFFICER'),
+        (
+            CASE
+                WHEN cvc.CUST_SALES_ASSOC_CD = cvc.BRANCH_OFFCR_CD
+                    THEN NULL
+                ELSE cvc.CUST_SALES_ASSOC_CD
+            END,
+            'SALES_ASSOC'
+        )
+) v(officer_code, relationship_type)
+WHERE v.officer_code IS NOT NULL
+  AND NOT EXISTS (
+        SELECT 1
+        FROM ClientIQPreProd.dbo.customer_officer_assignment coa
+        WHERE coa.customer_id = c.customer_id
+          AND coa.officer_code = v.officer_code
+  );

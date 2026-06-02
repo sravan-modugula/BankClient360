@@ -521,7 +521,7 @@ export default function CustomerDashboard() {
         <CssBaseline />
         <Box sx={{
           minHeight: '100%',
-          bgcolor: 'background.default',
+          bgcolor: '#f0ece4',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
@@ -544,7 +544,7 @@ export default function CustomerDashboard() {
           <CssBaseline />
           <Box sx={{
             minHeight: '100%',
-            bgcolor: 'background.default',
+            bgcolor: '#f0ece4',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
@@ -560,7 +560,7 @@ export default function CustomerDashboard() {
         <CssBaseline />
         <Box sx={{
           minHeight: '100%',
-          bgcolor: 'background.default',
+          bgcolor: '#f0ece4',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
@@ -603,7 +603,7 @@ export default function CustomerDashboard() {
         <CssBaseline />
         <Box sx={{
           minHeight: '100%',
-          bgcolor: 'background.default',
+          bgcolor: '#f0ece4',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'

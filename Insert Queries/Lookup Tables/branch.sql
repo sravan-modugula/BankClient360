@@ -1,0 +1,102 @@
+-- Create and populate #branch_data (staging table)
+
+IF OBJECT_ID('tempdb..#branch_data') IS NOT NULL DROP TABLE #branch_data;
+
+CREATE TABLE #branch_data (
+    branch_code INT,
+    branch_name NVARCHAR(200),
+    address_line1 NVARCHAR(200),
+    city NVARCHAR(100),
+    state NCHAR(2),
+    postal_code NVARCHAR(20)
+);
+
+INSERT INTO #branch_data (branch_code, branch_name, address_line1, city, state, postal_code) VALUES
+(1 , N'Main Office',                      N'302 Pine Ave',                 N'Long Beach',           N'CA', N'90802-2326'),
+(2 , N'East Long Beach Office',           N'3140 E Anaheim St',            N'Long Beach',           N'CA', N'90804-3817'),
+(3 , N'Long Beach Blvd Office',           N'1401 Long Beach Blvd',         N'Long Beach',           N'CA', N'90813-1921'),
+(4 , N'Garden Grove Office',              N'12966 Euclid Street',          N'Garden Grove',         N'CA', N'92840-5200'),
+(6 , N'Lakewood Blvd Office',             N'4909 Lakewood Blvd',           N'Lakewood',             N'CA', N'90712-2405'),
+(7 , N'Bixby Knolls Office',              N'4545 California Ave',          N'Long Beach',           N'CA', N'90807-1507'),
+(8 , N'Belmont Shore Office',             N'4827 E Second St',             N'Long Beach',           N'CA', N'90803-5313'),
+(9 , N'Los Altos Office',                 N'2302 Bellflower Blvd',         N'Long Beach',           N'CA', N'90815-2019'),
+(10, N'Memorial Office',                  N'2801 Atlantic Ave',            N'Long Beach',           N'CA', N'90806-1701'),
+(11, N'Lake Forest Office',               N'23772 Rockfield Blvd',         N'Lake Forest',          N'CA', N'92630-2841'),
+(12, N'Orange Office',                    N'1220 E Katella Ave',           N'Orange',               N'CA', N'92867-5020'),
+(14, N'Fullerton Office',                 N'315 N Harbor Blvd',            N'Fullerton',            N'CA', N'92832-1937'),
+(15, N'Santa Ana Office',                 N'1750 E 17th St',               N'Santa Ana',            N'CA', N'92705-8600'),
+(16, N'San Juan Capistrano Office',       N'31873 Del Obispo St',          N'San Juan Capistrano',  N'CA', N'92675'),
+(17, N'Rossmoor Center Office',           N'12535 Seal Beach Blvd',        N'Seal Beach',           N'CA', N'90740-2746'),
+(18, N'Rolling Hills Office',             N'27525 Indian Peak Rd',         N'Rolling Hills Estates',N'CA', N'90274'),
+(19, N'Torrance Office',                  N'22400 Hawthorne Blvd',         N'Torrance',             N'CA', N'90505-2508'),
+(20, N'Huntington Beach Office',          N'7125 W Yorktown Ave',          N'Huntington Beach',     N'CA', N'92648'),
+(21, N'Laguna Hills Office',              N'24300 Paseo de Valencia',      N'Laguna Hills',         N'CA', N'92653-3115'),
+(22, N'Newport Beach Office',             N'4695 MacArthur Ct Ste 130',    N'Newport Beach',        N'CA', N'92660-8846'),
+(23, N'San Clemente Office',              N'621 N El Camino Real',         N'San Clemente',         N'CA', N'92672-4762'),
+(24, N'Tustin Office',                    N'2691 Park Ave',                N'Tustin',               N'CA', N'92782-2707'),
+(25, N'Downey Office',                    N'9001 Firestone Blvd',          N'Downey',               N'CA', N'90241-5317'),
+(26, N'Corona Del Mar Office',            N'2421 E Coast Hwy',             N'Corona Del Mar',       N'CA', N'92625-2002'),
+(27, N'Redondo Beach Office',             N'1333 S Pacific Coast Hwy',     N'Redondo Beach',        N'CA', N'90277-5005'),
+(28, N'Santa Barbara Office',             N'33 East Carrillo Street',      N'Santa Barbara',        N'CA', N'93101'),
+(29, N'Santa Ana - Main',                 N'1702 N Main Street',           N'Santa Ana',            N'CA', N'92706-2759'),
+(30, N'Laguna Beach Office',              N'401 Glenneyre St',             N'Laguna Beach',         N'CA', N'92651-2401'),
+(70, N'Religious Client Services',        N'302 Pine Ave',                 N'Long Beach',           N'CA', N'90802-2326'),
+(75, N'Business Banking Group',           N'4695 MacArthur Ct Ste 130',    N'Newport Beach',        N'CA', N'92660'),
+(76, N'Specialty Lending Group',          N'12535 Seal Beach Blvd',        N'Seal Beach',           N'CA', N'90740'),
+(77, N'Legal Client Services',            N'302 Pine Ave',                 N'Long Beach',           N'CA', NULL),
+(270,N'Residential Lending Dept',         N'12515 Seal Beach Blvd',        N'Seal Beach',           N'CA', N'90740-2712'),
+(271,N'SBA Lending Dept',                 N'12535 Seal Beach Blvd',        N'Seal Beach',           N'CA', N'90740-2746'),
+(272,N'Business Banking Group',           N'4695 MacArthur Ct Ste 130',    N'Newport Beach',        N'CA', N'92660'),
+(273,N'Government Guaranteed Lending',    N'12535 Seal Beach Blvd',        N'Seal Beach',           N'CA', NULL),
+(280,N'NRLL',                             N'302 Pine Ave',                 N'Long Beach',           N'CA', N'90802-2326'),
+(290,N'Real Estate Industries Group',     N'2411 E Coast Hwy Ste 300',     N'Corona Del Mar',       N'CA', N'92625-2027');
+
+-- Insert missing branch addresses and capture IDs
+
+DECLARE @BranchAddresses TABLE (
+    address_id   BIGINT,
+    address_line1 NVARCHAR(200),
+    city          NVARCHAR(100),
+    state         NCHAR(2),
+    postal_code   NVARCHAR(20)
+);
+
+MERGE dbo.address AS tgt
+USING (
+    SELECT DISTINCT
+        address_line1,
+        city,
+        state,
+        postal_code
+    FROM #branch_data
+) AS src
+ON  tgt.address_line1 = src.address_line1
+AND tgt.city = src.city
+AND tgt.state = src.state
+AND ISNULL(tgt.postal_code,'') = ISNULL(src.postal_code,'')
+AND tgt.address_type = 'Branch'
+WHEN NOT MATCHED THEN
+    INSERT (address_line1, address_line2, city, state, postal_code, address_type)
+    VALUES (src.address_line1, NULL, src.city, src.state, src.postal_code, 'Branch')
+OUTPUT
+    inserted.address_id,
+    inserted.address_line1,
+    inserted.city,
+    inserted.state,
+    inserted.postal_code
+INTO @BranchAddresses;
+
+-- Insert branches using resolved addresses
+
+INSERT INTO dbo.branch (branch_code, branch_name, address_id)
+SELECT
+    bd.branch_code,
+    bd.branch_name,
+    a.address_id
+FROM #branch_data bd
+JOIN dbo.address a
+  ON a.address_line1 = bd.address_line1
+ AND a.city = bd.city
+ AND a.state = bd.state
+ AND ISNULL(a.postal_code,'') = ISNULL(bd.postal_code,'')
+ AND a.address_type = 'Branch';

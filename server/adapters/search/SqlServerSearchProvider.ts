@@ -546,7 +546,7 @@ class SqlServerSearchProvider implements ISearchProvider {
 
       union all
 
-      select top (@limit) 
+      select distinct top (@limit) 
         search.entity_type,
         search.entity_id,
         convert(varchar(100), account.account_number) as display_name,
