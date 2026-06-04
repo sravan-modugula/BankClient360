@@ -287,17 +287,18 @@ export interface IBankingStorage {
   prefixSearch(params: SmartSearchParams): Promise<UnifiedSearchResult>;
   getCustomerByGovernmentId(govId: string): Promise<Customer | undefined>;
 
-  // Transaction operations
+  // Transaction operations — keyed on account_number; callers translate
+  // accountId / customerId → account_number(s) upstream.
   getTransactions(params: {
-    accountId?: number;
-    customerId?: number;
+    accountNumber?: string;
+    accountNumbers?: string[];
     startDate?: Date;
     endDate?: Date;
     limit?: number;
     offset?: number;
   }): Promise<{ transactions: FinancialTransaction[]; totalCount: number }>;
-  getTransactionsByAccount(accountId: number, limit?: number, offset?: number): Promise<FinancialTransaction[]>;
-  getTransactionsByCustomer(customerId: number, limit?: number, offset?: number): Promise<FinancialTransaction[]>;
+  getTransactionsByAccount(accountNumber: string, limit?: number, offset?: number): Promise<FinancialTransaction[]>;
+  getTransactionsByCustomer(accountNumbers: string[], limit?: number, offset?: number): Promise<FinancialTransaction[]>;
   getTransactionCategories(): Promise<TransactionCategory[]>;
 
   // Dashboard Cards operations
@@ -1428,10 +1429,11 @@ export class DatabaseStorage implements IBankingStorage {
     }
 
     // PostgreSQL implementation — set-based ROW_NUMBER, TS carry-forward.
+    // Pivots on account_number because ft.account_id is no longer reliable.
     const monthCount = Math.max(1, Math.min(12, Math.floor(months)));
     const result = await db.execute(sql`
       WITH customer_accounts AS (
-        SELECT a.account_id, a.account_type, a.interest_rate, a.balance
+        SELECT a.account_number, a.account_type, a.interest_rate, a.balance
         FROM account a
         INNER JOIN account_ownership ao ON ao.account_id = a.account_id
         WHERE ao.customer_id = ${customerId}
@@ -1441,19 +1443,19 @@ export class DatabaseStorage implements IBankingStorage {
       ),
       monthly_endings AS (
         SELECT
-          ft.account_id,
+          ft.account_number,
           DATE_TRUNC('month', ft.transaction_date) AS month,
           ft.ledger_balance_after,
           ROW_NUMBER() OVER (
-            PARTITION BY ft.account_id, DATE_TRUNC('month', ft.transaction_date)
+            PARTITION BY ft.account_number, DATE_TRUNC('month', ft.transaction_date)
             ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
           ) AS rn
         FROM financial_transaction ft
-        WHERE ft.account_id IN (SELECT account_id FROM customer_accounts)
+        WHERE ft.account_number IN (SELECT account_number FROM customer_accounts)
           AND ft.transaction_date >= NOW() - (${monthCount}::text || ' months')::interval
       )
       SELECT
-        ca.account_id,
+        ca.account_number,
         ca.account_type,
         ca.interest_rate,
         ca.balance AS current_balance,
@@ -1461,8 +1463,8 @@ export class DatabaseStorage implements IBankingStorage {
         me.ledger_balance_after
       FROM customer_accounts ca
       LEFT JOIN monthly_endings me
-        ON me.account_id = ca.account_id AND me.rn = 1
-      ORDER BY ca.account_id, me.month
+        ON me.account_number = ca.account_number AND me.rn = 1
+      ORDER BY ca.account_number, me.month
     `);
 
     const bucketOf = (t: string | null | undefined): 'checking' | 'savings' | 'cd' | null => {
@@ -1494,8 +1496,8 @@ export class DatabaseStorage implements IBankingStorage {
     }
     const byAccount = new Map<string, AcctRow>();
     for (const row of (result as any).rows as any[]) {
-      const acctId = String(row.account_id);
-      let acct = byAccount.get(acctId);
+      const acctKey = String(row.account_number);
+      let acct = byAccount.get(acctKey);
       if (!acct) {
         const rawRate = parseFloat(row.interest_rate ?? '0') || 0;
         acct = {
@@ -1504,7 +1506,7 @@ export class DatabaseStorage implements IBankingStorage {
           currentBalance: parseFloat(row.current_balance ?? '0') || 0,
           byMonth: new Map(),
         };
-        byAccount.set(acctId, acct);
+        byAccount.set(acctKey, acct);
       }
       if (row.month) {
         const key = new Date(row.month).toISOString().substring(0, 7);
@@ -1567,30 +1569,47 @@ export class DatabaseStorage implements IBankingStorage {
       return await getDepositRecentTransactionsSqlServer(pool, customerId, limit);
     }
 
-    // PostgreSQL implementation
+    // PostgreSQL implementation — same two-step shape as the SQL Server path:
+    // resolve customer → deposit account_numbers, then pull recent transactions
+    // pivoted on ft.account_number (ft.account_id is no longer reliable).
     const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+
+    const accountsResult = await db.execute(sql`
+      SELECT a.account_number, a.account_type
+      FROM account a
+      INNER JOIN account_ownership ao ON ao.account_id = a.account_id
+      WHERE ao.customer_id = ${customerId}
+        AND LOWER(a.account_status) = 'active'
+        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
+        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+    `);
+
+    const accountTypeByNumber = new Map<string, string>();
+    for (const row of ((accountsResult as any).rows as any[])) {
+      if (row.account_number) accountTypeByNumber.set(row.account_number, row.account_type);
+    }
+
+    if (accountTypeByNumber.size === 0) return [];
+
+    const accountNumbers = Array.from(accountTypeByNumber.keys());
+
     const result = await db.execute(sql`
       SELECT
-        a.account_type,
+        ft.account_number,
         ft.transaction_date,
         ft.transaction_code,
         ft.description,
         ft.amount,
         ft.ledger_balance_after
       FROM financial_transaction ft
-      INNER JOIN account a ON a.account_id = ft.account_id
-      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
-      WHERE ao.customer_id = ${customerId}
-        AND LOWER(a.account_status) = 'active'
-        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
-        AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
+      WHERE ft.account_number IN (${sql.join(accountNumbers, sql`, `)})
         AND ft.transaction_date IS NOT NULL
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
       LIMIT ${cappedLimit}
     `);
 
     return ((result as any).rows as any[]).map(t => ({
-      accountType: t.account_type,
+      accountType: accountTypeByNumber.get(t.account_number) || 'unknown',
       date: t.transaction_date ? new Date(t.transaction_date).toISOString() : new Date().toISOString(),
       type: t.transaction_code || 'Transaction',
       description: t.description || 'Transaction',
@@ -3000,15 +3019,20 @@ export class DatabaseStorage implements IBankingStorage {
   }
 
   // Transaction operations
+  //
+  // All transaction reads are keyed on `financial_transaction.account_number` rather
+  // than `account_id`, because the upstream ETL no longer guarantees `account_id` is
+  // populated. Callers resolve `accountId` / `customerId` → `accountNumber`(s) before
+  // calling these methods.
   async getTransactions(params: {
-    accountId?: number;
-    customerId?: number;
+    accountNumber?: string;
+    accountNumbers?: string[];
     startDate?: Date;
     endDate?: Date;
     limit?: number;
     offset?: number;
   }): Promise<{ transactions: FinancialTransaction[]; totalCount: number }> {
-    const { accountId, customerId, startDate, endDate, limit = 100, offset = 0 } = params;
+    const { accountNumber, accountNumbers, startDate, endDate, limit = 100, offset = 0 } = params;
 
     // SQL Server implementation
     if (isSQLServer()) {
@@ -3023,17 +3047,15 @@ export class DatabaseStorage implements IBankingStorage {
     // PostgreSQL implementation
     const conditions = [];
 
-    if (accountId) {
-      conditions.push(eq(financialTransaction.accountId, accountId));
+    if (accountNumber) {
+      conditions.push(eq(financialTransaction.accountNumber, accountNumber));
     }
 
-    if (customerId) {
-      // Get all accounts for this person first
-      const personAccounts = await this.getCustomerAccounts(customerId);
-      const accountIds = personAccounts.map(acc => acc.accountId);
-      if (accountIds.length > 0) {
-        conditions.push(sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`);
+    if (accountNumbers) {
+      if (accountNumbers.length === 0) {
+        return { transactions: [], totalCount: 0 };
       }
+      conditions.push(sql`${financialTransaction.accountNumber} IN (${sql.join(accountNumbers, sql`, `)})`);
     }
 
     if (startDate) {
@@ -3066,20 +3088,20 @@ export class DatabaseStorage implements IBankingStorage {
     return { transactions, totalCount };
   }
 
-  async getTransactionsByAccount(accountId: number, limit: number = 100, offset: number = 0): Promise<FinancialTransaction[]> {
+  async getTransactionsByAccount(accountNumber: string, limit: number = 100, offset: number = 0): Promise<FinancialTransaction[]> {
     // SQL Server implementation
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
       const { getTransactionsByAccountSqlServer } = await import('./storage/sqlServerTransaction');
       const pool = await getMssqlPool();
-      return await getTransactionsByAccountSqlServer(pool, accountId, limit, offset);
+      return await getTransactionsByAccountSqlServer(pool, accountNumber, limit, offset);
     }
 
     // PostgreSQL implementation
     const result = await db
       .select()
       .from(financialTransaction)
-      .where(eq(financialTransaction.accountId, accountId))
+      .where(eq(financialTransaction.accountNumber, accountNumber))
       .orderBy(desc(financialTransaction.transactionDate))
       .limit(limit)
       .offset(offset);
@@ -3087,28 +3109,24 @@ export class DatabaseStorage implements IBankingStorage {
     return result;
   }
 
-  async getTransactionsByCustomer(customerId: number, limit: number = 100, offset: number = 0): Promise<FinancialTransaction[]> {
+  async getTransactionsByCustomer(accountNumbers: string[], limit: number = 100, offset: number = 0): Promise<FinancialTransaction[]> {
+    if (accountNumbers.length === 0) {
+      return [];
+    }
+
     // SQL Server implementation
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
       const { getTransactionsByCustomerSqlServer } = await import('./storage/sqlServerTransaction');
       const pool = await getMssqlPool();
-      return await getTransactionsByCustomerSqlServer(pool, customerId, limit, offset);
+      return await getTransactionsByCustomerSqlServer(pool, accountNumbers, limit, offset);
     }
 
     // PostgreSQL implementation
-    // Get all accounts for this person
-    const personAccounts = await this.getCustomerAccounts(customerId);
-    const accountIds = personAccounts.map(acc => acc.accountId);
-
-    if (accountIds.length === 0) {
-      return [];
-    }
-
     const result = await db
       .select()
       .from(financialTransaction)
-      .where(sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`)
+      .where(sql`${financialTransaction.accountNumber} IN (${sql.join(accountNumbers, sql`, `)})`)
       .orderBy(desc(financialTransaction.transactionDate))
       .limit(limit)
       .offset(offset);
@@ -3165,13 +3183,14 @@ export class DatabaseStorage implements IBankingStorage {
     cutoff.setHours(0, 0, 0, 0);
 
     const personAccounts = await this.getCustomerAccounts(customerId);
-    const accountIds = personAccounts.map(acc => acc.accountId);
+    const accountNumbers = personAccounts.map(acc => acc.accountNumber);
 
     const activity = createDefaultActivity();
 
-    if (accountIds.length > 0) {
+    if (accountNumbers.length > 0) {
       // LEFT JOIN transaction_category so transactions without a category row
       // (common on-prem) are still counted via transaction_type fallback.
+      // Filter on account_number — ft.account_id is no longer reliable.
       const activityResult = await db
         .select({
           groupCode: transactionCategory.groupCode,
@@ -3183,7 +3202,7 @@ export class DatabaseStorage implements IBankingStorage {
         .leftJoin(transactionCategory, eq(transactionCategory.categoryId, financialTransaction.categoryId))
         .where(
           and(
-            sql`${financialTransaction.accountId} IN (${sql.join(accountIds, sql`, `)})`,
+            sql`${financialTransaction.accountNumber} IN (${sql.join(accountNumbers, sql`, `)})`,
             sql`${financialTransaction.transactionDate} >= ${cutoff}`
           )
         )
@@ -3246,9 +3265,13 @@ export class DatabaseStorage implements IBankingStorage {
     }
 
     // PostgreSQL implementation
-    // Get person's accounts first to get account IDs
+    // Resolve the person's accounts. We need both ids (for the current-balance
+    // aggregates that hit `account` directly) and numbers (for historical
+    // aggregates against `financial_transaction`, since ft.account_id is no
+    // longer reliable).
     const personAccounts = await this.getCustomerAccounts(customerId);
     const accountIds = personAccounts.map(acc => acc.accountId);
+    const accountNumbers = personAccounts.map(acc => acc.accountNumber);
 
     if (accountIds.length === 0) {
       return {
@@ -3288,37 +3311,39 @@ export class DatabaseStorage implements IBankingStorage {
     const threeMonthsAgo = new Date();
     threeMonthsAgo.setDate(threeMonthsAgo.getDate() - 90);
 
-    // Get deposits total from 3 months ago using transaction history
+    // Get deposits total from 3 months ago using transaction history.
+    // Historical balances are scoped on ft.account_number then joined back to
+    // account by number — same reasoning as elsewhere.
     const depositResultQoQ = await db.execute(sql`
       WITH historical_balances AS (
-        SELECT DISTINCT ON (ft.account_id)
-          ft.account_id,
+        SELECT DISTINCT ON (ft.account_number)
+          ft.account_number,
           ft.ledger_balance_after as balance
         FROM financial_transaction ft
-        WHERE ft.account_id IN (${sql.join(accountIds, sql`, `)})
+        WHERE ft.account_number IN (${sql.join(accountNumbers, sql`, `)})
           AND ft.transaction_date <= ${threeMonthsAgo}
-        ORDER BY ft.account_id, ft.transaction_date DESC, ft.transaction_id DESC
+        ORDER BY ft.account_number, ft.transaction_date DESC, ft.transaction_id DESC
       )
       SELECT COALESCE(SUM(hb.balance), 0) as total
       FROM historical_balances hb
-      INNER JOIN account a ON a.account_id = hb.account_id
+      INNER JOIN account a ON a.account_number = hb.account_number
       WHERE a.account_type IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd')
     `);
 
     // Get loans total from 3 months ago using transaction history
     const loanResultQoQ = await db.execute(sql`
       WITH historical_balances AS (
-        SELECT DISTINCT ON (ft.account_id)
-          ft.account_id,
+        SELECT DISTINCT ON (ft.account_number)
+          ft.account_number,
           ft.ledger_balance_after as balance
         FROM financial_transaction ft
-        WHERE ft.account_id IN (${sql.join(accountIds, sql`, `)})
+        WHERE ft.account_number IN (${sql.join(accountNumbers, sql`, `)})
           AND ft.transaction_date <= ${threeMonthsAgo}
-        ORDER BY ft.account_id, ft.transaction_date DESC, ft.transaction_id DESC
+        ORDER BY ft.account_number, ft.transaction_date DESC, ft.transaction_id DESC
       )
       SELECT COALESCE(SUM(ABS(hb.balance)), 0) as total
       FROM historical_balances hb
-      INNER JOIN account a ON a.account_id = hb.account_id
+      INNER JOIN account a ON a.account_number = hb.account_number
       WHERE a.account_type IN ('loan', 'credit_card', 'mortgage', 'line_of_credit')
     `);
 

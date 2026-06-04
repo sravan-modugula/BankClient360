@@ -379,7 +379,9 @@ export const transactionCategory = pgTable("transaction_category", {
 // Financial transactions table with core banking balances
 export const financialTransaction = pgTable("financial_transaction", {
   transactionId: bigserial("transaction_id", { mode: "number" }).primaryKey(),
-  accountId: bigint("account_id", { mode: "number" }).notNull().references(() => account.accountId),
+  // account_id is no longer guaranteed by the ETL — joins/filters now pivot on account_number.
+  // Kept nullable so legacy diagnostics and the dedup uniqueness key still work when present.
+  accountId: bigint("account_id", { mode: "number" }).references(() => account.accountId),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   transactionCode: varchar("transaction_code", { length: 30 }),
   transactionType: varchar("transaction_type", { length: 30 }),

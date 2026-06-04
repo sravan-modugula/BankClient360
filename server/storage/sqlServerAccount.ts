@@ -451,6 +451,7 @@ function mapTransactionFromDb(row: any): FinancialTransaction {
   return {
     transactionId: row.transaction_id,
     accountId: row.account_id,
+    accountNumber: row.account_number,
     amount: row.amount,
     transactionCode: row.transaction_code,
     transactionType: row.transaction_type,

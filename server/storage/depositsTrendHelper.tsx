@@ -3,14 +3,14 @@
 export type AccountType = 'checking' | 'savings' | 'cd';
 
 export interface AccountMetadata {
-  account_id: string;
+  account_number: string;
   account_type: AccountType | string;
   interest_rate: number;
   current_balance: number;
 }
 
 export interface AccountTransaction {
-  account_id: string;
+  account_number: string;
   ledger_balance_after: number | string;
   transaction_date: Date | string;
   transaction_amount?: number | string;
@@ -43,7 +43,7 @@ export interface AggregatedAccountData {
 type DateKey = string;
 
 interface NormalisedTxn {
-  account_id: string;
+  account_number: string;
   account_type: string;
   balance: number;
   amount: number;
@@ -68,20 +68,20 @@ export function aggregateAccountData(
   accountMetadata: AccountMetadata[],
   accountTransactions: AccountTransaction[],
 ): AggregatedAccountData {
-  // 1. Build lookup: account_id → normalised account_type
+  // 1. Build lookup: account_number → normalised account_type
   const accountTypeMap: Record<string, string> = {};
   for (const acct of accountMetadata) {
-    accountTypeMap[acct.account_id] = (acct.account_type ?? '').toLowerCase();
+    accountTypeMap[acct.account_number] = (acct.account_type ?? '').toLowerCase();
   }
 
   // 2. Normalise & sort transactions ascending by date string
   const txns: NormalisedTxn[] = accountTransactions
     .map((t) => ({
-      account_id:   t.account_id,
-      account_type: accountTypeMap[t.account_id] ?? 'unknown',
-      balance:      Number(t.ledger_balance_after),
-      amount:       Number(t.transaction_amount ?? 0),
-      date:         toDateKey(t.transaction_date),
+      account_number: t.account_number,
+      account_type:   accountTypeMap[t.account_number] ?? 'unknown',
+      balance:        Number(t.ledger_balance_after),
+      amount:         Number(t.transaction_amount ?? 0),
+      date:           toDateKey(t.transaction_date),
     }))
     .filter((t) => t.date !== '')
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -90,7 +90,7 @@ export function aggregateAccountData(
   const dailyLastBalance: Record<DateKey, Record<string, BalanceRecord>> = {};
   for (const t of txns) {
     if (!dailyLastBalance[t.date]) dailyLastBalance[t.date] = {};
-    dailyLastBalance[t.date][t.account_id] = { balance: t.balance, type: t.account_type };
+    dailyLastBalance[t.date][t.account_number] = { balance: t.balance, type: t.account_type };
   }
 
   const today = todayDateKey();
@@ -128,7 +128,7 @@ export function aggregateAccountData(
 // ─── Seed builder ─────────────────────────────────────────────────────────────
 
 /**
- * For a given windowStart, returns a seed map: account_id → BalanceRecord.
+ * For a given windowStart, returns a seed map: account_number → BalanceRecord.
  *
  * Per-account logic (txns must be sorted ascending by date key):
  *   1. Account has transactions BEFORE windowStart → use the last
@@ -145,11 +145,11 @@ function buildSeed(
 
   const byAccount: Record<string, NormalisedTxn[]> = {};
   for (const t of txns) {
-    if (!byAccount[t.account_id]) byAccount[t.account_id] = [];
-    byAccount[t.account_id].push(t);
+    if (!byAccount[t.account_number]) byAccount[t.account_number] = [];
+    byAccount[t.account_number].push(t);
   }
 
-  for (const [accountId, acctTxns] of Object.entries(byAccount)) {
+  for (const [accountNumber, acctTxns] of Object.entries(byAccount)) {
     const type = acctTxns[0].account_type;
 
     let lastBefore: NormalisedTxn | null = null;
@@ -159,10 +159,10 @@ function buildSeed(
     }
 
     if (lastBefore) {
-      seed[accountId] = { balance: lastBefore.balance, type };
+      seed[accountNumber] = { balance: lastBefore.balance, type };
     } else {
       const first = acctTxns[0];
-      seed[accountId] = { balance: first.balance - first.amount, type };
+      seed[accountNumber] = { balance: first.balance - first.amount, type };
     }
   }
 

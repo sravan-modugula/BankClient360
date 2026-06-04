@@ -111,6 +111,11 @@ export async function getClientEngagementSqlServer(
     // LEFT JOIN transaction_category so transactions without a category row
     // (or without category_id set) are still counted — on-prem datasets often
     // populate ft.transaction_type but leave the category linkage empty.
+    //
+    // ft → account is joined on account_number (the new pivot, since
+    // ft.account_id is no longer reliable). account → account_ownership
+    // is still keyed on account.account_id because ownership rows
+    // reference accounts by id, not number.
     const activityResult = await activityRequest.query(`
       SELECT
         tc.group_code,
@@ -118,7 +123,8 @@ export async function getClientEngagementSqlServer(
         ft.transaction_code,
         COUNT(*) as count
       FROM financial_transaction ft
-      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
+      INNER JOIN account a ON a.account_number = ft.account_number
+      INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       LEFT JOIN transaction_category tc ON tc.category_id = ft.category_id
       WHERE ao.customer_id = @customerId
         AND ft.transaction_date >= @cutoff
@@ -241,11 +247,14 @@ export async function getRelationshipSummarySqlServer(
     request3.input('customerId', sql.BigInt, customerId);
     request3.input('ninetyDaysAgo', sql.DateTime2, ninetyDaysAgo);
 
+    // ft → account joined on account_number (the new pivot, since ft.account_id
+    // is no longer reliable). account → account_ownership remains keyed on
+    // account.account_id because ownership rows reference accounts by id.
     const depositQ1Result = await request3.query(`
       SELECT COALESCE(AVG(ft.ledger_balance_after), 0) as avg_balance
       FROM financial_transaction ft
-      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
-      INNER JOIN account a ON a.account_id = ft.account_id
+      INNER JOIN account a ON a.account_number = ft.account_number
+      INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
         AND ft.transaction_date >= @ninetyDaysAgo
@@ -260,8 +269,8 @@ export async function getRelationshipSummarySqlServer(
     const loanQ1Result = await request4.query(`
       SELECT COALESCE(AVG(ABS(ft.ledger_balance_after)), 0) as avg_balance
       FROM financial_transaction ft
-      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
-      INNER JOIN account a ON a.account_id = ft.account_id
+      INNER JOIN account a ON a.account_number = ft.account_number
+      INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_type) IN ('loan', 'mortgage', 'heloc', 'auto_loan', 'personal_loan', 'business_loan')
         AND ft.transaction_date >= @ninetyDaysAgo
@@ -307,13 +316,17 @@ const DEPOSIT_ACCOUNT_TYPES_SQL = `
   'cd', 'time deposit', 'christmas club depo'
 `;
 
-// Subquery that resolves a customer's active deposit account ids via
+// Subquery that resolves a customer's active deposit accounts via
 // account_ownership. Parameterized through @customerId so the optimizer can
 // reuse plans across customers and avoid the 3 KB IN-list problem we hit at
 // 167 accounts. Narrows to primary ownerships so the deposit endpoints all
 // see the same set of accounts (mirrors getDepositSummarySqlServer).
+//
+// Emits both `account_id` (for legacy account joins where it's still safe)
+// and `account_number` (the new pivot for transaction queries, since
+// `financial_transaction.account_id` is unreliable post-ETL).
 const DEPOSIT_ACCOUNTS_SUBQUERY = `
-  SELECT a.account_id, a.account_type, a.interest_rate, a.balance
+  SELECT a.account_id, a.account_number, a.account_type, a.interest_rate, a.balance
   FROM account a
   INNER JOIN account_ownership ao ON ao.account_id = a.account_id
   WHERE ao.customer_id = @customerId
@@ -436,22 +449,22 @@ export async function getDepositTrendSqlServer(
             ${DEPOSIT_ACCOUNTS_SUBQUERY}
           )
           SELECT
-            ft.account_id,
+            ft.account_number,
             ft.ledger_balance_after,
             ft.amount transaction_amount,
             ft.transaction_date
           FROM financial_transaction ft
-          WHERE ft.account_id IN (SELECT account_id FROM customer_accounts)
+          WHERE ft.account_number IN (SELECT account_number FROM customer_accounts)
               AND ft.transaction_date >= DATEADD(month, -@months, GETDATE())
       `),
         request.query(`
           WITH customer_accounts as (
             ${DEPOSIT_ACCOUNTS_SUBQUERY}
-          ) 
-          select 
-            account_id,
-            account_type, 
-            interest_rate, 
+          )
+          select
+            account_number,
+            account_type,
+            interest_rate,
             balance current_balance
           from
             customer_accounts
@@ -470,9 +483,13 @@ export async function getDepositTrendSqlServer(
 }
 
 /**
- * Most recent N transactions across a customer's deposit accounts. Scoped
- * via account_ownership subquery (not a string-interpolated IN list) so the
- * optimizer can use IX_account_ownership_customer.
+ * Most recent N transactions across a customer's deposit accounts.
+ *
+ * Two-step query because `financial_transaction.account_id` is no longer
+ * reliable: (1) resolve the customer's active deposit accounts to their
+ * account_numbers via account_ownership, then (2) pull the most recent N
+ * transactions where `ft.account_number IN (…)`. Account type is joined
+ * back in TS via a Map<account_number, account_type>.
  */
 export async function getDepositRecentTransactionsSqlServer(
   pool: sql.ConnectionPool,
@@ -482,31 +499,51 @@ export async function getDepositRecentTransactionsSqlServer(
   try {
     const start = Date.now();
     const cappedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
-    const request = pool.request();
-    request.input('customerId', sql.BigInt, customerId);
-    request.input('limit', sql.Int, cappedLimit);
 
-    const result = await request.query(`
+    // Step 1 — customer's active deposit accounts.
+    const accountsRequest = pool.request();
+    accountsRequest.input('customerId', sql.BigInt, customerId);
+    const accountsResult = await accountsRequest.query(`
+      ${DEPOSIT_ACCOUNTS_SUBQUERY}
+    `);
+    const accountTypeByNumber = new Map<string, string>();
+    for (const row of accountsResult.recordset) {
+      if (row.account_number) {
+        accountTypeByNumber.set(row.account_number, row.account_type);
+      }
+    }
+
+    if (accountTypeByNumber.size === 0) {
+      fileLogger.info({ customerId, limit: cappedLimit, returned: 0, durationMs: Date.now() - start }, 'Deposit recent transactions — no deposit accounts');
+      return [];
+    }
+
+    // Step 2 — recent transactions for those account_numbers.
+    const txRequest = pool.request();
+    txRequest.input('limit', sql.Int, cappedLimit);
+    const placeholders: string[] = [];
+    Array.from(accountTypeByNumber.keys()).forEach((num, idx) => {
+      const name = `an${idx}`;
+      txRequest.input(name, sql.VarChar(50), num);
+      placeholders.push(`@${name}`);
+    });
+
+    const txResult = await txRequest.query(`
       SELECT TOP (@limit)
-        a.account_type,
+        ft.account_number,
         ft.transaction_date,
         ft.transaction_code,
         ft.description,
         ft.amount,
         ft.ledger_balance_after
       FROM financial_transaction ft
-      INNER JOIN account a ON a.account_id = ft.account_id
-      INNER JOIN account_ownership ao ON ao.account_id = ft.account_id
-      WHERE ao.customer_id = @customerId
-        AND LOWER(a.account_status) = 'active'
-        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
-        AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
+      WHERE ft.account_number IN (${placeholders.join(', ')})
         AND ft.transaction_date IS NOT NULL
       ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
     `);
 
-    const txns: DepositRecentTransaction[] = result.recordset.map(t => ({
-      accountType: t.account_type,
+    const txns: DepositRecentTransaction[] = txResult.recordset.map(t => ({
+      accountType: accountTypeByNumber.get(t.account_number) || 'unknown',
       date: t.transaction_date ? new Date(t.transaction_date).toISOString() : new Date().toISOString(),
       type: t.transaction_code || 'Transaction',
       description: t.description || 'Transaction',
@@ -554,8 +591,21 @@ export async function getAccountBalanceHistorySqlServer(
   accountId: number
 ): Promise<Array<{ month: string; date: string; balance: number }>> {
   try {
+    // Resolve accountId → accountNumber once; transaction queries pivot on
+    // account_number because ft.account_id is no longer reliable.
+    const acctLookup = pool.request();
+    acctLookup.input('accountId', sql.BigInt, accountId);
+    const acctLookupResult = await acctLookup.query(`
+      SELECT account_number, balance FROM account WHERE account_id = @accountId
+    `);
+    if (acctLookupResult.recordset.length === 0) {
+      return [];
+    }
+    const accountNumber: string = acctLookupResult.recordset[0].account_number;
+    const currentBal = Number(acctLookupResult.recordset[0].balance) || 0;
+
     const request = pool.request();
-    request.input('accountId', sql.BigInt, accountId);
+    request.input('accountNumber', sql.VarChar(50), accountNumber);
 
     const result = await request.query(`
       WITH month_series AS (
@@ -568,14 +618,14 @@ export async function getAccountBalanceHistorySqlServer(
       ),
       account_monthly_balances AS (
         SELECT DISTINCT
-          ft.account_id,
+          ft.account_number,
           DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date) as month,
           FIRST_VALUE(ft.ledger_balance_after) OVER (
-            PARTITION BY ft.account_id, DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date)
+            PARTITION BY ft.account_number, DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date)
             ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
           ) as ledger_balance_after
         FROM financial_transaction ft
-        WHERE ft.account_id = @accountId
+        WHERE ft.account_number = @accountNumber
           AND ft.transaction_date >= DATEADD(month, -12, GETDATE())
       ),
       filled_balances AS (
@@ -610,17 +660,9 @@ export async function getAccountBalanceHistorySqlServer(
       };
     });
 
-    // If all balances are 0, fall back to the account's current balance for the latest month
-    if (trendData.length > 0 && trendData.every(d => d.balance === 0)) {
-      const acctRequest = pool.request();
-      acctRequest.input('acctId', sql.BigInt, accountId);
-      const acctResult = await acctRequest.query(`
-        SELECT balance FROM account WHERE account_id = @acctId
-      `);
-      const currentBal = Number(acctResult.recordset?.[0]?.balance) || 0;
-      if (currentBal !== 0) {
-        trendData[trendData.length - 1].balance = currentBal;
-      }
+    // If all balances are 0, fall back to the account's current balance for the latest month.
+    if (trendData.length > 0 && trendData.every(d => d.balance === 0) && currentBal !== 0) {
+      trendData[trendData.length - 1].balance = currentBal;
     }
 
     return trendData;

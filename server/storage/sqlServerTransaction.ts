@@ -1,6 +1,14 @@
 /**
  * SQL Server Transaction Operations
- * Read-only transaction history for MS SQL Server
+ * Read-only transaction history for MS SQL Server.
+ *
+ * NOTE: Transaction filters pivot on `financial_transaction.account_number`
+ * (denormalized from `account.account_number`), NOT on `account_id`. The ETL
+ * feeding `financial_transaction` no longer populates `account_id` reliably,
+ * so `ft.account_id` cannot be used as a join key. Callers translate
+ * `accountId` or `customerId` to one or more `account_number`s before invoking
+ * these functions — that resolution lives in `server/storage.ts` and in the
+ * route handlers, which already have ABAC context.
  */
 
 import sql from 'mssql';
@@ -10,13 +18,16 @@ import logger from '../services/logger';
 const fileLogger = logger.child({ module: 'sqlserver-transaction' });
 
 /**
- * Get transactions with filters
+ * Get transactions with filters.
+ *
+ * Accepts either a single `accountNumber` or a list `accountNumbers` for scoping.
+ * Other filters (date range, type, amount) compose with the scope predicate.
  */
 export async function getTransactionsSqlServer(
   pool: sql.ConnectionPool,
   params: {
-    accountId?: number;
-    customerId?: number;
+    accountNumber?: string;
+    accountNumbers?: string[];
     startDate?: Date;
     endDate?: Date;
     transactionType?: string;
@@ -30,16 +41,22 @@ export async function getTransactionsSqlServer(
     const request = pool.request();
     const conditions: string[] = [];
 
-    if (params.accountId !== undefined) {
-      request.input('accountId', sql.BigInt, params.accountId);
-      conditions.push('ft.account_id = @accountId');
+    if (params.accountNumber !== undefined) {
+      request.input('accountNumber', sql.VarChar(50), params.accountNumber);
+      conditions.push('ft.account_number = @accountNumber');
     }
 
-    if (params.customerId !== undefined) {
-      request.input('customerId', sql.BigInt, params.customerId);
-      conditions.push(`ft.account_id IN (
-        SELECT account_id FROM account_ownership WHERE customer_id = @customerId
-      )`);
+    if (params.accountNumbers !== undefined) {
+      if (params.accountNumbers.length === 0) {
+        // No accounts in scope — short-circuit to an empty result without hitting the DB.
+        return [];
+      }
+      const placeholders = params.accountNumbers.map((value, idx) => {
+        const name = `an${idx}`;
+        request.input(name, sql.VarChar(50), value);
+        return `@${name}`;
+      });
+      conditions.push(`ft.account_number IN (${placeholders.join(', ')})`);
     }
 
     if (params.startDate) {
@@ -67,7 +84,7 @@ export async function getTransactionsSqlServer(
       conditions.push('ft.amount <= @maxAmount');
     }
 
-    const whereClause = conditions.length > 0 
+    const whereClause = conditions.length > 0
       ? `WHERE ${conditions.join(' AND ')}`
       : '';
 
@@ -84,38 +101,37 @@ export async function getTransactionsSqlServer(
     `);
 
     fileLogger.info({
-      accountId: params.accountId,
-      customerId: params.customerId,
+      accountNumber: params.accountNumber,
+      accountNumberCount: params.accountNumbers?.length,
       resultCount: result.recordset.length,
-      whereClause
     }, 'Transaction query completed');
 
     return result.recordset.map(mapTransactionFromDb);
   } catch (error) {
-    fileLogger.error({ err: error, accountId: params.accountId, customerId: params.customerId }, 'Get transactions error');
+    fileLogger.error({ err: error, accountNumber: params.accountNumber, accountNumberCount: params.accountNumbers?.length }, 'Get transactions error');
     throw error;
   }
 }
 
 /**
- * Get recent transactions for account
+ * Get recent transactions for an account (by account number).
  */
 export async function getRecentTransactionsSqlServer(
   pool: sql.ConnectionPool,
-  accountId: number,
+  accountNumber: string,
   limit: number = 10
 ): Promise<FinancialTransaction[]> {
-  return await getTransactionsSqlServer(pool, { accountId, limit });
+  return await getTransactionsSqlServer(pool, { accountNumber, limit });
 }
 
 /**
- * Get transaction count
+ * Get transaction count.
  */
 export async function getTransactionCountSqlServer(
   pool: sql.ConnectionPool,
   params: {
-    accountId?: number;
-    customerId?: number;
+    accountNumber?: string;
+    accountNumbers?: string[];
     startDate?: Date;
     endDate?: Date;
   }
@@ -124,16 +140,21 @@ export async function getTransactionCountSqlServer(
     const request = pool.request();
     const conditions: string[] = [];
 
-    if (params.accountId !== undefined) {
-      request.input('accountId', sql.BigInt, params.accountId);
-      conditions.push('ft.account_id = @accountId');
+    if (params.accountNumber !== undefined) {
+      request.input('accountNumber', sql.VarChar(50), params.accountNumber);
+      conditions.push('ft.account_number = @accountNumber');
     }
 
-    if (params.customerId !== undefined) {
-      request.input('customerId', sql.BigInt, params.customerId);
-      conditions.push(`ft.account_id IN (
-        SELECT account_id FROM account_ownership WHERE customer_id = @customerId
-      )`);
+    if (params.accountNumbers !== undefined) {
+      if (params.accountNumbers.length === 0) {
+        return 0;
+      }
+      const placeholders = params.accountNumbers.map((value, idx) => {
+        const name = `an${idx}`;
+        request.input(name, sql.VarChar(50), value);
+        return `@${name}`;
+      });
+      conditions.push(`ft.account_number IN (${placeholders.join(', ')})`);
     }
 
     if (params.startDate) {
@@ -146,7 +167,7 @@ export async function getTransactionCountSqlServer(
       conditions.push('ft.transaction_date <= @endDate');
     }
 
-    const whereClause = conditions.length > 0 
+    const whereClause = conditions.length > 0
       ? `WHERE ${conditions.join(' AND ')}`
       : '';
 
@@ -164,27 +185,28 @@ export async function getTransactionCountSqlServer(
 }
 
 /**
- * Get transactions by account ID
+ * Get transactions by account number.
  */
 export async function getTransactionsByAccountSqlServer(
   pool: sql.ConnectionPool,
-  accountId: number,
+  accountNumber: string,
   limit: number = 100,
   offset: number = 0
 ): Promise<FinancialTransaction[]> {
-  return await getTransactionsSqlServer(pool, { accountId, limit, offset });
+  return await getTransactionsSqlServer(pool, { accountNumber, limit, offset });
 }
 
 /**
- * Get transactions by customer ID
+ * Get transactions across a customer's accounts.
+ * Caller resolves customer → account_numbers (the ABAC context lives there).
  */
 export async function getTransactionsByCustomerSqlServer(
   pool: sql.ConnectionPool,
-  customerId: number,
+  accountNumbers: string[],
   limit: number = 100,
   offset: number = 0
 ): Promise<FinancialTransaction[]> {
-  return await getTransactionsSqlServer(pool, { customerId, limit, offset });
+  return await getTransactionsSqlServer(pool, { accountNumbers, limit, offset });
 }
 
 /**
@@ -197,7 +219,7 @@ export async function getTransactionCategoriesSqlServer(
     const request = pool.request();
 
     const result = await request.query(`
-      SELECT 
+      SELECT
         category_id,
         category_name,
         description
@@ -218,12 +240,14 @@ export async function getTransactionCategoriesSqlServer(
 
 /**
  * Map database row to FinancialTransaction object
- * Matches shared/schema.ts FinancialTransaction type
+ * Matches shared/schema.ts FinancialTransaction type.
+ * `accountId` may be null in ETL-produced rows — `accountNumber` is the canonical key.
  */
 function mapTransactionFromDb(row: any): FinancialTransaction {
   return {
     transactionId: row.transaction_id,
     accountId: row.account_id,
+    accountNumber: row.account_number,
     amount: row.amount,
     transactionCode: row.transaction_code,
     transactionType: row.transaction_type,

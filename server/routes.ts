@@ -1303,7 +1303,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // GET /api/customers/:id/deposit-recent-transactions?limit=5 - Last N
   // transactions across the customer's deposit accounts.
-  app.get("/api/customers/:id/deposit-recent-transactions", async (req, res) => {
+  app.get("/api/customers/:id/deposit-recent-transactions",
+    requirePermission({
+      permissionCode: 'transaction.view',
+      contextBuilder: async (req) => {
+        const customerId = parseInt(req.params.id);
+        if (!isNaN(customerId)) {
+          const customer = await storage.getCustomer(customerId);
+          if (customer) return { customer };
+        }
+        return {};
+      }
+    }),
+    async (req, res) => {
     try {
       const customerId = parseInt(req.params.id);
       if (isNaN(customerId)) {
@@ -1356,11 +1368,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // PostgreSQL implementation
       const analytics = await storage.getDepositAccountAnalytics(customerId);
-      
-      // Generate REAL trend data from transaction history with continuous 12-month series
-      const depositAccountIds = analytics.accounts
+
+      // Trend data is keyed on account_number because ft.account_id is no longer reliable.
+      const depositAccountNumbers = analytics.accounts
         .filter(acc => ['checking', 'deposit checking', 'savings', 'money_market', 'cd'].includes(acc.accountType))
-        .map(acc => acc.accountId);
+        .map(acc => acc.accountNumber);
 
       let trendData: Array<{
         month: string;
@@ -1374,12 +1386,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         weightedAvgSavings: number;
         weightedAvgCD: number;
       }> = [];
-      
-      if (depositAccountIds.length > 0) {
+
+      if (depositAccountNumbers.length > 0) {
         // Query to get balances by account and month, then carry forward to fill gaps
         // Also calculate weighted average using account interest rates
         const monthlyData = await db.execute(sql`
-          WITH RECURSIVE 
+          WITH RECURSIVE
           -- Generate 12-month series
           month_series AS (
             SELECT DATE_TRUNC('month', NOW() - INTERVAL '11 months') + (n || ' month')::interval as month
@@ -1387,22 +1399,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ),
           -- Get last transaction per account per month
           account_monthly_balances AS (
-            SELECT DISTINCT ON (ft.account_id, DATE_TRUNC('month', ft.transaction_date))
-              ft.account_id,
+            SELECT DISTINCT ON (ft.account_number, DATE_TRUNC('month', ft.transaction_date))
+              ft.account_number,
               a.account_type,
               DATE_TRUNC('month', ft.transaction_date) as month,
               ft.ledger_balance_after
             FROM financial_transaction ft
-            INNER JOIN account a ON a.account_id = ft.account_id
-            WHERE ft.account_id IN (${sql.join(depositAccountIds, sql`, `)})
+            INNER JOIN account a ON a.account_number = ft.account_number
+            WHERE ft.account_number IN (${sql.join(depositAccountNumbers, sql`, `)})
               AND ft.transaction_date >= NOW() - INTERVAL '12 months'
-            ORDER BY ft.account_id, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
+            ORDER BY ft.account_number, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
           ),
           -- Carry forward balances for months with no transactions
           filled_balances AS (
-            SELECT 
+            SELECT
               ms.month,
-              acc.account_id,
+              acc.account_number,
               acc.account_type,
               acc.interest_rate,
               COALESCE(
@@ -1410,7 +1422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 (
                   SELECT amb2.ledger_balance_after
                   FROM account_monthly_balances amb2
-                  WHERE amb2.account_id = acc.account_id
+                  WHERE amb2.account_number = acc.account_number
                     AND amb2.month < ms.month
                   ORDER BY amb2.month DESC
                   LIMIT 1
@@ -1418,12 +1430,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ) as balance
             FROM month_series ms
             CROSS JOIN (
-              SELECT account_id, account_type, interest_rate
+              SELECT account_number, account_type, interest_rate
               FROM account
-              WHERE account_id IN (${sql.join(depositAccountIds, sql`, `)})
+              WHERE account_number IN (${sql.join(depositAccountNumbers, sql`, `)})
             ) acc
-            LEFT JOIN account_monthly_balances amb 
-              ON amb.account_id = acc.account_id 
+            LEFT JOIN account_monthly_balances amb
+              ON amb.account_number = acc.account_number
               AND amb.month = ms.month
           )
           -- Aggregate by month and account type, calculate weighted average
@@ -1554,12 +1566,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }];
       }
 
-      // Fetch real recent transactions from database (5 most recent deposit account transactions)
+      // Fetch real recent transactions from database (5 most recent deposit account transactions).
+      // Pivots on ft.account_number — ft.account_id is no longer reliable.
       let recentTransactions: any[] = [];
-      if (depositAccountIds.length > 0) {
+      if (depositAccountNumbers.length > 0) {
         const transactions = await db
           .select({
-            accountId: financialTransaction.accountId,
+            accountNumber: financialTransaction.accountNumber,
             accountType: account.accountType,
             transactionDate: financialTransaction.transactionDate,
             transactionCode: financialTransaction.transactionCode,
@@ -1568,8 +1581,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             balance: financialTransaction.ledgerBalanceAfter
           })
           .from(financialTransaction)
-          .innerJoin(account, eq(account.accountId, financialTransaction.accountId))
-          .where(sql`${financialTransaction.accountId} IN (${sql.join(depositAccountIds, sql`, `)})`)
+          .innerJoin(account, eq(account.accountNumber, financialTransaction.accountNumber))
+          .where(sql`${financialTransaction.accountNumber} IN (${sql.join(depositAccountNumbers, sql`, `)})`)
           .orderBy(desc(financialTransaction.transactionDate))
           .limit(5);
 
@@ -1632,7 +1645,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ trendData });
       }
 
-      // PostgreSQL implementation
+      // PostgreSQL implementation — resolve account_number first, since
+      // ft.account_id is no longer reliable for filtering.
+      const acct = await storage.getAccount(accountId);
+      if (!acct) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+      const accountNumber = acct.accountNumber;
       const monthlyData = await db.execute(sql`
         WITH RECURSIVE
         month_series AS (
@@ -1640,14 +1659,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           FROM generate_series(0, 11) n
         ),
         account_monthly_balances AS (
-          SELECT DISTINCT ON (ft.account_id, DATE_TRUNC('month', ft.transaction_date))
-            ft.account_id,
+          SELECT DISTINCT ON (ft.account_number, DATE_TRUNC('month', ft.transaction_date))
+            ft.account_number,
             DATE_TRUNC('month', ft.transaction_date) as month,
             ft.ledger_balance_after
           FROM financial_transaction ft
-          WHERE ft.account_id = ${accountId}
+          WHERE ft.account_number = ${accountNumber}
             AND ft.transaction_date >= NOW() - INTERVAL '12 months'
-          ORDER BY ft.account_id, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
+          ORDER BY ft.account_number, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
         ),
         filled_balances AS (
           SELECT
@@ -2169,7 +2188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const mssql = await import('mssql');
         const pool = await getMssqlPool();
 
-        // 1. Get customer's account IDs from account_ownership
+        // 1. Get customer's account numbers from account_ownership
         const r1 = pool.request();
         r1.input('custId', mssql.default.BigInt, customerId);
         const ownershipResult = await r1.query(`
@@ -2178,17 +2197,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           INNER JOIN account a ON a.account_id = ao.account_id
           WHERE ao.customer_id = @custId
         `);
-        const customerAccountIds = ownershipResult.recordset.map((r: any) => r.account_id);
+        const customerAccountNumbers: string[] = ownershipResult.recordset.map((r: any) => r.account_number);
 
-        // 2. Check which accounts have transactions
+        // 2. Check which accounts have transactions (keyed on account_number, since ft.account_id is unreliable)
         const accountTxCounts: any[] = [];
-        for (const acctId of customerAccountIds.slice(0, 10)) { // Check first 10
+        for (const acctNum of customerAccountNumbers.slice(0, 10)) {
           const r2 = pool.request();
-          r2.input('acctId', mssql.default.BigInt, acctId);
-          const txCount = await r2.query(`SELECT COUNT(*) as cnt FROM financial_transaction WHERE account_id = @acctId`);
+          r2.input('acctNum', mssql.default.VarChar(50), acctNum);
+          const txCount = await r2.query(`SELECT COUNT(*) as cnt FROM financial_transaction WHERE account_number = @acctNum`);
           accountTxCounts.push({
-            accountId: acctId,
-            accountNumber: ownershipResult.recordset.find((r: any) => r.account_id === acctId)?.account_number,
+            accountNumber: acctNum,
             transactionCount: txCount.recordset[0].cnt
           });
         }
@@ -2197,60 +2215,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const r3 = pool.request();
         const totalTx = await r3.query(`SELECT COUNT(*) as cnt FROM financial_transaction`);
 
-        // 4. Sample account_ids from financial_transaction
+        // 4. Sample account_numbers from financial_transaction
         const r4 = pool.request();
-        const sampleFt = await r4.query(`SELECT DISTINCT TOP 10 account_id FROM financial_transaction ORDER BY account_id`);
+        const sampleFt = await r4.query(`SELECT DISTINCT TOP 10 account_number FROM financial_transaction ORDER BY account_number`);
 
-        // 5. Check data types
+        // 5. NULL-rate health: how many rows still lack account_number (orphans)?
         const r5 = pool.request();
-        const colInfo = await r5.query(`
-          SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
-          FROM INFORMATION_SCHEMA.COLUMNS
-          WHERE COLUMN_NAME = 'account_id' AND TABLE_NAME IN ('financial_transaction', 'account', 'account_ownership')
+        const nullRate = await r5.query(`
+          SELECT
+            SUM(CASE WHEN account_number IS NULL THEN 1 ELSE 0 END) as null_account_numbers,
+            SUM(CASE WHEN account_id IS NULL THEN 1 ELSE 0 END) as null_account_ids,
+            COUNT(*) as total
+          FROM financial_transaction
         `);
 
-        // 6. Direct match: find transactions for this customer via subquery (same as TransactionHistory uses)
+        // 6. Direct match: count transactions for this customer's account numbers
         const r6 = pool.request();
         r6.input('custId2', mssql.default.BigInt, customerId);
         const directMatch = await r6.query(`
           SELECT COUNT(*) as cnt FROM financial_transaction ft
-          WHERE ft.account_id IN (
-            SELECT account_id FROM account_ownership WHERE customer_id = @custId2
+          WHERE ft.account_number IN (
+            SELECT a.account_number
+            FROM account a
+            INNER JOIN account_ownership ao ON ao.account_id = a.account_id
+            WHERE ao.customer_id = @custId2
           )
         `);
 
-        // 7. Try matching first customer account_id directly in financial_transaction
+        // 7. Spot-check the first customer account number against the transactions table.
         let firstAccountDirectCheck = null;
-        if (customerAccountIds.length > 0) {
+        if (customerAccountNumbers.length > 0) {
           const r7 = pool.request();
-          const firstId = customerAccountIds[0];
-          r7.input('firstAcctId', mssql.default.BigInt, firstId);
-          const directResult = await r7.query(`SELECT TOP 3 transaction_id, account_id, amount FROM financial_transaction WHERE account_id = @firstAcctId`);
-          // Also try with raw SQL to rule out parameterization issues
-          const r8 = pool.request();
-          const rawResult = await r8.query(`SELECT TOP 3 transaction_id, account_id, amount FROM financial_transaction WHERE account_id = ${Number(firstId)}`);
+          const firstNum = customerAccountNumbers[0];
+          r7.input('firstAcctNum', mssql.default.VarChar(50), firstNum);
+          const directResult = await r7.query(`SELECT TOP 3 transaction_id, account_number, amount FROM financial_transaction WHERE account_number = @firstAcctNum`);
           firstAccountDirectCheck = {
-            accountId: firstId,
-            accountIdType: typeof firstId,
-            parameterizedCount: directResult.recordset.length,
-            rawSqlCount: rawResult.recordset.length,
-            parameterizedResults: directResult.recordset,
-            rawSqlResults: rawResult.recordset
+            accountNumber: firstNum,
+            count: directResult.recordset.length,
+            results: directResult.recordset
           };
         }
 
         return res.json({
           customerId,
-          customerAccountCount: customerAccountIds.length,
-          customerAccountIds_sample: customerAccountIds.slice(0, 5),
+          customerAccountCount: customerAccountNumbers.length,
+          customerAccountNumbers_sample: customerAccountNumbers.slice(0, 5),
           accountTransactionCounts: accountTxCounts,
           directSubqueryMatchCount: directMatch.recordset[0].cnt,
           firstAccountDirectCheck,
           totalTransactionsInTable: totalTx.recordset[0].cnt,
-          sampleAccountIdsInTransactions: sampleFt.recordset.map((r: any) => r.account_id),
-          columnDataTypes: colInfo.recordset,
+          sampleAccountNumbersInTransactions: sampleFt.recordset.map((r: any) => r.account_number),
+          nullStats: {
+            nullAccountNumbers: nullRate.recordset[0].null_account_numbers,
+            nullAccountIds: nullRate.recordset[0].null_account_ids,
+            total: nullRate.recordset[0].total
+          },
           diagnosis: accountTxCounts.every(a => a.transactionCount === 0)
-            ? "MISMATCH: Customer accounts have 0 transactions. The account_id values in financial_transaction likely don't match the account table."
+            ? "MISMATCH: Customer accounts have 0 transactions. The account_number values in financial_transaction likely don't match the account table — confirm backfill has run."
             : "Some accounts have transactions. The issue may be with specific accounts."
         });
       }
@@ -2261,21 +2282,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get transactions with flexible filtering
+  // Get transactions with flexible filtering.
+  //
+  // `accountId` / `customerId` are accepted as query params for backwards
+  // compatibility, but the underlying query pivots on `account_number`. We
+  // resolve up-front via the account table.
   app.get("/api/transactions", async (req, res) => {
     try {
       const { accountId, customerId, startDate, endDate, limit = 100, offset = 0 } = req.query;
-      
-      const params: any = {
+
+      const params: {
+        accountNumber?: string;
+        accountNumbers?: string[];
+        startDate?: Date;
+        endDate?: Date;
+        limit: number;
+        offset: number;
+      } = {
         limit: Number(limit),
         offset: Number(offset)
       };
-      
-      if (accountId) params.accountId = Number(accountId);
-      if (customerId) params.customerId = Number(customerId);
+
+      if (accountId) {
+        const account = await storage.getAccount(Number(accountId));
+        if (!account) {
+          return res.json({ transactions: [], totalCount: 0 });
+        }
+        params.accountNumber = account.accountNumber;
+      }
+      if (customerId) {
+        const accounts = await storage.getCustomerAccounts(Number(customerId));
+        params.accountNumbers = accounts.map(a => a.accountNumber);
+      }
       if (startDate) params.startDate = new Date(startDate as string);
       if (endDate) params.endDate = new Date(endDate as string);
-      
+
       const result = await storage.getTransactions(params);
       res.json(result);
     } catch (error: any) {
@@ -2284,7 +2325,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get transactions for a specific account
+  // Get transactions for a specific account.
+  // URL keeps `:accountId` (ABAC context resolves owners via accountId); the handler
+  // translates to `accountNumber` before hitting storage, because `ft.account_id` is
+  // no longer reliable.
   app.get("/api/accounts/:accountId/transactions",
     requirePermission({
       permissionCode: 'transaction.view',
@@ -2316,13 +2360,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const accountId = parseInt(req.params.accountId);
       const { limit = 100, offset = 0 } = req.query;
-      
+
+      const account = await storage.getAccount(accountId);
+      if (!account) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
       const transactions = await storage.getTransactionsByAccount(
-        accountId,
+        account.accountNumber,
         Number(limit),
         Number(offset)
       );
-      
+
       res.json({ transactions });
     } catch (error: any) {
       logger.error({ err: error, module: 'routes' }, 'Error fetching account transactions');
@@ -2330,7 +2379,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get transactions for a specific person (all their accounts)
+  // Get transactions for a specific person (all their accounts).
+  // Customer → account_numbers resolution happens here so the storage method stays
+  // simple. We also use the same fetched accounts to enrich each row with
+  // accountNumber/accountType for the client.
   app.get("/api/customers/:customerId/transactions",
     requirePermission({
       permissionCode: 'transaction.view',
@@ -2349,74 +2401,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const customerId = parseInt(req.params.customerId);
       const { limit = 100, offset = 0 } = req.query;
-      
+
+      const accounts = await storage.getCustomerAccounts(customerId);
+      const accountNumbers = accounts.map(acc => acc.accountNumber);
+
       const transactions = await storage.getTransactionsByCustomer(
-        customerId,
+        accountNumbers,
         Number(limit),
         Number(offset)
       );
-      
-      // Also get the person's accounts to enrich the transaction data
-      const accounts = await storage.getCustomerAccounts(customerId);
-      const accountMap = new Map(accounts.map(acc => [acc.accountId, acc]));
-      
-      // Enrich transactions with account details
+
+      // Enrich transactions with account details. Keyed on accountNumber because
+      // the underlying rows no longer carry a reliable accountId.
+      const accountMapByNumber = new Map(accounts.map(acc => [acc.accountNumber, acc]));
       const enrichedTransactions = transactions.map(trans => ({
         ...trans,
-        accountNumber: accountMap.get(trans.accountId)?.accountNumber || 'Unknown',
-        accountType: accountMap.get(trans.accountId)?.accountType || 'Unknown'
+        accountNumber: trans.accountNumber ?? 'Unknown',
+        accountType: (trans.accountNumber && accountMapByNumber.get(trans.accountNumber)?.accountType) || 'Unknown'
       }));
-      
+
       res.json({ transactions: enrichedTransactions });
     } catch (error: any) {
       logger.error({ err: error, module: 'routes' }, 'Error fetching person transactions');
       res.status(500).json({ error: error.message || "Failed to fetch person transactions" });
-    }
-  });
-
-  // Get transactions for a specific account
-  app.get("/api/accounts/:accountId/transactions",
-    requirePermission({
-      permissionCode: 'transaction.view',
-      contextBuilder: async (req) => {
-        const accountId = parseInt(req.params.accountId);
-        if (!isNaN(accountId)) {
-          // Get account owners to check if any are employee customers
-          const owners = await storage.getAccountOwners(accountId);
-          if (owners.length > 0) {
-            // Check ALL owners - if ANY owner is an employee, apply restriction
-            for (const owner of owners) {
-              const customer = await storage.getCustomer(owner.customerId);
-              if (customer && customer.isEmployee === true) {
-                // Found an employee owner - return this customer for ABAC check
-                return { customer };
-              }
-            }
-            // No employee owners found - return first owner for context
-            const firstCustomer = await storage.getCustomer(owners[0].customerId);
-            if (firstCustomer) {
-              return { customer: firstCustomer };
-            }
-          }
-        }
-        return {};
-      }
-    }),
-    async (req, res) => {
-    try {
-      const accountId = parseInt(req.params.accountId);
-      const { limit = 100, offset = 0 } = req.query;
-      
-      const transactions = await storage.getTransactionsByAccount(
-        accountId,
-        Number(limit),
-        Number(offset)
-      );
-      
-      res.json({ transactions });
-    } catch (error: any) {
-      logger.error({ err: error, module: 'routes' }, 'Error fetching account transactions');
-      res.status(500).json({ error: error.message || "Failed to fetch account transactions" });
     }
   });
 
