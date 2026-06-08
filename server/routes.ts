@@ -3140,8 +3140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     app: app, 
     server: httpServer,
     route: "/streamlit",
-    targetHost: "https://pyt-tstapp01.fmb.com",
-    targetPort: 443
+    streamlitUrl: "https://pyt-tstapp01.fmb.com",
   })
 
   return httpServer;

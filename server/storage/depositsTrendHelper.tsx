@@ -194,9 +194,17 @@ function walkWindow(
     if (isSampleDate(dk)) {
       let checking = 0, cd = 0, savings = 0;
       for (const { balance, type } of Object.values(running)) {
-        if (type === 'checking')     checking += balance;
-        else if (type === 'cd')      cd       += balance;
-        else if (type === 'savings') savings  += balance;
+        if (type === 'checking' || type === 'deposit checking') {
+          checking += balance;
+        }
+        else if (type === 'cd' || type === 'time deposit') {
+          cd       += balance;
+        } else if (
+          type === 'savings' ||
+          type === 'christmas club depo'
+        ) { 
+          savings  += balance;
+        }
       }
       onSnapshot(dk, { checking, cd, savings, balance: checking + cd + savings });
     }

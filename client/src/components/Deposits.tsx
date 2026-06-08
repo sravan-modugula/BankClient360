@@ -222,9 +222,7 @@ export default function Deposits({ customerId }: DepositsProps) {
   };
 
   const calculateGrowth = () => {
-    console.log("Calculating Growth");
     const trendData = getTrendData();
-    console.log(trendData);
     if (!trendData || trendData.length < 2) return 0;
     const start = trendData.at(0)?.balance;
     const end = trendData.at(-1)?.balance;
@@ -427,7 +425,7 @@ export default function Deposits({ customerId }: DepositsProps) {
               >
                 <ToggleButton value="monthly" data-testid="button-monthly">Month</ToggleButton>
                 <ToggleButton value="quarterly" data-testid="button-quarterly">Quarter</ToggleButton>
-                <ToggleButton value="ytd" data-testid="button-ytd">YTD</ToggleButton>
+                <ToggleButton value="ytd" data-testid="button-ytd">Year</ToggleButton>
               </ToggleButtonGroup>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>

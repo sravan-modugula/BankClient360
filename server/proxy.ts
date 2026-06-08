@@ -1,67 +1,114 @@
 // attachStreamlitProxy.ts
 import type { Express, NextFunction, Request, Response } from "express";
-import type { Server, IncomingMessage } from "http";
+import type { IncomingMessage, Server } from "http";
 import http from "http";
+import https from "https";
 import net from "net";
+import tls from "tls";
 import type { Socket } from "net";
-import { requireAuth } from "./middleware/requireAuth";
 
+type AuthenticatedUser = {
+  userId?: string;
+  [key: string]: unknown;
+};
 
-export type AttachStreamlitProxyOptions = {
+type AuthenticateRequest = (
+  req: Request | IncomingMessage
+) => Promise<AuthenticatedUser | null> | AuthenticatedUser | null;
+
+type Options = {
   app: Express;
   server: Server;
   route?: string;
-  targetHost?: string;
-  targetPort?: number;
+  streamlitUrl: string;
+  // authenticateRequest: AuthenticateRequest;
 };
-
 
 export function attachStreamlitProxy({
   app,
   server,
   route = "/streamlit",
-  targetHost = "127.0.0.1",
-  targetPort = 8501,
-}: AttachStreamlitProxyOptions): void {
-  if (!app) throw new Error("app is required");
-  if (!server) throw new Error("server is required");
-  // if (!authenticateRequest) throw new Error("authenticateRequest is required");
+  streamlitUrl,
+  // authenticateRequest,
+}: Options): void {
+  const target = new URL(streamlitUrl);
+  const isHttps = target.protocol === "https:";
+  const targetPort = Number(target.port || (isHttps ? 443 : 80));
+  const targetHost = target.hostname;
+  const targetOrigin = `${target.protocol}//${target.host}`;
 
-  function isProxyPath(url: string | undefined): boolean {
-    if (!url) return false;
-    return url === route || url.startsWith(`${route}/`);
+  function isProxyPath(url?: string): boolean {
+    return !!url && (url === route || url.startsWith(`${route}/`));
   }
 
-  // app.use(route, requireAuth, (req: Request, res: Response) => {
+  // async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  //   try {
+  //     const user = await authenticateRequest(req);
+
+  //     if (!user) {
+  //       res.status(401).send("Unauthorized");
+  //       return;
+  //     }
+
+  //     req.user = user;
+  //     next();
+  //   } catch (err) {
+  //     next(err);
+  //   }
+  // }
+
   app.use(route, (req: Request, res: Response) => {
-    const headers: http.OutgoingHttpHeaders = {
+    const upstreamPath = req.originalUrl;
+
+    const headers = {
       ...req.headers,
+
+      // Critical when proxying to a URL-backed Streamlit host.
+      host: target.host,
+
+      // Useful if Streamlit or an upstream gateway checks origin/referrer.
+      origin: targetOrigin,
+      referer: `${targetOrigin}${upstreamPath}`,
+
       "x-forwarded-host": req.headers.host,
       "x-forwarded-proto": req.protocol,
     };
 
-    if (req.session?.employeeId) {
-      headers["x-authenticated-user-id"] = req.session?.employeeId;
-    }
+    delete headers["accept-encoding"];
 
-    const proxyReq = http.request(
+    const requestImpl = isHttps ? https : http;
+
+    const proxyReq = requestImpl.request(
       {
+        protocol: target.protocol,
         hostname: targetHost,
         port: targetPort,
         method: req.method,
-        path: req.originalUrl,
+        path: upstreamPath,
         headers,
+        servername: targetHost, // TLS SNI
       },
       (proxyRes) => {
-        res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+        const responseHeaders = { ...proxyRes.headers };
+
+        // Avoid iframe/proxy header conflicts.
+        delete responseHeaders["content-security-policy"];
+        delete responseHeaders["x-frame-options"];
+
+        res.writeHead(proxyRes.statusCode ?? 502, responseHeaders);
         proxyRes.pipe(res);
       }
     );
 
     req.pipe(proxyReq);
 
-    proxyReq.on("error", (err: Error) => {
-      console.error("Streamlit HTTP proxy error:", err);
+    proxyReq.on("error", (err: NodeJS.ErrnoException) => {
+      console.error("Streamlit HTTP proxy error:", {
+        code: err.code,
+        syscall: err.syscall,
+        message: err.message,
+        path: upstreamPath,
+      });
 
       if (!res.headersSent) {
         res.status(502);
@@ -71,83 +118,68 @@ export function attachStreamlitProxy({
     });
   });
 
-  server.on("upgrade", async (
-    req: IncomingMessage,
-    socket: Socket,
-    head: Buffer
-  ) => {
-    if (!isProxyPath(req.url)) {
-      return;
-    }
+  server.on("upgrade", async (req: IncomingMessage, socket: Socket, head: Buffer) => {
+    if (!isProxyPath(req.url)) return;
 
     try {
       // const user = await authenticateRequest(req);
 
       // if (!user) {
-      //   socket.write(
-      //     "HTTP/1.1 401 Unauthorized\r\n" +
-      //       "Connection: close\r\n" +
-      //       "\r\n"
-      //   );
+      //   socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       //   socket.destroy();
       //   return;
       // }
 
-      const targetSocket = net.connect(targetPort, targetHost, () => {
-        const headerLines: string[] = [
-          `GET ${req.url} HTTP/1.1`,
-          `Host: ${targetHost}:${targetPort}`,
-          "Connection: Upgrade",
-          "Upgrade: websocket",
+      const connectSocket = isHttps
+        ? tls.connect({
+            host: targetHost,
+            port: targetPort,
+            servername: targetHost,
+          })
+        : net.connect(targetPort, targetHost);
+
+      connectSocket.once("connect", () => {
+        const headerLines = [
+          `${req.method} ${req.url} HTTP/1.1`,
+          `Host: ${target.host}`,
         ];
 
         for (const [key, value] of Object.entries(req.headers)) {
-          const lower = key.toLowerCase();
-
-          if (
-            lower === "host" ||
-            lower === "connection" ||
-            lower === "upgrade"
-          ) {
-            continue;
-          }
+          if (key.toLowerCase() === "host") continue;
 
           if (Array.isArray(value)) {
-            for (const item of value) {
-              headerLines.push(`${key}: ${item}`);
-            }
+            for (const item of value) headerLines.push(`${key}: ${item}`);
           } else if (value !== undefined) {
             headerLines.push(`${key}: ${value}`);
           }
         }
 
-        // if (user.userId) {
-        //   headerLines.push(`x-authenticated-user-id: ${user.userId}`);
-        // }
-
         headerLines.push("\r\n");
 
-        targetSocket.write(headerLines.join("\r\n"));
-        targetSocket.write(head);
+        connectSocket.write(headerLines.join("\r\n"));
+        connectSocket.write(head);
 
-        targetSocket.pipe(socket);
-        socket.pipe(targetSocket);
+        connectSocket.pipe(socket);
+        socket.pipe(connectSocket);
       });
 
-      targetSocket.on("error", () => {
+      connectSocket.on("error", (err: NodeJS.ErrnoException) => {
+        console.error("Streamlit WS proxy error:", {
+          code: err.code,
+          syscall: err.syscall,
+          message: err.message,
+          url: req.url,
+        });
+
         socket.destroy();
       });
 
       socket.on("error", () => {
-        targetSocket.destroy();
+        connectSocket.destroy();
       });
     } catch {
-      socket.write(
-        "HTTP/1.1 500 Internal Server Error\r\n" +
-          "Connection: close\r\n" +
-          "\r\n"
-      );
+      socket.write("HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n");
       socket.destroy();
     }
   });
-}
+} 

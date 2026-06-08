@@ -3428,15 +3428,6 @@ export class DatabaseStorage implements IBankingStorage {
   }
 
   async getCustomerNotes(customerId: number, includeDeleted: boolean = false): Promise<NoteWithCurrentVersion[]> {
-    // Look up the Jack Henry CIF so we can also surface ETL-loaded notes that
-    // anchor on cif_number instead of (or in addition to) customer_id.
-    const [cifRow] = await db
-      .select({ cif: customer.jackHenryCifNumber })
-      .from(customer)
-      .where(eq(customer.customerId, customerId))
-      .limit(1);
-    const cif = cifRow?.cif ?? null;
-
     // SQL Server implementation
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
@@ -3444,17 +3435,12 @@ export class DatabaseStorage implements IBankingStorage {
       const pool = await getMssqlPool();
       const notes = await getNotesSqlServer(pool, {
         customerId,
-        targetType: 'customer',
-        cifNumber: cif
+        targetType: 'customer'
       });
       return includeDeleted ? notes : notes.filter(n => !n.currentVersion.isSoftDeleted);
     }
 
     // PostgreSQL implementation
-    const customerMatch = cif
-      ? or(eq(note.customerId, customerId), eq(note.cifNumber, cif))
-      : eq(note.customerId, customerId);
-
     const result = await db
       .select({
         note: note,
@@ -3469,7 +3455,7 @@ export class DatabaseStorage implements IBankingStorage {
       .leftJoin(noteCategory, eq(noteCategory.categoryId, note.categoryId))
       .where(
         and(
-          customerMatch,
+          eq(note.customerId, customerId),
           includeDeleted ? undefined : eq(noteVersion.isSoftDeleted, false)
         )
       )

@@ -1,0 +1,41 @@
+steps:
+
+  # Moves the built files over to the app server, pulls node_modules, and restarts the service
+  - task: PowerShell@2
+    displayName: "Deploy to Remote Node.js Server"
+    inputs:
+      targetType: inline
+      script: |
+        $remoteServer = '$(serverName)'
+        $remoteAppPath = '$(appPath)'
+        $serviceName = '$(serviceName)'
+        $commitMessage = '$(commitMessage)'
+
+        Write-Host "Creating remote PowerShell session"
+        $session = New-PSSession -ComputerName $remoteServer
+
+        Write-Host "Copying built files to remote server"
+        Copy-Item "$(Pipeline.Workspace)\$(Build.Repository.Name)\*" $remoteAppPath -Recurse -Force -ToSession $session
+
+        Write-Host "Stopping service"
+        Invoke-Command -Session $session -ScriptBlock {
+            Stop-Service -Name $using:serviceName
+        }
+
+        if ($commitMessage -match "npm ci") {
+          Write-Host "Installing dependencies on remote server & cleaning up .npmrc"
+          Invoke-Command -Session $session -ScriptBlock {
+              Set-Location $using:remoteAppPath
+              npm ci --prefer-offline --loglevel=info 2>&1
+              Remove-Item .\.npmrc
+          }
+        }
+
+        Write-Host "Starting service"
+        Invoke-Command -Session $session -ScriptBlock {
+            Start-Service -Name $using:serviceName
+            Remove-Item $(AppPath)\Start-Server.ps1
+        }
+
+        Write-Host "Closing remote session"
+        Remove-PSSession $session

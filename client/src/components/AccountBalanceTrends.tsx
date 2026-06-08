@@ -71,11 +71,17 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
   };
 
   const calculateGrowth = () => {
-    if (patchedTrendData.length < 2) return 0;
-    const current = patchedTrendData[patchedTrendData.length - 1].balance;
-    const previous = patchedTrendData[patchedTrendData.length - 2].balance;
-    if (previous === 0) return current > 0 ? 100 : 0;
-    return ((current - previous) / previous) * 100;
+    const trendData = getTrendData();
+    if (!trendData || trendData.length < 2) return 0;
+    const start = trendData.at(0)?.balance;
+    const end = trendData.at(-1)?.balance;
+
+    // Guard against division by zero
+    if (!end || end === 0 || !start || start === 0) {
+      return 0;
+    }
+
+    return ((end - start) / start) * 100;
   };
 
   const growth = calculateGrowth();
@@ -172,20 +178,22 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
           }
         }}
       >
-        <ToggleButton value="monthly">Monthly</ToggleButton>
-        <ToggleButton value="quarterly">Quarterly</ToggleButton>
-        <ToggleButton value="ytd">YTD</ToggleButton>
+        <ToggleButton value="monthly">Month</ToggleButton>
+        <ToggleButton value="quarterly">Quarter</ToggleButton>
+        <ToggleButton value="ytd">Year</ToggleButton>
       </ToggleButtonGroup>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
-        {growth >= 0 ? (
+        {growth > 0 && (
           <ArrowUpward fontSize="small" color="primary" />
-        ) : (
-          <ArrowDownward fontSize="small" color="primary" />
         )}
-        <Typography variant="body2" color="primary.main">
-          {growth >= 0 ? '+' : ''}{growth.toFixed(1)}% MoM
-        </Typography>
+        {growth < 0 && (
+          <ArrowDownward fontSize="small" color="error" />
+        )}
+        <Typography variant="body2" color={ growth > 0 ? "primary.main" : growth === 0 ? "textPrimary" : "error" }>
+          {/* Note: toFixed already adds a negative sign in front of the number */}
+          {growth > 0 ? '+' : ''}{growth === 0 ? "No Change" : `${growth.toFixed(1)}%`}
+        </Typography> 
       </Box>
     </Box>
   );

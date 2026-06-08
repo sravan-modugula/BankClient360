@@ -1,0 +1,224 @@
+parameters:
+  dastServer: ''
+  dastService: ''
+  dastServerUrl: ''
+  dastApiKey: ''
+  dastScanUrl: ''
+
+  allowedHighs: 0
+  timeoutMinutes: 20
+
+steps:
+
+# Treating remote ZAP service as a lock.
+# Starting/stopping the service is the only way to get clean scans from ZAP
+# Check if it's running (currently running a scan for another pipeline run)
+# Wait until it's not running (previous scan is done)
+- task: PowerShell@2
+  displayName: "Start ZAP Service (Wait if in use)"
+  inputs:
+    targetType: inline
+    script: |
+      $timeoutMinutes = ${{ parameters.timeoutMinutes }}
+      $startTime = Get-Date
+
+      function Wait-ForZapApi {
+          param ($BaseUrl, $APIKey)
+
+          $apiTimeoutMinutes = 5
+          $apiStartTime = Get-Date
+
+          while ($true) {
+              if ((Get-Date) -gt $apiStartTime.AddMinutes($apiTimeoutMinutes)) {
+                  throw "Timed out waiting for ZAP API"
+              }
+
+              try {
+                  $versionUrl = "$BaseUrl/JSON/core/view/version/?apikey=$APIKey"
+                  $response = Invoke-RestMethod -Uri $versionUrl
+
+                  if ($response.version) {
+                      Write-Host "ZAP API started. Version: $($response.version)"
+                      break
+                  }
+              }
+              catch {
+                Write-Host "ZAP API not ready yet. retrying in 5s"
+              }
+
+              Start-Sleep -Seconds 5
+          }
+      }
+
+      Write-Host "Checking ZAP service state"
+      $svc = Get-Service -ComputerName "${{ parameters.dastServer }}" -Name "${{ parameters.dastService }}"
+
+      if ($svc.Status -ne 'Running') {
+          Write-Host "ZAP service not running. Starting."
+          Start-Service -InputObject $svc
+          Wait-ForZapApi -BaseUrl "${{ parameters.dastServerUrl }}" -ApiKey "${{ parameters.dastApiKey }}"
+      }
+      else {
+          Write-Host "Waiting for previous ZAP run to fully release"
+
+          while ($svc.Status -eq 'Running') {
+              if ((Get-Date) -gt $startTime.AddMinutes($timeoutMinutes)) {
+                  Write-Host "Timeout waiting. Assuming stale lock. Resetting service."
+                  Stop-Service -InputObject $svc -Force
+                  break
+              }
+
+              Write-Host "ZAP service is running. Waiting."
+              Start-Sleep -Seconds 10
+              $svc.Refresh()
+          }
+
+          Write-Host "ZAP service is free. Starting run."
+          Start-Service -InputObject $svc
+          Wait-ForZapApi -BaseUrl "${{ parameters.dastServerUrl }}" -ApiKey "${{ parameters.dastApiKey }}"
+      }
+
+# Spider scan crawls page, finds others
+- task: PowerShell@2
+  displayName: "Start Spider Scan"
+  inputs:
+    targetType: inline
+    script: |
+      $url = "${{ parameters.dastServerUrl }}/JSON/spider/action/scan/?apikey=${{ parameters.dastApiKey }}&url=${{ parameters.dastScanUrl }}&recurse=true"
+      Write-Host "Starting spider scan."
+      $resp = Invoke-RestMethod -Uri $url
+      $spiderId = $resp.scan
+
+      do {
+        Start-Sleep 5
+        $statusUrl = "${{ parameters.dastServerUrl }}/JSON/spider/view/status/?apikey=${{ parameters.dastApiKey }}&scanId=$id"
+        $status = (Invoke-RestMethod -Uri $statusUrl).status
+        Write-Host "Spider progress: $status%"
+      } while ($status -lt 100)
+
+      Write-Host "Spider completed."
+
+# Actual scan of the page
+- task: PowerShell@2
+  displayName: "Start Active Scan"
+  inputs:
+    targetType: inline
+    script: |
+      $url = "${{ parameters.dastServerUrl }}/JSON/ascan/action/scan/?apikey=${{ parameters.dastApiKey }}&url=${{ parameters.dastScanUrl }}"
+      Write-Host "Starting active scan."
+      $resp = Invoke-RestMethod -Uri $url
+      $scanId = $resp.scan
+
+      do {
+        Start-Sleep 5
+        $statusUrl = "${{ parameters.dastServerUrl }}/JSON/ascan/view/status/?apikey=${{ parameters.dastApiKey }}&scanId=$id"
+        $status = (Invoke-RestMethod -Uri $statusUrl).status
+        Write-Host "Active scan progress: $status%"
+      } while ($status -lt 100)
+
+      Write-Host "Active scan completed."
+
+# Downloads reports onto deploy agent for conversion
+- task: PowerShell@2
+  displayName: "Download ZAP Reports"
+  inputs:
+    targetType: inline
+    script: |
+      $url = "${{ parameters.dastServerUrl }}/OTHER/core/other/jsonreport/?apikey=${{ parameters.dastApiKey }}"
+      Invoke-WebRequest -Uri $url -OutFile "zap-report.json"
+
+# Convert JSON to JUnit to publish to ADO Pipeline page
+- task: PowerShell@2
+  displayName: "Convert ZAP JSON TO JUnit"
+  inputs:
+    targetType: inline
+    script: |
+      $json = Get-Content zap-report.json | ConvertFrom-Json
+
+      $doc = New-Object System.Xml.XmlDocument
+      $suite = $doc.CreateElement("testsuite")
+      $suite.SetAttribute("name", "OWASP ZAP Scan")
+      $doc.AppendChild($suite)
+
+      $total = 0
+      $failures = 0
+
+      foreach ($site in $json.site) {
+        foreach ($alert in $site.alerts) {
+          $risk = $alert.riskdesc.ToLower()
+
+          foreach ($inst in $alert.instances) {
+            $total++
+
+            $testCase = $doc.CreateElement("testcase")
+            $testCase.SetAttribute("name", "$($alert.name) at $($inst.uri)")
+            $testCase.SetAttribute("classname", $inst.uri)
+
+            if ($risk -like "*high*" -or $risk -like "*medium*") {
+              $failures++
+              $fail = $doc.CreateElement("failure")
+              $fail.InnerText = $alert.desc
+              $testCase.AppendChild($fail) | Out-Null
+            }
+
+            $suite.AppendChild($testCase) | Out-Null
+          }
+        }
+      }
+
+      $suite.SetAttribute("tests", $total)
+      $suite.SetAttribute("failures", $failures)
+
+      $doc.Save("zap-junit.xml")
+
+# Publish ZAP results to ADO Pipeline page
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: JUnit
+    testResultsFiles: '**/zap-junit.xml'
+    testRunTitle: 'OWASP ZAP Scan'
+    #failTaskOnFailedTests: true
+
+# Evaluate ZAP results & fail build if too many issues
+- task: PowerShell@2
+  displayName: "Check ZAP Results"
+  inputs:
+    targetType: inline
+    script: |
+      $reportPath = "$(Build.SourcesDirectory)\zap-report.json"
+      $allowedHighs = ${{ parameters.allowedHighs }}
+
+      $zap = Get-Content $reportPath | ConvertFrom-Json
+      $alerts = $zap.site.alerts
+
+      $highs   = ($alerts | Where-Object { $_.riskcode -eq "3" }).Count
+      $mediums = ($alerts | Where-Object { $_.riskcode -eq "2" }).Count
+
+      Write-Host "ZAP Findings: Highs = $highs Mediums = $mediums"
+
+      if ($highs -gt $allowedHighs) { #-or $mediums -ge $allowedMeds) {
+          Write-Host "ZAP scan failed security criteria"
+          exit 1
+      }
+
+# Stop service when done, cleaning ZAP
+- task: PowerShell@2
+  displayName: "Stop ZAP Service"
+  condition: always()
+  inputs:
+    targetType: inline
+    script: |
+      Write-Host "Stopping ZAP service to reset state."
+
+      $svc = Get-Service -ComputerName "${{ parameters.dastServer }}" -Name "${{ parameters.dastService }}"
+      try {
+        if ($svc.Status -eq 'Running') {
+            Stop-Service -InputObject $svc -Force
+            Write-Host "ZAP service stopped."
+        } else {
+            Write-Host "ZAP service already stopped."
+        }
+      }
+      catch {
+          Write-Host "Failed to stop DAST Service"
+      }

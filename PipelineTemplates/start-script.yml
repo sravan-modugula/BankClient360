@@ -1,0 +1,56 @@
+parameters:
+  samlEnabled: ''
+  samlHost: ''
+
+steps:
+
+- task: PowerShell@2
+  displayName: "Build Start-Server Script"
+  inputs:
+    targetType: inline
+    script: |
+    
+      Write-Host "Creating remote PowerShell session"
+      $session = New-PSSession -ComputerName "$(Servername)"
+
+      Invoke-Command -Session $session -ScriptBlock {
+        $content = @(
+            '# Set environment variables'
+            '$env:NODE_ENV = "development"'
+            '$env:PORT = "5000"'
+            '$env:HOST = "127.0.0.1"'
+            '$env:DATABASE_DIALECT = "sqlserver"'
+            '$env:DB_VENDOR = "mssql"'
+
+            '# SQL Server connection'
+            '$env:MSSQL_SERVER = "$(DBServer)"'
+            '$env:MSSQL_DATABASE = "$(DBName)"'
+            '$env:MSSQL_USER = "$(DBUser)"'
+            '$env:MSSQL_PASSWORD = "$(DBPassword)"'
+            '$env:MSSQL_PORT = "1433"'
+            '$env:MSSQL_ENCRYPT = "false"'
+            '$env:MSSQL_TRUST_SERVER_CERTIFICATE = "true"'
+
+            '# SSO'
+            '$env:SAML_ENABLED = ${{ parameters.samlEnabled }}'
+            '$env:SAML_ENTITY_ID="https://${{ parameters.samlHost }}"'
+            '$env:SAML_ENTRYPOINT="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
+            '$env:SAML_ISSUER="$(SAMLIssuer)"'
+            '$env:SAML_CALLBACK_URL="https://${{ parameters.samlHost }}/saml/acs"'
+            '$env:SAML_IDP_INITIATED_URL="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
+            '$env:SAML_CERT="./saml_cert.pem"'
+
+            '# Session secret'
+            '$env:SESSION_SECRET = "$(SessionSecret)"'
+
+            'Set-Location -Path "C:\ClientIQ"'
+
+            'Write-Host "Starting ClientIQ Server..." -ForegroundColor Green'
+            'npx tsx watch --clear-screen=false server/index.ts 2> C:\ClientIQ\logs\errors.log'
+        )
+
+        $content | Out-File -FilePath "C:\ClientIQ\Start-Server.ps1" -Encoding ascii
+      }
+
+      Write-Host "Closing remote session"
+      Remove-PSSession $session

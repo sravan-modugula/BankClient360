@@ -52,7 +52,6 @@ export async function getNotesSqlServer(
     accountId?: number;
     targetType?: 'customer' | 'account';
     categoryId?: number;
-    cifNumber?: string | null;
     limit?: number;
     offset?: number;
   }
@@ -61,14 +60,7 @@ export async function getNotesSqlServer(
     const request = pool.request();
     const conditions: string[] = [];
 
-    // Customer-scoped: match by customer_id OR denormalized cif_number so that
-    // notes loaded by the external ETL (which anchors on Jack Henry CIF) surface
-    // on the same client profile.
-    if (params.customerId !== undefined && params.cifNumber) {
-      request.input('customerId', sql.BigInt, params.customerId);
-      request.input('cifNumber', sql.NVarChar, params.cifNumber);
-      conditions.push('(n.customer_id = @customerId OR n.cif_number = @cifNumber)');
-    } else if (params.customerId !== undefined) {
+    if (params.customerId !== undefined) {
       request.input('customerId', sql.BigInt, params.customerId);
       conditions.push('n.customer_id = @customerId');
     }

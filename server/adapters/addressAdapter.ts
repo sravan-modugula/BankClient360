@@ -9,6 +9,11 @@ type Address = typeof address.$inferSelect;
  * Transforms address records into contact DTOs with type='address'
  */
 
+function cleanWhitespace(s: string | null) {
+  if (s && s.trim() !== '') return s;
+  return null;
+}
+
 /**
  * Maps a database Address entity to a ContactDTO
  * @param dbAddress - Raw database address entity
@@ -16,18 +21,16 @@ type Address = typeof address.$inferSelect;
  * @returns ContactDTO with type='address'
  */
 export function mapAddressToContactDTO(dbAddress: Address, purpose?: string | null): ContactDTO {
-
-  
-  const addressLine2 =
-    dbAddress.addressLine2 && dbAddress.addressLine2.trim() !== ''
-      ? dbAddress.addressLine2
-      : null;
-
+ 
   // Combine address fields into a single value string
   const addressParts = [
-    dbAddress.addressLine1,
-    dbAddress.addressLine2,
-    [dbAddress.city, dbAddress.state, dbAddress.postalCode].filter(Boolean).join(', ')
+    cleanWhitespace(dbAddress.addressLine1),
+    cleanWhitespace(dbAddress.addressLine2),
+    [
+      cleanWhitespace(dbAddress.city), 
+      cleanWhitespace(dbAddress.state), 
+      cleanWhitespace(dbAddress.postalCode)
+    ].filter(Boolean).join(', ')
   ].filter(Boolean);
 
   const addressValue = addressParts.join(', ') || '';

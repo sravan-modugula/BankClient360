@@ -562,7 +562,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       from search
       join account
       on account.account_id = search.account_id
-      inner join account_ownership ao ON ao.account_id = account.account_id
+      inner join account_ownership ao ON ao.account_id = account.account_id and ao.ownership_type = 'Primary'
       where search.search_value like @query + '%' and search.entity_type = 1
       
       order by status asc;
