@@ -39,9 +39,11 @@ import {
   Description,
   Close,
   Edit,
-  Circle
+  Circle,
+  Delete,
+  Restore
 } from '@mui/icons-material';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import NoteEditorModal from './NoteEditorModal';
 import NoteVersionHistoryModal from './NoteVersionHistoryModal';
@@ -135,6 +137,47 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
     queryKey: ['/api/note-categories'],
     retry: 1,
     staleTime: 60000
+  });
+
+  const queryClient = useQueryClient();
+
+  // Invalidate without the showDeleted flag so both Active and Deleted views refetch.
+  const notesQueryRoot = [`/api/${targetType}s/${customerId}/notes`];
+
+  const deleteMutation = useMutation({
+    mutationFn: async (noteId: number) => {
+      const res = await fetch(`/api/notes/${noteId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to delete note: ${res.status} ${res.statusText}`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: notesQueryRoot });
+      handleCloseDrawer();
+    }
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (noteId: number) => {
+      const res = await fetch(`/api/notes/${noteId}/restore`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to restore note: ${res.status} ${res.statusText}`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: notesQueryRoot });
+      handleCloseDrawer();
+    }
   });
 
   // Normalize and validate notes array - add convenience fields while preserving currentVersion
@@ -272,7 +315,6 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
                 Customer Notes
               </Typography>
               <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                {/*
                 <ToggleButtonGroup
                   value={showDeleted ? 'deleted' : 'active'}
                   exclusive
@@ -290,7 +332,6 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
                     Deleted
                   </ToggleButton>
                 </ToggleButtonGroup>
-                */}
                 <Tooltip title="Filters">
                   <IconButton
                     size="small"
@@ -637,15 +678,41 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
                 >
                   View Version History
                 </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<Edit />}
-                  onClick={() => handleEditNote(selectedNote.noteId)}
-                  fullWidth
-                  data-testid="button-edit-note-drawer"
-                >
-                  Edit Note
-                </Button>
+                {!safeBoolean((selectedNote as any).currentVersion?.isSoftDeleted) ? (
+                  <>
+                    <Button
+                      variant="outlined"
+                      startIcon={<Edit />}
+                      onClick={() => handleEditNote(selectedNote.noteId)}
+                      fullWidth
+                      data-testid="button-edit-note-drawer"
+                    >
+                      Edit Note
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<Delete />}
+                      onClick={() => deleteMutation.mutate(selectedNote.noteId)}
+                      disabled={deleteMutation.isPending}
+                      fullWidth
+                      data-testid="button-delete-note-drawer"
+                    >
+                      Delete Note
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="outlined"
+                    startIcon={<Restore />}
+                    onClick={() => restoreMutation.mutate(selectedNote.noteId)}
+                    disabled={restoreMutation.isPending}
+                    fullWidth
+                    data-testid="button-restore-note-drawer"
+                  >
+                    Restore Note
+                  </Button>
+                )}
               </Stack>
             </Box>
           </Box>
