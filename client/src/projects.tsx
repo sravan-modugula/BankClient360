@@ -36,9 +36,9 @@ export const PROJECTS: Project[] = [
       />
     ),
     subroutes: [
-      { name: "Client",    route: "/client",    hidden: false},
-      { name: "Household", route: "/household", hidden: false  },
-      { name: "Accounts",  route: "/accounts" , hidden: false   },
+      { name: "Household", route: "/household", hidden: false },
+      { name: "Client",    route: "/client",    hidden: false },
+      { name: "Accounts",  route: "/accounts" , hidden: false },
     ],
   },
   // only include this in dev and test environment for now
