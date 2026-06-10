@@ -3428,20 +3428,21 @@ export class DatabaseStorage implements IBankingStorage {
   }
 
   async getCustomerNotes(customerId: number, includeDeleted: boolean = false): Promise<NoteWithCurrentVersion[]> {
-    // Look up the Jack Henry CIF so we can also surface ETL-loaded notes that
-    // anchor on cif_number instead of (or in addition to) customer_id.
-    const [cifRow] = await db
-      .select({ cif: customer.jackHenryCifNumber })
-      .from(customer)
-      .where(eq(customer.customerId, customerId))
-      .limit(1);
-    const cif = cifRow?.cif ?? null;
-
     // SQL Server implementation
     if (isSQLServer()) {
       const { getMssqlPool } = await import('./dbConnection');
       const { getNotesSqlServer } = await import('./storage/sqlServerNotes');
       const pool = await getMssqlPool();
+
+      // Look up the Jack Henry CIF so we can also surface ETL-loaded notes that
+      // anchor on cif_number instead of (or in addition to) customer_id.
+      const cifRequest = pool.request();
+      cifRequest.input('customerId', customerId);
+      const cifResult = await cifRequest.query(
+        `SELECT jack_henry_cif_number FROM customer WHERE customer_id = @customerId`
+      );
+      const cif = cifResult.recordset[0]?.jack_henry_cif_number ?? null;
+
       const notes = await getNotesSqlServer(pool, {
         customerId,
         targetType: 'customer',
@@ -3451,6 +3452,13 @@ export class DatabaseStorage implements IBankingStorage {
     }
 
     // PostgreSQL implementation
+    const [cifRow] = await db
+      .select({ cif: customer.jackHenryCifNumber })
+      .from(customer)
+      .where(eq(customer.customerId, customerId))
+      .limit(1);
+    const cif = cifRow?.cif ?? null;
+
     const customerMatch = cif
       ? or(eq(note.customerId, customerId), eq(note.cifNumber, cif))
       : eq(note.customerId, customerId);
