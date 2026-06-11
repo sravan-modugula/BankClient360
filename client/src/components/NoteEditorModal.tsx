@@ -83,17 +83,17 @@ export default function NoteEditorModal({
   });
 
   // Fetch categories
-  const { data: categoriesData } = useQuery({
+  const { data: categoriesData } = useQuery<{ categories: NoteCategory[] }>({
     queryKey: ['/api/note-categories']
   });
 
   // Fetch existing note if editing
-  const { data: existingNote, isLoading: loadingNote } = useQuery({
+  const { data: existingNote, isLoading: loadingNote } = useQuery<any>({
     queryKey: [`/api/notes/${noteId}`],
     enabled: isEditMode && !!noteId
   });
 
-  const categories: NoteCategory[] = (categoriesData as any)?.categories || [];
+  const categories: NoteCategory[] = categoriesData?.categories || [];
 
   // Reset form when opening for a new note
   useEffect(() => {
@@ -146,8 +146,11 @@ export default function NoteEditorModal({
       const res = await apiRequest('POST', '/api/notes', payload);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/${targetType}s/${targetId}/notes`] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: [`/api/${targetType}s/${targetId}/notes`],
+        refetchType: 'all'
+      });
       toast({
         title: 'Success',
         description: 'Note created successfully'
@@ -174,9 +177,17 @@ export default function NoteEditorModal({
       const res = await apiRequest('PATCH', `/api/notes/${noteId}`, cleanedData);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/${targetType}s/${targetId}/notes`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/notes/${noteId}`] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [`/api/${targetType}s/${targetId}/notes`],
+          refetchType: 'all'
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [`/api/notes/${noteId}`],
+          refetchType: 'all'
+        })
+      ]);
       toast({
         title: 'Success',
         description: 'Note updated successfully'

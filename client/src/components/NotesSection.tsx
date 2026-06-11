@@ -155,8 +155,8 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
       }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: notesQueryRoot });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: notesQueryRoot, refetchType: 'all' });
       handleCloseDrawer();
     }
   });
@@ -174,8 +174,8 @@ export default function NotesSection({ customerId, targetType = 'customer' }: No
       }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: notesQueryRoot });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: notesQueryRoot, refetchType: 'all' });
       handleCloseDrawer();
     }
   });
