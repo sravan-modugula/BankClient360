@@ -277,6 +277,12 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   <Typography variant="body2" color="text.secondary">Product</Typography>
                   <Typography variant="body1">{getProductName(account)}</Typography>
                 </Grid>
+                {account.maturityDate && (
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="body2" color="text.secondary">Maturity Date</Typography>
+                    <Typography variant="body1">{account.maturityDate ? formatDate(account.maturityDate) : '—'}</Typography>
+                  </Grid>
+                )}
               </Grid>
             </CardContent>
           </Card>
