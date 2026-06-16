@@ -49,9 +49,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { data: userInfo, isLoading: isUserLoading, refetch: refetchUser } = useQuery<UserInfo>({
     queryKey: ['/api/auth/permissions'],
     enabled: authStatus?.isAuthenticated === true,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     retry: false,
   });
+
+  // If the session-cookie identity flips (e.g., a different user SSO'd in
+  // through RSA after the prior user closed the tab), force a refetch so the
+  // SPA never paints the prior user's name from a stale cache.
+  const currentIdentityKey = authStatus?.employeeId ?? authStatus?.email ?? null;
+  useEffect(() => {
+    if (authStatus?.isAuthenticated) {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/permissions'] });
+    }
+  }, [currentIdentityKey, authStatus?.isAuthenticated, queryClient]);
 
   const isAuthenticated = authStatus?.isAuthenticated ?? false;
   const isLinked = authStatus?.isLinked ?? false;

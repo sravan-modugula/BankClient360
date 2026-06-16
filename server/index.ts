@@ -8,6 +8,7 @@ import logger from "./services/logger";
 import { correlationIdMiddleware } from "./middleware/correlationId";
 import { requestLoggerMiddleware } from "./middleware/requestLogger";
 import { createSessionMiddleware, createSamlStrategy } from "./auth";
+import { authGate } from "./middleware/authGate";
 
 const app = express();
 
@@ -47,6 +48,11 @@ if (samlEnabled) {
     }
     next();
   });
+
+  // Global auth gate: redirects unauthenticated browser navigations to SSO and
+  // returns 401 JSON for API/XHR calls. Allowlists /api/auth/*, /saml/*,
+  // /assets/*, /IdPServlet, and /health so the login flow itself stays reachable.
+  app.use(authGate);
 } else if (process.env.NODE_ENV === 'development') {
   logger.info({ module: 'auth' }, 'Using mock authentication (development mode)');
   app.use(async (req, _res, next) => {

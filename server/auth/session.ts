@@ -36,10 +36,10 @@ export function createSessionMiddleware() {
     saveUninitialized: false,        // Don't save empty sessions
     rolling: true,                   // Refresh session on activity
     cookie: {
-      maxAge: 12 * 60 * 60 * 1000,  // 12 hours
+      maxAge: 60 * 60 * 1000,        // 1 hour idle; rolling:true above refreshes on activity
       httpOnly: true,                // Prevent XSS
       secure: process.env.NODE_ENV === 'production', // HTTPS only in prod
-      sameSite: 'lax',               // CSRF protection
+      sameSite: 'strict',            // Banking-grade: blocks cross-site cookie attach. Forces re-auth on re-entry from RSA portal — desired on shared workstations.
       path: '/'
     },
     name: 'clientiq.sid'             // Custom cookie name
