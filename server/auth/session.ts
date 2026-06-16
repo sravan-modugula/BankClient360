@@ -39,7 +39,7 @@ export function createSessionMiddleware() {
       maxAge: 60 * 60 * 1000,        // 1 hour idle; rolling:true above refreshes on activity
       httpOnly: true,                // Prevent XSS
       secure: process.env.NODE_ENV === 'production', // HTTPS only in prod
-      sameSite: 'strict',            // Banking-grade: blocks cross-site cookie attach. Forces re-auth on re-entry from RSA portal — desired on shared workstations.
+      sameSite: 'lax',               // Required for SAML HTTP-POST binding: 'strict' blocks the cookie attach on the GET that follows IdP's cross-site POST → /saml/acs → 302 redirect chain, causing an infinite re-auth loop.
       path: '/'
     },
     name: 'clientiq.sid'             // Custom cookie name
