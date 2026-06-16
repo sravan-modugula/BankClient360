@@ -39,6 +39,7 @@ import { getCardStatusConfig, getCardStatusLabel, getCardBrandConfig, formatCard
 import type { DebitCardWithLimitProfile } from '@shared/schema';
 import { FormatTransactionAmount } from './FormatTransactionAmount';
 import BackButton from './BackButton';
+import { formatFlatDate } from '@/helpers';
 
 interface AccountDetailOption2Props {
   accountId?: string;
@@ -277,10 +278,10 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   <Typography variant="body2" color="text.secondary">Product</Typography>
                   <Typography variant="body1">{getProductName(account)}</Typography>
                 </Grid>
-                {account.maturityDate && (
+                {account.maturityDate && account.maturityDate !== "1900-01-01T00:00:00.000Z" && (
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">Maturity Date</Typography>
-                    <Typography variant="body1">{account.maturityDate ? formatDate(account.maturityDate) : '—'}</Typography>
+                    <Typography variant="body1">{account.maturityDate ? formatFlatDate(account.maturityDate) : '—'}</Typography>
                   </Grid>
                 )}
               </Grid>

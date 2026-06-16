@@ -1189,6 +1189,15 @@ export interface ContactInfoUI {
   purpose: string;
 }
 
+export interface MaintenanceItem {
+  accountNumber: string,
+  accountType: string,
+  maintenanceDate: string, 
+  maintenanceField: string,
+  oldValue: string, 
+  newValue: string
+}
+
 export type Address = typeof address.$inferSelect;
 export type InsertAddress = z.infer<typeof insertAddressSchema>;
 

@@ -318,6 +318,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/customer/:id/maintenance", async (req, res) => {
+    try {
+      const customerId = req.params.id;
+      
+      const response = await storage.getCustomerMaintenanceItems(customerId, req.body.startDate, req.body.endDate);
+
+      res.json(response);
+    } catch (error) {
+      logger.error({ err: error, module: 'routes' }, 'Error fetching customer details');
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // GET /api/customers/:id/details - Get complete customer details (all fields)
   app.get("/api/customers/:id/details", async (req, res) => {
     try {

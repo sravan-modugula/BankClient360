@@ -85,7 +85,8 @@ import {
   noteCategory,
   note,
   noteVersion,
-  noteAuditLog
+  noteAuditLog,
+  MaintenanceItem
 } from "@shared/schema";
 import { GROUP_CODE_TO_ACTIVITY, createDefaultActivity, activityFromTransactionType } from "../shared/constants";
 
@@ -421,6 +422,23 @@ export class DatabaseStorage implements IBankingStorage {
       .limit(1);
 
     return result[0];
+  }
+
+  async getCustomerMaintenanceItems(
+    customerId: string, // CIF number
+    startDate: string, // date in yyyy-mm-dd format
+    endDate: string, // date in yyyy-mm-dd format
+  ): Promise<MaintenanceItem[] | null> {
+        // SQL Server implementation
+    if (isSQLServer()) {
+      const { getMssqlPool } = await import('./dbConnection');
+      const { getCustomerMaintenanceItems } = await import('./storage/sqlServerCustomer');
+      const pool = await getMssqlPool();
+      const result = await getCustomerMaintenanceItems(pool, customerId, startDate, endDate);
+      return result || null;
+    }
+
+    return null; 
   }
 
   async getCustomerWithDetails(id: number): Promise<CustomerWithDetails | undefined> {

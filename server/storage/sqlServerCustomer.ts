@@ -9,7 +9,8 @@ import type {
   InsertCustomer,
   CustomerWithDetails,
   ContactInfo,
-  Address
+  Address,
+  MaintenanceItem
 } from '@shared/schema';
 import logger from '../services/logger';
 
@@ -148,6 +149,43 @@ export async function getCustomerWithDetailsSqlServer(
     } as CustomerWithDetails;
   } catch (error) {
     fileLogger.error({ err: error }, 'Get customer with details error');
+    throw error;
+  }
+}
+
+export async function getCustomerMaintenanceItems(
+  pool: sql.ConnectionPool,
+  customerId: string, // CIF number
+  startDate: string, // date in yyyy-mm-dd format
+  endDate: string, // date in yyyy-mm-dd format
+): Promise<MaintenanceItem[] | null> {
+    try {
+      const request = pool.request();
+      request.input('customerId', sql.NVarChar, customerId);
+      request.input('startDate', sql.Date, startDate || new Date());
+      request.input('endDate', sql.Date, endDate || new Date());
+
+      // Get customer with contacts and addresses in one query
+      const result = await request.query(`
+        select distinct
+          ACCT_NBR as accountNumber,
+          ACCT_TYP as accountType,
+          MANT_DT as maintenanceDate, 
+          MANT_FLD as maintenanceField,
+          OLD_VAL as oldValue, 
+          NEW_VAL as newValue
+        from
+          customer_account_maintenance
+        where
+          CIF_NBR = @customerId
+          and '2026-03-01' < MANT_DT
+          and MANT_DT < '2026-06-12'
+          order by MANT_DT desc, newValue desc;
+      `);
+
+      return result.recordset as MaintenanceItem[];
+  } catch (error) {
+    fileLogger.error({ err: error }, 'Create customer error');
     throw error;
   }
 }

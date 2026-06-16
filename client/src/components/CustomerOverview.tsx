@@ -8,7 +8,8 @@ import {
   Avatar,
   Divider,
   Link,
-  CardActions
+  CardActions,
+  Button
 } from '@mui/material';
 import {
   Person,
@@ -18,11 +19,13 @@ import {
   Cake,
   ArrowForward,
   Business,
-  LocationOn
+  LocationOn,
+  Build as BuildIcon
 } from '@mui/icons-material';
 import CustomerDetailModal from './CustomerDetailModal';
 import PanelTitle from "./PanelTitle";
 import { formatFlatDate } from '@/helpers';
+import MaintenanceModal from './MaintenanceItems';
 
 interface Customer {
   id: string;
@@ -54,6 +57,7 @@ interface CustomerOverviewProps {
 
 export default function CustomerOverview({ customer }: CustomerOverviewProps) {
   const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const [maintenanceOpen, setMaintenanceOpen] = React.useState(false);
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -81,7 +85,27 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
     <Card elevation={2} sx={{ width: '100%', flex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
 
       <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <PanelTitle left="Client Information" />
+        <PanelTitle
+          left="Client Information"
+          right={
+              <Button
+                variant='contained'
+                sx={{ 
+                  background: "#f0efeb", 
+                  color: "#666", 
+                  border: "1px solid #d8d6cf", 
+                  borderRadius: 1, 
+                  '&:hover': {
+                    background: "#e8e6e0",
+                    borderColor: "#bbb"
+                  }
+                }}
+                startIcon={<BuildIcon /> }
+                onClick={() => setMaintenanceOpen(true)}   
+              >
+                Maintenance
+              </Button>
+          } />
 
         {/* Header Section - Avatar, Name, CIF, Status */}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
@@ -90,6 +114,7 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
           </Avatar>
 
           <Box sx={{ flex: 1 }}>
+
             {/* Name and Household Icon */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
               <Typography variant="h5" component="h1" data-testid="text-customer-name" sx={{ fontWeight: 400 }}>
@@ -189,7 +214,7 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
               <Typography variant="body1" data-testid="text-date-of-birth" sx={{ fontWeight: 400, mt: 0.5 }}>
                 {customer.branchName}
               </Typography>
-            </Box> 
+            </Box>
           )}
 
           {/* Preferred Name */}
@@ -292,6 +317,14 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
         customerId={parseInt(customer.id)}
+      />
+
+      {/* Maintenance Items Modal */}
+      <MaintenanceModal
+        open={maintenanceOpen}
+        onClose={() => setMaintenanceOpen(false)}
+        clientName={customer.name}
+        cifNumber={customer.cifNumber}
       />
     </Card>
   );
