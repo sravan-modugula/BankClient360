@@ -28,6 +28,89 @@ function spaLoginErrorUrl(reason: string): string {
 }
 
 /**
+ * Pick the URL we point users at from the sign-in page. Prefer an explicit
+ * RSA_PORTAL_URL; otherwise derive the origin from SAML_ENTRYPOINT (the IdP
+ * lives on the same host as the portal); otherwise fall back to the F&M
+ * production portal landing URL.
+ */
+function resolveRsaPortalUrl(): string {
+  const explicit = process.env.RSA_PORTAL_URL;
+  if (explicit) {
+    try {
+      const u = new URL(explicit);
+      if (u.protocol === 'https:') return u.toString();
+    } catch { /* fall through */ }
+  }
+  try {
+    const entrypoint = process.env.SAML_ENTRYPOINT || '';
+    const u = new URL(entrypoint);
+    if (u.protocol === 'https:') return `${u.origin}/WebPortal/`;
+  } catch { /* fall through */ }
+  return 'https://portal.fmb.com/WebPortal/';
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderSignInPage(portalUrl: string): string {
+  const href = escapeHtml(portalUrl);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In · ClientIQ</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: linear-gradient(135deg, #f5f7f5 0%, #e8efe9 100%);
+    color: #1f2933;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; margin: 0; padding: 1.5rem;
+  }
+  .card {
+    background: #fff;
+    padding: 2.5rem 3rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(15, 35, 25, 0.08);
+    max-width: 440px; width: 100%;
+    text-align: center;
+  }
+  .brand { font-size: 1.75rem; font-weight: 700; color: #2c5f3f; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  .sub   { color: #6b7280; margin: 0 0 1.75rem; font-size: 0.95rem; }
+  .btn {
+    display: inline-block;
+    background: #2c5f3f;
+    color: #fff;
+    padding: 0.85rem 1.75rem;
+    border-radius: 6px;
+    font-size: 1rem; font-weight: 600;
+    text-decoration: none;
+    transition: background 0.15s ease;
+  }
+  .btn:hover, .btn:focus { background: #244e34; outline: none; }
+  .hint { margin-top: 1.5rem; font-size: 0.85rem; color: #9ca3af; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 class="brand">ClientIQ</h1>
+    <p class="sub">Sign in via the F&amp;M Bank RSA portal to continue.</p>
+    <a class="btn" href="${href}">Sign in via RSA Portal</a>
+    <p class="hint">After signing in, click the <strong>ClientIQ</strong> tile in the portal to launch the application.</p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * /api/auth/* — login/logout/status shell. SAML SP routes live at top level
  * (see createSamlRoutes) to match the F&M Bank IdP's POST target.
  */
@@ -35,42 +118,36 @@ export function createAuthRoutes() {
   const router = Router();
 
   router.get('/login', (req, res) => {
-    // Prefer IdP-initiated SSO when set (RSA's portal launcher, e.g.
-    // https://portal.fmb.com/IdPServlet?idp_id=<id>). Sidesteps SP-initiated
-    // SAMLRequest construction entirely. Accept either env var name.
-    const idpInitiatedUrl = process.env.SAML_IDP_INITIATED_URL || process.env.SAML_IDP_INITIATED;
-    if (idpInitiatedUrl) {
-      authLogger.info({ idpInitiatedUrl }, 'Redirecting to IdP-initiated SSO');
-      emitAuditEvent({
-        eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
-        action: 'IdP-initiated SSO redirect',
-        outcome: 'success',
-        actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
-        correlationId: req.correlationId,
-        module: 'auth',
-      });
-      return res.redirect(idpInitiatedUrl);
+    // Already authenticated — send to app root rather than re-prompting.
+    if (req.session?.employeeId || req.user) {
+      return res.redirect('/');
     }
 
-    if (isSamlEnabled()) {
-      authLogger.info('Redirecting to SP-initiated SAML login');
-      emitAuditEvent({
-        eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
-        action: 'SAML login redirect initiated',
-        outcome: 'success',
-        actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
-        correlationId: req.correlationId,
-        module: 'auth',
+    // Dev mode (no SAML): preserve the prior JSON contract.
+    if (!isSamlEnabled()) {
+      authLogger.info('SAML not configured, returning dev mode response');
+      return res.status(200).json({
+        message: 'Development mode - SAML not configured',
+        samlEnabled: false,
+        hint: 'Set SAML_ENABLED=true and configure SAML_ENTRYPOINT (plus SAML_CALLBACK_URL, SAML_CERT, SAML_ISSUER) for production SSO.',
       });
-      return res.redirect('/saml/login');
     }
 
-    authLogger.info('SAML not configured, returning dev mode response');
-    return res.status(200).json({
-      message: 'Development mode - SAML not configured',
-      samlEnabled: false,
-      hint: 'Set SAML_ENABLED=true and configure SAML_ENTRYPOINT (plus SAML_CALLBACK_URL, SAML_CERT, SAML_ISSUER) for production SSO. Optionally set SAML_IDP_INITIATED_URL for IdP-initiated flow.',
+    // Render a static sign-in page that links to the RSA portal landing URL.
+    // Auto-redirecting straight to portal.fmb.com/IdPServlet?idp_id=... does
+    // not actually initiate SSO — RSA only emits a SAMLResponse when the user
+    // launches the app from the portal tile. So we just send them to the
+    // portal and let them click ClientIQ from there.
+    const portalUrl = resolveRsaPortalUrl();
+    emitAuditEvent({
+      eventType: AuditEventType.AUTH_LOGIN_SUCCESS,
+      action: 'Sign-in page shown',
+      outcome: 'success',
+      actor: { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
+      correlationId: req.correlationId,
+      module: 'auth',
     });
+    res.type('html').send(renderSignInPage(portalUrl));
   });
 
   router.post('/logout', (req, res) => {
