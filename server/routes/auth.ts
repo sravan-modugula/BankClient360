@@ -168,6 +168,33 @@ export function createSamlRoutes() {
     next();
   });
 
+  // Recovery handler: /IdPServlet is the RSA portal's own entry point on
+  // portal.fmb.com. If a request lands on the same path on the SP host
+  // (RSA Admin Console misconfig, bookmark drift, stale link), destroy any
+  // prior session before bouncing to the real IdP — otherwise the previous
+  // user's cookie survives the round-trip and the SPA renders their identity.
+  router.get('/IdPServlet', (req, res) => {
+    const target = process.env.SAML_IDP_INITIATED_URL
+      || process.env.SAML_IDP_INITIATED
+      || process.env.SAML_ENTRYPOINT;
+
+    const sendRedirect = () => {
+      if (!target) {
+        return res.status(503).send('SSO not configured');
+      }
+      return res.redirect(target);
+    };
+
+    if (req.session) {
+      req.session.destroy(() => {
+        res.clearCookie('clientiq.sid');
+        sendRedirect();
+      });
+    } else {
+      sendRedirect();
+    }
+  });
+
   router.get('/saml/login', (req, res, next) => {
     authLogger.info({ ip: req.ip }, 'SAML SP-initiated login');
     passport.authenticate('saml', {
