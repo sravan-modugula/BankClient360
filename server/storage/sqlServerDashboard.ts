@@ -219,7 +219,7 @@ export async function getRelationshipSummarySqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
-        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
+        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
     `);
 
     // Calculate current loans total (using absolute value)
@@ -259,7 +259,7 @@ export async function getRelationshipSummarySqlServer(
         AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
         AND ft.transaction_date >= @ninetyDaysAgo
         AND ft.ledger_balance_after IS NOT NULL
-        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
+        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
     `);
 
     const request4 = pool.request();
@@ -331,7 +331,7 @@ const DEPOSIT_ACCOUNTS_SUBQUERY = `
   INNER JOIN account_ownership ao ON ao.account_id = a.account_id
   WHERE ao.customer_id = @customerId
     AND LOWER(a.account_status) = 'active'
-    AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
+    AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
     AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
 `;
 
@@ -391,7 +391,7 @@ export async function getDepositSummarySqlServer(
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND LOWER(a.account_status) = 'active'
-        and (ao.ownership_type = 'Primary account owner' or ao.ownership_type = 'primary')
+        and (ao.ownership_type = 'Primary account owner' or ao.ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
         AND LOWER(a.account_type) IN (${DEPOSIT_ACCOUNT_TYPES_SQL})
       ORDER BY a.account_type, a.account_number
     `);

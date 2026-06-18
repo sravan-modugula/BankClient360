@@ -85,12 +85,12 @@ export async function getCustomerAccountsSqlServer(
         a.updated_at,
         -- a.account_number_bigint,
         -- a.unique_act_number,
-        ao.customer_id
+        ao.customer_id,
+        ao.ownership_type
       FROM account a
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = @customerId
         AND a.account_status != 'closed'
-        AND (ao.ownership_type = 'Primary account owner' or ao.ownership_type = 'primary')
       ORDER BY a.account_type, a.account_number
     `);
 
@@ -155,7 +155,7 @@ export async function getHouseholdAccountsSqlServer(
       INNER JOIN 
         account_ownership ao ON ao.account_id = a.account_id
         -- Ownership type is different in dev and test
-	      and (ownership_type = 'Primary account owner' or ownership_type = 'primary')
+	      and (ownership_type = 'Primary account owner' or ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
       WHERE ao.customer_id in (select customer_id from hh_members)
       AND account_status != 'closed'
       ORDER BY account_type, account_number;
@@ -415,6 +415,7 @@ function mapAccountFromDb(row: any): Account & { branchName?: string; branchCode
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     customerId: row.customer_id,
+    ownershipType: row.ownership_type, 
     ...(row.branch_name && { branchName: row.branch_name }),
     ...(row.branch_code && { branchCode: row.branch_code }),
   };

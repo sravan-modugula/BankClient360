@@ -36,9 +36,9 @@ import { useDateFormatter } from '@/lib/dateFormatters';
 import { useHasPermission } from '@/hooks/usePermissions';
 import type { Account } from '@shared/schema';
 
-interface AccountListProps {
-  customerId?: number;
-  accounts?: Account[];
+interface AccountTableProp {
+  accounts: Account[];
+  canViewBalances: boolean;
   title?: string;
   onAccountSelect?: (accountId: number | null, accountLabel: string) => void;
   selectedAccountId?: number | null;
@@ -46,19 +46,18 @@ interface AccountListProps {
   onRowClick?: (account: Account) => void;
 }
 
-export default function AccountList({
-  customerId,
-  accounts: accountsProp,
-  title = 'Accounts',
+function AccountTable({
+  accounts,
+  canViewBalances,
+  title,
   onAccountSelect,
-  selectedAccountId = null,
+  selectedAccountId,
   onViewAccountDetail,
   onRowClick
-}: AccountListProps) {
+}: AccountTableProp) {
   const theme = useTheme();
   const [, setLocation] = useLocation();
   const { formatCurrency } = useDateFormatter();
-  const canViewBalances = useHasPermission('account.view.balances');
 
   // Pagination state
   const [page, setPage] = useState(0);
@@ -144,20 +143,10 @@ export default function AccountList({
     return isNaN(parsed) ? null : parsed;
   };
 
-  // Fetch accounts from API only when no pre-supplied accounts and customerId is provided
-  const { data: fetchedAccounts = [], isLoading: queryLoading, error: queryError } = useQuery<Account[]>({
-    queryKey: [`/api/customers/${customerId}/accounts`],
-    enabled: !accountsProp && !!customerId && Number.isFinite(customerId)
-  });
-
-  const accounts = accountsProp ?? fetchedAccounts;
-  const isLoading = accountsProp ? false : queryLoading;
-  const error = accountsProp ? null : queryError;
-
   // Get account icon based on type
   const getAccountIcon = (accountType: string) => {
     const iconStyle = { color: theme.palette.primary.main, fontSize: 20 };
-    
+
     switch (accountType.toLowerCase()) {
       case 'checking':
         return <AccountBalance sx={iconStyle} />;
@@ -239,14 +228,14 @@ export default function AccountList({
   // Sort accounts
   const sortedAccounts = orderBy
     ? [...filteredAccounts].sort((a, b) => {
-        let cmp = 0;
-        if (orderBy === 'balance') {
-          cmp = safeParseBalance(a.balance) - safeParseBalance(b.balance);
-        } else if (orderBy === 'status') {
-          cmp = normalizeStatus(a.accountStatus).localeCompare(normalizeStatus(b.accountStatus));
-        }
-        return order === 'asc' ? cmp : -cmp;
-      })
+      let cmp = 0;
+      if (orderBy === 'balance') {
+        cmp = safeParseBalance(a.balance) - safeParseBalance(b.balance);
+      } else if (orderBy === 'status') {
+        cmp = normalizeStatus(a.accountStatus).localeCompare(normalizeStatus(b.accountStatus));
+      }
+      return order === 'asc' ? cmp : -cmp;
+    })
     : filteredAccounts;
 
   // Get paginated accounts
@@ -255,60 +244,22 @@ export default function AccountList({
     page * rowsPerPage + rowsPerPage
   );
 
-  if (isLoading) {
-    return (
-      <Card elevation={2} sx={{ mb: 3 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    // Check if this is a 403 error (permission denied due to ABAC restriction)
-    const is403 = error instanceof Error && 'status' in error && (error as any).status === 403;
-    const errorMessage = is403 && (error as any).message?.includes('employee') 
-      ? 'Access restricted: Level 1 users cannot view account information for employee customers.'
-      : 'Failed to load accounts';
-    
-    return (
-      <Card elevation={2} sx={{ mb: 3 }}>
-        <CardContent>
-          <Alert severity={is403 ? "warning" : "error"}>{errorMessage}</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (accounts.length === 0) {
-    return (
-      <Card elevation={2} sx={{ mb: 3 }}>
-        <CardContent>
-          <Alert severity="info">No accounts found for this customer</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card elevation={2} sx={{ mb: 3 }}>
       <CardContent>
         <Box sx={{ mb: 2 }}>
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
+          <Typography
+            variant="h6"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
               gap: 1,
               color: theme.palette.text.primary,
               fontWeight: 400
             }}
           >
             <AccountBalance sx={{ color: theme.palette.primary.main }} />
-            {title} ({accounts.length})
+            {title} <Chip sx={{backgroundColor: "#eaf3e4", border: "1px solid #c0d8b8"}} label={accounts.length}/>
           </Typography>
         </Box>
 
@@ -352,6 +303,7 @@ export default function AccountList({
                 <TableCell sx={{ fontWeight: 400 }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 400 }}>Account #</TableCell>
                 <TableCell sx={{ fontWeight: 400 }}>Product</TableCell>
+                <TableCell sx={{ fontWeight: 400 }}>Ownership Type</TableCell>
                 {canViewBalances && (
                   <TableCell align="right" sx={{ fontWeight: 400 }} sortDirection={orderBy === 'balance' ? order : false}>
                     <TableSortLabel
@@ -403,23 +355,35 @@ export default function AccountList({
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography 
-                        variant="body2" 
+                      <Typography
+                        variant="body2"
                         fontFamily="monospace"
                         sx={{ color: theme.palette.text.secondary }}
                       >
                         {maskAccountNumber(account.accountNumber)}
                       </Typography>
                     </TableCell>
+
                     <TableCell>
                       <Typography variant="body2">
                         {getProductName(account.accountSubtype)}
                       </Typography>
                     </TableCell>
+
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        fontFamily="monospace"
+                        sx={{ color: theme.palette.text.secondary }}
+                      >
+                        {account.ownershipType}
+                      </Typography>
+                    </TableCell>
+
                     {canViewBalances && (
                       <TableCell align="right">
-                        <Typography 
-                          variant="body2" 
+                        <Typography
+                          variant="body2"
                           fontWeight="400"
                           fontFamily="monospace"
                         >
@@ -462,7 +426,7 @@ export default function AccountList({
               })}
               {paginatedAccounts.length > 0 && canViewBalances && (
                 <TableRow sx={{ backgroundColor: theme.palette.action.hover }}>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <Typography variant="body2" fontWeight="600" color="text.secondary">
                       Total (All {accounts.length} Accounts)
                     </Typography>
@@ -472,7 +436,6 @@ export default function AccountList({
                       {formatCurrency(totalBalance)}
                     </Typography>
                   </TableCell>
-                  <TableCell></TableCell>
                   <TableCell></TableCell>
                 </TableRow>
               )}
@@ -494,5 +457,103 @@ export default function AccountList({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+
+interface AccountListProps {
+  customerId?: number;
+  title?: string;
+  onAccountSelect?: (accountId: number | null, accountLabel: string) => void;
+  selectedAccountId?: number | null;
+  onViewAccountDetail?: (accountId: number) => void;
+  onRowClick?: (account: Account) => void;
+}
+
+export default function AccountList({
+  customerId,
+  title = 'Accounts',
+  onAccountSelect,
+  selectedAccountId = null,
+  onViewAccountDetail,
+  onRowClick
+}: AccountListProps) {
+  const theme = useTheme();
+
+  const canViewBalances = useHasPermission('account.view.balances');
+
+
+  // Fetch accounts from API only when no pre-supplied accounts and customerId is provided
+  const { data: fetchedAccounts = [], isLoading: queryLoading, error: queryError } = useQuery<Account[]>({
+    queryKey: [`/api/customers/${customerId}/accounts`],
+    enabled: !!customerId && Number.isFinite(customerId)
+  });
+
+  const primaryAccounts = fetchedAccounts.filter((x) => ["Primary account owner", "Joint Account Owner"].includes((x.ownershipType || "").trim()));
+  const secondaryAccount = fetchedAccounts.filter((x) => !["Primary account owner", "Joint Account Owner"].includes((x.ownershipType || "").trim()));
+
+  if (queryLoading) {
+    return (
+      <Card elevation={2} sx={{ mb: 3 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (queryError) {
+    // Check if this is a 403 error (permission denied due to ABAC restriction)
+    const is403 = queryError instanceof Error && 'status' in queryError && (queryError as any).status === 403;
+    const errorMessage = is403 && (queryError as any).message?.includes('employee')
+      ? 'Access restricted: Level 1 users cannot view account information for employee customers.'
+      : 'Failed to load accounts';
+
+    return (
+      <Card elevation={2} sx={{ mb: 3 }}>
+        <CardContent>
+          <Alert severity={is403 ? "warning" : "error"}>{errorMessage}</Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (fetchedAccounts.length === 0) {
+    return (
+      <Card elevation={2} sx={{ mb: 3 }}>
+        <CardContent>
+          <Alert severity="info">No accounts found for this customer</Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // NOTE: Keep the primary accounts table empty so bankers don't confuse primary accounts
+  // and secondar accounts. We can hide the secondary accounts table if it's empty
+  return (
+    <>
+      <AccountTable
+        accounts={primaryAccounts}
+        canViewBalances={canViewBalances}
+        title={"Owned Accounts"}
+        onAccountSelect={onAccountSelect}
+        selectedAccountId={selectedAccountId}
+        onViewAccountDetail={onViewAccountDetail}
+        onRowClick={onRowClick}
+      />
+      {secondaryAccount.length > 0 && (
+        <AccountTable
+          accounts={secondaryAccount}
+          canViewBalances={canViewBalances}
+          title={"Affiliated Accounts (Non-Owned)"}
+          onAccountSelect={onAccountSelect}
+          selectedAccountId={selectedAccountId}
+          onViewAccountDetail={onViewAccountDetail}
+          onRowClick={onRowClick}
+        />
+      )}
+    </>
   );
 }

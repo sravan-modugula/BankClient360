@@ -564,7 +564,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       on account.account_number = search.search_value
       inner join account_ownership ao 
         ON ao.account_id = account.account_id 
-        and (ao.ownership_type = 'Primary' or ao.ownership_type = 'Primary account owner')
+        and (ao.ownership_type = 'Primary' or ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'Joint Account Owner')
       where 
         search.search_value like @query + '%' and search.entity_type = 1
       

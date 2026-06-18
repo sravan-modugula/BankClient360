@@ -1456,7 +1456,7 @@ export class DatabaseStorage implements IBankingStorage {
         INNER JOIN account_ownership ao ON ao.account_id = a.account_id
         WHERE ao.customer_id = ${customerId}
           AND LOWER(a.account_status) = 'active'
-          AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
+          AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
           AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
       ),
       monthly_endings AS (
@@ -1598,7 +1598,7 @@ export class DatabaseStorage implements IBankingStorage {
       INNER JOIN account_ownership ao ON ao.account_id = a.account_id
       WHERE ao.customer_id = ${customerId}
         AND LOWER(a.account_status) = 'active'
-        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary')
+        AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary' or OR ao.ownership_type = 'Joint Account Owner')
         AND LOWER(a.account_type) IN ('checking', 'deposit checking', 'savings', 'money_market', 'cd', 'time deposit', 'christmas club depo')
     `);
 

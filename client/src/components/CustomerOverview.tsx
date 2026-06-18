@@ -87,25 +87,26 @@ export default function CustomerOverview({ customer }: CustomerOverviewProps) {
       <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <PanelTitle
           left="Client Information"
-          right={
-              <Button
-                variant='contained'
-                sx={{ 
-                  background: "#f0efeb", 
-                  color: "#666", 
-                  border: "1px solid #d8d6cf", 
-                  borderRadius: 1, 
-                  '&:hover': {
-                    background: "#e8e6e0",
-                    borderColor: "#bbb"
-                  }
-                }}
-                startIcon={<BuildIcon /> }
-                onClick={() => setMaintenanceOpen(true)}   
-              >
-                Maintenance
-              </Button>
-          } />
+          // right={
+          //     <Button
+          //       variant='contained'
+          //       sx={{ 
+          //         background: "#f0efeb", 
+          //         color: "#666", 
+          //         border: "1px solid #d8d6cf", 
+          //         borderRadius: 1, 
+          //         '&:hover': {
+          //           background: "#e8e6e0",
+          //           borderColor: "#bbb"
+          //         }
+          //       }}
+          //       startIcon={<BuildIcon /> }
+          //       onClick={() => setMaintenanceOpen(true)}   
+          //     >
+          //       Maintenance
+          //     </Button>
+          // } 
+        />
 
         {/* Header Section - Avatar, Name, CIF, Status */}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
