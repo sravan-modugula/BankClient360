@@ -201,12 +201,18 @@ export function createAuthRoutes() {
       ? !!employeeId && sessionRoles.length > 0
       : !!employeeId;
 
+    // True only when the user is unlinked *because* the configured default
+    // role doesn't exist in the role table — a system misconfiguration the
+    // SPA surfaces distinctly from "awaiting role assignment".
+    const defaultRoleMissing = !isLinked && !!req.session?.defaultRoleMissing;
+
     res.json({
       isAuthenticated,
       employeeId,
       email: sessionEmail || null,
       isLinked,
       samlEnabled,
+      defaultRoleMissing,
     });
   });
 
@@ -343,16 +349,20 @@ export function createSamlRoutes() {
 
                 // Auto-grant a default role if the user has none yet.
                 // Configurable via SAML_DEFAULT_ROLE_NAME (defaults to
-                // "Branch Manager" while the org figures out per-user
-                // assignments). Set to empty string to disable.
-                const defaultRoleName = process.env.SAML_DEFAULT_ROLE_NAME ?? 'Branch Manager';
-                if (defaultRoleName) {
-                  const assigned = await ensureEmployeeHasDefaultRoleSqlServer(
-                    pool, dbEmployeeId, defaultRoleName,
-                  );
-                  if (assigned) {
-                    authLogger.info({ dbEmployeeId, defaultRoleName: assigned }, 'Granted default role to new SAML user');
-                  }
+                // "Employee" — the org always keeps this role provisioned).
+                // Use `|| default` (not `??`) so an empty/whitespace env var
+                // still falls back rather than disabling the grant.
+                const defaultRoleName = process.env.SAML_DEFAULT_ROLE_NAME?.trim() || 'Employee';
+                const outcome = await ensureEmployeeHasDefaultRoleSqlServer(
+                  pool, dbEmployeeId, defaultRoleName,
+                );
+                // Flag the "role missing from the system" case so the SPA can
+                // show a distinct misconfiguration message (vs the generic
+                // "awaiting role assignment"). Set explicitly every login so
+                // the flag never goes stale.
+                req.session.defaultRoleMissing = outcome.status === 'role_not_found';
+                if (outcome.status === 'assigned') {
+                  authLogger.info({ dbEmployeeId, defaultRoleName: outcome.roleName }, 'Granted default role to new SAML user');
                 }
               } else {
                 authLogger.warn({

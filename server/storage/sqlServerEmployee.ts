@@ -181,23 +181,35 @@ export async function upsertEmployeeFromSamlSqlServer(
 }
 
 /**
+ * Discriminated outcome of a default-role auto-grant attempt. Lets callers
+ * tell "the role doesn't exist in the system" (a misconfiguration the user
+ * should be told about) apart from "the user already had a role" or a
+ * successful assignment.
+ */
+export type DefaultRoleOutcome =
+  | { status: 'assigned'; roleName: string }
+  | { status: 'already_assigned' }
+  | { status: 'role_not_found' }
+  | { status: 'error' };
+
+/**
  * Ensure the employee has at least one active role. If they have none,
  * find a default role and insert an employee_role row.
  *
  * Lookup strategy (each is case-insensitive):
  *   1. exact match on role_name
  *   2. trimmed equality (handles trailing whitespace in seed data)
- *   3. LIKE %defaultRoleName% (handles "Branch Manager (Test)" etc.)
+ *   3. LIKE %defaultRoleName% (handles "Employee (Test)" etc.)
  * If nothing matches, logs the full list of available active role names
  * so the operator can adjust SAML_DEFAULT_ROLE_NAME or seed the role.
  *
- * Returns the assigned role name on insert, null if nothing was done.
+ * Returns a DefaultRoleOutcome describing what happened.
  */
 export async function ensureEmployeeHasDefaultRoleSqlServer(
   pool: sql.ConnectionPool,
   employeeId: number,
   defaultRoleName: string,
-): Promise<string | null> {
+): Promise<DefaultRoleOutcome> {
   try {
     const checkRequest = pool.request();
     checkRequest.input('employeeId', sql.BigInt, employeeId);
@@ -213,7 +225,7 @@ export async function ensureEmployeeHasDefaultRoleSqlServer(
     `);
 
     if (existing.recordset.length > 0) {
-      return null;
+      return { status: 'already_assigned' };
     }
 
     const wanted = defaultRoleName.trim();
@@ -252,7 +264,7 @@ export async function ensureEmployeeHasDefaultRoleSqlServer(
         employeeId,
         availableRoles,
       }, 'Default role not found — set SAML_DEFAULT_ROLE_NAME to one of the available role names, or seed the role table');
-      return null;
+      return { status: 'role_not_found' };
     }
 
     const matchedRoleName = roleResult.recordset[0].role_name as string;
@@ -270,10 +282,10 @@ export async function ensureEmployeeHasDefaultRoleSqlServer(
     `);
 
     fileLogger.info({ employeeId, defaultRoleName, matchedRoleName }, 'Auto-assigned default role to employee');
-    return matchedRoleName;
+    return { status: 'assigned', roleName: matchedRoleName };
   } catch (error) {
     fileLogger.error({ err: error, employeeId, defaultRoleName }, 'Failed to assign default role');
-    return null;
+    return { status: 'error' };
   }
 }
 

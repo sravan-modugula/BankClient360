@@ -20,11 +20,13 @@ interface AuthStatus {
   email: string | null;
   isLinked: boolean;
   samlEnabled: boolean;
+  defaultRoleMissing: boolean;
 }
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLinked: boolean;
+  defaultRoleMissing: boolean;
   email: string | null;
   isLoading: boolean;
   user: UserInfo | null;
@@ -67,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = authStatus?.isAuthenticated ?? false;
   const isLinked = authStatus?.isLinked ?? false;
+  const defaultRoleMissing = authStatus?.defaultRoleMissing ?? false;
   const email = authStatus?.email ?? null;
   const samlEnabled = authStatus?.samlEnabled ?? false;
   const isLoading = isStatusLoading || (isAuthenticated && isUserLoading);
@@ -99,6 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value: AuthContextType = {
     isAuthenticated,
     isLinked,
+    defaultRoleMissing,
     email,
     isLoading: isLoading || isLoggingOut,
     user: userInfo || null,

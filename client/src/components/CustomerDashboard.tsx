@@ -102,7 +102,7 @@ export default function CustomerDashboard() {
   const { data: permissions } = usePermissions();
   const maxPrivilegeLevel = permissions?.maxPrivilegeLevel || 0;
 
-  const { isAuthenticated, isLinked, email: authEmail, isLoading: authLoading, samlEnabled, login, logout } = useAuth();
+  const { isAuthenticated, isLinked, defaultRoleMissing, email: authEmail, isLoading: authLoading, samlEnabled, login, logout } = useAuth();
 
   /* 
     We are changing the component structure so the URL controls the 
@@ -610,15 +610,28 @@ export default function CustomerDashboard() {
         }}>
           <Card sx={{ maxWidth: 480, textAlign: 'center', p: 3 }}>
             <CardContent>
-              <LockIcon sx={{ fontSize: 64, color: 'warning.main', mb: 2 }} />
+              <LockIcon sx={{ fontSize: 64, color: defaultRoleMissing ? 'error.main' : 'warning.main', mb: 2 }} />
               <Typography variant="h5" gutterBottom sx={{ fontWeight: 500 }}>
-                Awaiting Role Assignment
+                {defaultRoleMissing ? 'Role Not Configured' : 'Awaiting Role Assignment'}
               </Typography>
-              <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }}>
-                You signed in successfully{authEmail ? ` as ${authEmail}` : ''}.
-                Your account exists, but no application roles have been assigned
-                yet — please contact your administrator to grant access. Once a
-                role is assigned, sign out and back in to refresh your permissions.
+              <Alert severity={defaultRoleMissing ? 'error' : 'warning'} sx={{ mb: 2, textAlign: 'left' }}>
+                {defaultRoleMissing ? (
+                  <>
+                    You signed in successfully{authEmail ? ` as ${authEmail}` : ''}.
+                    The default access role is not configured in the system, so a
+                    role could not be assigned automatically — this is a setup
+                    issue, not your account. Please contact your administrator.
+                    Once it is configured, sign out and back in to refresh your
+                    permissions.
+                  </>
+                ) : (
+                  <>
+                    You signed in successfully{authEmail ? ` as ${authEmail}` : ''}.
+                    Your account exists, but no application roles have been assigned
+                    yet — please contact your administrator to grant access. Once a
+                    role is assigned, sign out and back in to refresh your permissions.
+                  </>
+                )}
               </Alert>
               <Button
                 variant="outlined"

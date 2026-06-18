@@ -12,6 +12,7 @@ declare module 'express-session' {
     permissions: string[];    // Computed permissions
     samlRoleKey: string | null;
     lastActivity: Date;
+    defaultRoleMissing?: boolean;  // configured default role absent from role table
   }
 }
 
