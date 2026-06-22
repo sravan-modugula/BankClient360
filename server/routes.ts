@@ -3113,19 +3113,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "roleId is required" });
       }
 
-      const { samlRoleMappingService } = await import("./services/samlRoleMappingService");
-      const result = await samlRoleMappingService.assignRoleManually(
+      // Use the dialect-aware role store (SQL Server in production). Marks the
+      // assignment with assigned_by = the admin's id so enforced AD-group sync
+      // preserves it on subsequent SSO logins.
+      const { getRoleManagementStore } = await import("./storage/roleManagement");
+      const store = await getRoleManagementStore();
+      await store.assignRole(
         employeeId,
-        roleId,
+        { roleId: Number(roleId), isPrimary: false, reason: reason || 'Manually assigned by admin' },
         req.employeeId!,
-        reason
       );
 
-      if (!result.success) {
-        return res.status(400).json({ error: result.message });
-      }
-
-      res.json(result);
+      res.json({ success: true, message: 'Role assigned successfully' });
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error assigning role manually');
       res.status(500).json({ error: "Failed to assign role" });

@@ -5,6 +5,7 @@
 
 import sql from 'mssql';
 import logger from '../../services/logger';
+import { logRoleHistorySqlServer } from '../sqlServerEmployee';
 
 const fileLogger = logger.child({ module: 'sqlserver-role-management' });
 import type {
@@ -630,18 +631,75 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
     data: AssignRoleRequest,
     assignedByUserId: number
   ): Promise<void> {
-    // Complex write operation with transactions - placeholder for now
-    throw new Error('Not implemented yet');
+    // Manual assignment: assigned_by = the admin's id. This marks the row as
+    // admin-granted so enforced AD-group sync never auto-revokes it. Upsert by
+    // the (employee_id, role_id) composite PK — reactivate an existing row
+    // rather than INSERT (which would violate the PK).
+    const effectiveDate = data.effectiveDate ? new Date(data.effectiveDate) : new Date();
+    const expirationDate = data.expiryDate ? new Date(data.expiryDate) : null;
+
+    const existsReq = this.pool.request();
+    existsReq.input('employeeId', sql.BigInt, employeeId);
+    existsReq.input('roleId', sql.BigInt, data.roleId);
+    const existing = await existsReq.query(
+      `SELECT 1 AS x FROM employee_role WHERE employee_id = @employeeId AND role_id = @roleId`
+    );
+
+    const r = this.pool.request();
+    r.input('employeeId', sql.BigInt, employeeId);
+    r.input('roleId', sql.BigInt, data.roleId);
+    r.input('isPrimary', sql.Bit, data.isPrimary ? 1 : 0);
+    r.input('assignedBy', sql.BigInt, assignedByUserId);
+    r.input('effectiveDate', sql.Date, effectiveDate);
+    r.input('expirationDate', sql.Date, expirationDate);
+
+    if (existing.recordset.length > 0) {
+      await r.query(`
+        UPDATE employee_role
+        SET is_active = 1, is_primary = @isPrimary, assigned_by = @assignedBy,
+            assigned_date = GETDATE(), effective_date = @effectiveDate,
+            expiration_date = @expirationDate
+        WHERE employee_id = @employeeId AND role_id = @roleId
+      `);
+    } else {
+      await r.query(`
+        INSERT INTO employee_role (
+          employee_id, role_id, is_primary, assigned_by,
+          assigned_date, effective_date, expiration_date, is_active
+        ) VALUES (
+          @employeeId, @roleId, @isPrimary, @assignedBy,
+          GETDATE(), @effectiveDate, @expirationDate, 1
+        )
+      `);
+    }
+
+    await logRoleHistorySqlServer(this.pool, {
+      employeeId, roleId: data.roleId, action: 'assigned', source: 'manual',
+      assignedBy: assignedByUserId, samlRoleAttribute: null,
+      isPrimary: !!data.isPrimary, reason: data.reason ?? null,
+    });
   }
-  
+
   async removeRole(
     employeeId: number,
     roleId: number,
     reason: string,
     removedByUserId: number
   ): Promise<void> {
-    // Complex write operation with transactions - placeholder for now
-    throw new Error('Not implemented yet');
+    const r = this.pool.request();
+    r.input('employeeId', sql.BigInt, employeeId);
+    r.input('roleId', sql.BigInt, roleId);
+    await r.query(`
+      UPDATE employee_role
+      SET is_active = 0, expiration_date = CAST(GETDATE() AS DATE)
+      WHERE employee_id = @employeeId AND role_id = @roleId AND is_active = 1
+    `);
+
+    await logRoleHistorySqlServer(this.pool, {
+      employeeId, roleId, action: 'revoked', source: 'manual',
+      assignedBy: removedByUserId, samlRoleAttribute: null,
+      isPrimary: false, reason: reason ?? null,
+    });
   }
   
   async updateUserStatus(

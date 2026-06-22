@@ -49,8 +49,6 @@ import { useToast } from '@/hooks/use-toast';
 import type { UserListItem, Role, SamlRoleMapping } from '@shared/schema';
 
 export default function UserManagement() {
-  const [currentTab, setCurrentTab] = useState(0);
-
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -65,18 +63,12 @@ export default function UserManagement() {
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        System Admin (Level 4) Only - Users login via SAML SSO. Roles are auto-assigned based on SAML attributes or manually assigned by admins.
+        System Admin (Level 4) Only — users sign in via SAML SSO. Roles are
+        auto-assigned from the user's AD groups on each login; use the actions
+        below to manually override a user's role.
       </Alert>
 
-      <Paper sx={{ mb: 3 }}>
-        <Tabs value={currentTab} onChange={(_, v) => setCurrentTab(v)}>
-          <Tab label="Active Users" data-testid="tab-users" />
-          <Tab label="SAML Role Mappings" data-testid="tab-saml-mappings" />
-        </Tabs>
-      </Paper>
-
-      {currentTab === 0 && <ActiveUsersPanel />}
-      {currentTab === 1 && <SamlMappingsPanel />}
+      <ActiveUsersPanel />
     </Container>
   );
 }
