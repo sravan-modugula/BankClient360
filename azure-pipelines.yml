@@ -2,7 +2,7 @@ trigger:
   - develop
   - test
   - preprod
-
+  
 variables:
   - name: SonarQubeServiceConnection
     value: 'ADO_SonarQube'
@@ -32,13 +32,11 @@ stages:
         cliProjectKey: '$(SonarQubeProjectKey)'
         cliProjectName: '$(SonarQubeProjectName)'
         cliSources: '.'
-        # Exclude nod_modules and vite/esbuild build artifacts
         extraProperties: |
           sonar.exclusions=**/node_modules/**
-          sonar.exclusions=**/dist/**
+        # sonar.exclusions=**/dist/**
       condition: eq(variables['Build.SourceBranch'], 'refs/heads/develop')
-        # The two lines below are what will cause the build to fail if it doesn't meet the quality gate.
-        # This might not be best practice based on SonarQube
+        # The two lines below are what will cause the build to fail if it doesn't meet the quality gate. This might not be best practice according to SonarQube
         #  sonar.qualitygate.wait=true
         #  sonar.qualitygate.timeout=300
 
@@ -79,7 +77,9 @@ stages:
         SourceFolder: '$(Build.SourcesDirectory)'
         Contents: |
           **/*
-          !node_modules/**
+          !**/node_modules/**
+          !**/PipelineTemplates/**
+          !**/azure-pipelines.yml
           !.git/**
         TargetFolder: '$(Build.ArtifactStagingDirectory)'
       displayName: 'Copy files excluding certain directories'
@@ -88,7 +88,7 @@ stages:
       displayName: "Publish CIQ Artifact"
       inputs:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
-        artifactName: 'ClientIQ'
+        artifactName: '$(Build.Repository.Name)'
         publishLocation: 'Container'
 
     - powershell: |
@@ -121,91 +121,22 @@ stages:
         deploy:
           steps:
 
-          # Moves the built files over to the app server, pulls node_modules, and restarts the service
-          - task: PowerShell@2
-            displayName: "Deploy to Remote Node.js Server"
-            inputs:
-              targetType: inline
-              script: |
-                $remoteServer = "$(ServerName)"
-                $remoteAppPath = "$(AppPath)"
-                $serviceName = "ClientIQ"
-                $commitMessage = "$(commitMessage)"
+          - template: PipelineTemplates/start-script.yml
+            parameters:
+              samlEnabled: 'false' # true/false
+              samlHost: 'dev-clientiq.fmb.com' # Could maybe try to "map" these to later build the URL, but it's a bit clunky.  
 
-                Write-Host "Creating remote PowerShell session"
-                $session = New-PSSession -ComputerName $remoteServer
-
-                Write-Host "Copying built files to remote server"
-                Copy-Item "$(Pipeline.Workspace)\ClientIQ\*" $remoteAppPath -Recurse -Force -ToSession $session
-
-                Write-Host "Stopping service"
-                Invoke-Command -Session $session -ScriptBlock {
-                    Stop-Service -Name "ClientIQ"
-                }
-
-                if ($commitMessage -match "npm ci") {
-                  Write-Host "Installing dependencies on remote server & cleaning up .npmrc"
-                  Invoke-Command -Session $session -ScriptBlock {
-                      Set-Location $using:remoteAppPath
-                      npm ci --prefer-offline --loglevel=info 2>&1
-                      Remove-Item .\.npmrc
-                  }
-                }
-
-                Invoke-Command -Session $session -ScriptBlock {
-                    $content = @(
-                        '# Set environment variables'
-                        '$env:NODE_ENV = "development"'
-                        '$env:PORT = "5000"'
-                        '$env:HOST = "127.0.0.1"'
-                        '$env:DATABASE_DIALECT = "sqlserver"'
-                        '$env:DB_VENDOR = "mssql"'
-
-                        '# SQL Server connection'
-                        '$env:MSSQL_SERVER = "$(DBServer)"'
-                        '$env:MSSQL_DATABASE = "$(DBName)"'
-                        '$env:MSSQL_USER = "$(DBUser)"'
-                        '$env:MSSQL_PASSWORD = "$(DBPassword)"'
-                        '$env:MSSQL_PORT = "1433"'
-                        '$env:MSSQL_ENCRYPT = "false"'
-                        '$env:MSSQL_TRUST_SERVER_CERTIFICATE = "true"'
-
-                        '# Session secret'
-                        '$env:SESSION_SECRET = "$(SessionSecret)"'
-
-                        '# SSO'
-                        '$env:SAML_ENABLED = "false"'
-
-                        '# Navigate to application directory'
-                        'Set-Location -Path "C:\ClientIQ"'
-
-                        '# Start server'
-                        'Write-Host "Starting ClientIQ  Server..." -ForegroundColor Green'
-                        'Write-Host "URL: http://localhost:5000" -ForegroundColor Cyan'
-                        'npx tsx watch --clear-screen=false server/index.ts'
-                    )
-                    $content | Out-File -FilePath "C:\ClientIQ\Start-Dev.ps1" -Encoding ascii
-                }
-
-                Write-Host "Starting service"
-                Invoke-Command -Session $session -ScriptBlock {
-                    Start-Service -Name "ClientIQ"
-                    Remove-Item $(AppPath)\Start-Dev.ps1
-                }
-
-                Write-Host "Closing remote session"
-                Remove-PSSession $session
+          - template: PipelineTemplates/deploy-nodejs.yml
 
 # Test Deploy stage
 - stage: Deploy_Test
   condition: eq(variables['Build.SourceBranch'], 'refs/heads/test')
-  dependsOn: 
-    - Build
+  dependsOn: Build
   variables:
-    - group: VG-DASTConfig
     - group: VG-Test
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
+
   jobs:
   - deployment: TestDeployment
     environment: 'Test'
@@ -216,315 +147,40 @@ stages:
       runOnce:
         deploy:
           steps:
-          # Moves the built files over to the app server, pulls node_modules, and restarts the service
-          - task: PowerShell@2
-            displayName: "Deploy to Remote Node.js Server"
-            inputs:
-              targetType: inline
-              script: |
-                $remoteServer = "$(ServerName)"
-                $remoteAppPath = "$(AppPath)"
-                $serviceName = "ClientIQ"
 
-                Write-Host "Creating remote PowerShell session"
-                $session = New-PSSession -ComputerName $remoteServer
+          - template: PipelineTemplates/start-script.yml
+            parameters:
+              samlEnabled: 'true' # true/false
+              samlHost: 'test-clientiq.fmb.com'
 
-                Write-Host "Copying built files to remote server"
-                Copy-Item "$(Pipeline.Workspace)\ClientIQ\*" $remoteAppPath -Recurse -Force -ToSession $session
+          - template: PipelineTemplates/deploy-nodejs.yml
+          
 
-                Write-Host "Stopping service"
-                Invoke-Command -Session $session -ScriptBlock {
-                    Stop-Service -Name "ClientIQ"
-                }
-                if ($commitMessage -match "npm ci") {
-                  Write-Host "Installing dependencies on remote server & cleaning up .npmrc"
-                  Invoke-Command -Session $session -ScriptBlock {
-                      Set-Location $using:remoteAppPath
-                      npm ci --prefer-offline --loglevel=info 2>&1
-                      Remove-Item .\.npmrc
-                  }
-                }
+# DAST Scan to run after Test deployed 
+- stage: DAST_Scan
+  dependsOn: Deploy_Test
+  condition: succeeded()
+  
+  variables:
+    - group: VG-DASTConfig
 
-                Invoke-Command -Session $session -ScriptBlock {
-                    $content = @(
-                        '# Set environment variables'
-                        '$env:NODE_ENV = "development"'
-                        '$env:PORT = "5000"'
-                        '$env:HOST = "127.0.0.1"'
-                        '$env:DATABASE_DIALECT = "sqlserver"'
-                        '$env:DB_VENDOR = "mssql"'
+  jobs:
+  - job: 'Scan'
+    displayName: 'ZAP DAST Scan'
+    pool:
+      name: 'ADODeployPool_DevTest'
 
-                        '# SQL Server connection'
-                        '$env:MSSQL_SERVER = "$(DBServer)"'
-                        '$env:MSSQL_DATABASE = "$(DBName)"'
-                        '$env:MSSQL_USER = "$(DBUser)"'
-                        '$env:MSSQL_PASSWORD = "$(DBPassword)"'
-                        '$env:MSSQL_PORT = "1433"'
-                        '$env:MSSQL_ENCRYPT = "false"'
-                        '$env:MSSQL_TRUST_SERVER_CERTIFICATE = "true"'
-
-                        '# Session secret'
-                        '$env:SESSION_SECRET = "$(SessionSecret)"'
-
-                        '# SSO'
-                        '$env:SAML_ENABLED = "false"'
-
-                        '# Navigate to application directory'
-                        'Set-Location -Path "C:\ClientIQ"'
-
-                        '# Start server'
-                        'Write-Host "Starting ClientIQ Server..." -ForegroundColor Green'
-                        'Write-Host "URL: http://localhost:5000" -ForegroundColor Cyan'
-                        'npx tsx watch --clear-screen=false server/index.ts'
-                    )
-                    $content | Out-File -FilePath "C:\ClientIQ\Start-Dev.ps1" -Encoding ascii
-                }
-
-                Write-Host "Starting service"
-                Invoke-Command -Session $session -ScriptBlock {
-                    Start-Service -Name "ClientIQ"
-                    Sleep(5)
-                    Remove-Item $(AppPath)\Start-Dev.ps1
-                }
-
-                Write-Host "Closing remote session"
-                Remove-PSSession $session
-
-          # Treating remote ZAP service as a lock.
-          # Starting/stopping the service is the only way to get clean scans from ZAP
-          # Check if it's running (currently running a scan for another pipeline run)
-          # Wait until it's not running (previous scan is done)
-          - task: PowerShell@2
-            displayName: "Start ZAP Service (Wait if in use)"
-            inputs:
-              targetType: inline
-              script: |
-                $timeoutMinutes = 20
-                $startTime = Get-Date
-
-                function Wait-ForZapApi {
-                    param ($BaseUrl, $APIKey)
-
-                    Write-Host "Waiting for ZAP API to become available"
-
-                    $apiTimeoutMinutes = 5
-                    $apiStartTime = Get-Date
-
-                    while ($true) {
-                        if ((Get-Date) -gt $apiStartTime.AddMinutes($apiTimeoutMinutes)) {
-                            throw "Timed out waiting for ZAP API"
-                        }
-
-                        try {
-                            $versionUrl = "$BaseUrl/JSON/core/view/version/?apikey=$APIKey"
-                            $response = Invoke-RestMethod -Uri $versionUrl
-
-                            if ($response.version) {
-                                Write-Host "ZAP API started. Version: $($response.version)"
-                                break
-                            }
-                        }
-                        catch {
-                            Write-Host "ZAP API not ready yet. retrying in 5s"
-                        }
-
-                        Start-Sleep -Seconds 5
-                    }
-                }
-
-                Write-Host "Checking ZAP service state"
-
-                $svc = Get-Service -ComputerName $(DASTServer) -Name $(DASTService)
-
-                if ($svc.Status -ne 'Running') {
-                    Write-Host "ZAP service not running. Starting."
-                    Start-Service -InputObject $svc
-                    Wait-ForZapApi -BaseUrl $(DASTServerURL) -ApiKey $(DASTAPIKey)
-                }
-                else {
-                    Write-Host "Waiting for previous ZAP run to fully release"
-
-                    while ($svc.Status -eq 'Running') {
-
-                        if ((Get-Date) -gt $startTime.AddMinutes($timeoutMinutes)) {
-                            Write-Host "Timeout waiting. Assuming stale lock. Resetting service."
-                            Stop-Service -InputObject $svc -Force
-                            break
-                        }
-
-                        Write-Host "ZAP service is running. Waiting."
-                        Start-Sleep -Seconds 10
-                        $svc.Refresh()
-                    }
-
-                    Write-Host "ZAP service is free. Starting run."
-
-                    Start-Service -InputObject $svc
-
-                    Wait-ForZapApi -BaseUrl $(DASTServerURL) -ApiKey $(DASTAPIKey)
-                }
-
-          # Start Spider crawl of website, poll until finished
-          - task: PowerShell@2
-            displayName: "Start Spider Scan"
-            inputs:
-              targetType: inline
-              script: |
-                $url = "$(DASTServerURL)/JSON/spider/action/scan/?apikey=$(DASTAPIKey)&url=$(DASTScanURL)&recurse=true"
-                Write-Host "Starting spider scan."
-                $response = Invoke-RestMethod $url
-                $spiderId = $response.scan
-
-                do {
-                  Start-Sleep -Seconds 5
-                  $statusUrl = "$(DASTServerURL)/JSON/spider/view/status/?apikey=$(DASTAPIKey)&scanId=$spiderId"
-                  $status = (Invoke-RestMethod $statusUrl).status
-                  Write-Host "Spider progress: $status%"
-                } while ($status -lt 100)
-
-                Write-Host "Spider completed."
-
-          # Start Active Scan, poll until finished
-          - task: PowerShell@2
-            displayName: "Start Active Scan"
-            inputs:
-              targetType: inline
-              script: |
-                $url = "$(DASTServerURL)/JSON/ascan/action/scan/?apikey=$(DASTAPIKey)&url=$(DASTScanURL)"
-                Write-Host "Starting active scan."
-                $response = Invoke-RestMethod $url
-                $scanId = $response.scan
-
-                do {
-                  Start-Sleep -Seconds 5
-                  $statusUrl = "$(DASTServerURL)/JSON/ascan/view/status/?apikey=$(DASTAPIKey)&scanId=$scanId"
-                  $status = (Invoke-RestMethod $statusUrl).status
-                  Write-Host "Active scan progress: $status%"
-                } while ($status -lt 100)
-
-                Write-Host "Active scan completed."
-
-          - task: PowerShell@2
-            displayName: "Download ZAP Reports"
-            inputs:
-              targetType: inline
-              script: |
-                $Url = "$(DASTServerURL)/OTHER/core/other/jsonreport/?apikey=$(DASTAPIKey)"
-                Invoke-WebRequest -Uri $Url -OutFile "zap-report.json"
-                
-                Write-Host "Clearing previous scans"
-                $Url = "$(DASTServerURL)/JSON/spider/action/removeAllScans/?apikey=$(DASTAPIKey)"
-                Invoke-RestMethod -Uri $Url
-                $Url = "$(DASTServerURL)/JSON/ascan/action/removeAllScans/?apikey=$(DASTAPIKey)"
-                Invoke-RestMethod -Uri $Url
-        
-          - task: PowerShell@2
-            displayName: "Convert ZAP JSON TO JUnit"
-            inputs:
-              targetType: inline
-              script: |
-                $json = Get-Content zap-report.json | ConvertFrom-Json
-
-                $doc = New-Object System.Xml.XmlDocument
-                $testsuite = $doc.CreateElement("testsuite")
-                $testsuite.SetAttribute("name", "OWASP ZAP Scan")
-                $doc.AppendChild($testsuite)
-
-                $total = 0
-                $failures = 0
-
-                foreach ($site in $json.site) {
-                  foreach ($alert in $site.alerts) {
-                    $risk = $alert.riskdesc.ToLower()
-
-                    foreach ($inst in $alert.instances) {
-                      $total++
-                      $nameObj = "$($alert.name) at $($inst.uri)"
-                      $testcase = $doc.CreateElement("testcase")
-                      $testcase.SetAttribute("name", $nameObj)
-                      $testcase.SetAttribute("classname", $inst.uri)
-
-                      if ($risk -like "*high*" -or $risk -like "*medium*") {
-                        $failures++
-                        $failure = $doc.CreateElement("failure")
-                        
-                        $failure.InnerText = "$($alert.desc)"
-
-                        $testcase.AppendChild($failure) | Out-Null
-
-                      }
-
-                      $testsuite.AppendChild($testcase) | Out-Null
-                    }
-                  }
-                }
-
-                $testsuite.SetAttribute("tests", $total)
-                $testsuite.SetAttribute("failures", $failures)
-
-                $doc.Save("zap-junit.xml")
-
-          - task: PublishTestResults@2
-            inputs:
-              testResultsFormat: JUnit
-              testResultsFiles: '**/zap-junit.xml'
-              testRunTitle: 'OWASP ZAP Scan'
-              #failTaskOnFailedTests: true
-
-          # Gets the number of high and medium alerts, and fails build if they exceed specified amount
-          - task: PowerShell@2
-            displayName: "Check ZAP Results"
-            inputs:
-              targetType: inline
-              script: |
-                $reportPath = "$(Build.SourcesDirectory)\zap-report.json"
-                $allowedHighs = 0
-                #$allowedMeds = 3
-
-                if (!(Test-Path $reportPath)) {
-                    Write-Error "ZAP report not found at $reportPath"
-                    exit 1
-                }
-
-                $zap = Get-Content $reportPath | ConvertFrom-Json
-
-                $alerts = $zap.site.alerts
-
-                $highs   = ($alerts | Where-Object { $_.riskcode -eq "3" }).Count
-                $mediums = ($alerts | Where-Object { $_.riskcode -eq "2" }).Count
-
-                Write-Host "ZAP Findings: Highs = $highs Mediums = $mediums"
-
-                if ($highs -gt $allowedHighs) {  #-or $mediums -ge $allowedMeds) {
-                    Write-Host "ZAP scan failed security criteria"
-                    exit 1
-                }
-
-                Write-Host "ZAP scan passed criteria"
-
-          - task: PowerShell@2
-            displayName: "Stop ZAP Service"
-            condition: always()
-            inputs:
-              targetType: inline
-              script: |
-                $serviceName = "ZAPDAST"
-                $computer = "DAST-APP01"
-
-                Write-Host "Stopping ZAP service to reset state."
-
-                try {
-                    $svc = Get-Service -ComputerName $computer -Name $serviceName
-                    if ($svc.Status -eq 'Running') {
-                        Stop-Service -InputObject $svc -Force
-                        Write-Host "ZAP service stopped."
-                    } else {
-                        Write-Host "ZAP service already stopped."
-                    }
-                }
-                catch {
-                    Write-Host "Failed to stop ZAP service: $_"
-                }
+    steps:
+      - checkout: none
+      
+      - template: PipelineTemplates/dast-scan.yml
+        parameters:
+          dastServer: '$(DASTServer)'
+          dastService: '$(DASTService)'
+          dastServerUrl: '$(DASTServerUrl)'
+          dastApiKey: '$(DASTAPIKey)'
+          dastScanUrl: '$(DASTScanTarget)' # VG
+          allowedHighs: 0
 
 
 # Preprod Deploy stage
@@ -535,97 +191,21 @@ stages:
     - group: VG-Preprod
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
+
   jobs:
   - deployment: PreprodDeployment
     environment: 'PreProd'
     pool:
       name: 'ADODeployPool'
-    workspace:
-      clean: all
+
     strategy:
       runOnce:
         deploy:
           steps:
 
-          # Moves the built files over to the app server, pulls node_modules, and restarts the service
-          - task: PowerShell@2
-            displayName: "Deploy to Remote Node.js Server"
-            inputs:
-              targetType: inline
-              script: |
-                $remoteServer = "$(ServerName)"
-                $remoteAppPath = "$(AppPath)"
-                $serviceName = "ClientIQ"
-                $commitMessage = "$(commitMessage)"
+          - template: PipelineTemplates/start-script.yml
+            parameters:
+              samlEnabled: 'false' # true/false
+              samlHost: 'preprod-clientiq.fmb.com'
 
-                Write-Host "Creating remote PowerShell session"
-                $session = New-PSSession -ComputerName $remoteServer
-
-                Write-Host "Copying built files to remote server"
-                Copy-Item "$(Pipeline.Workspace)\ClientIQ\*" $remoteAppPath -Recurse -Force -ToSession $session
-
-                Write-Host "Stopping service"
-                Invoke-Command -Session $session -ScriptBlock {
-                    Stop-Service -Name "ClientIQ"
-                }
-
-                if ($commitMessage -match "npm ci") {
-                  Write-Host "Installing dependencies on remote server and cleaning up .npmrc"
-                  Invoke-Command -Session $session -ScriptBlock {
-                      Set-Location $using:remoteAppPath
-                      npm ci --prefer-offline --loglevel=info 2>&1
-                      Remove-Item .\.npmrc
-                  }
-                }
-
-                Invoke-Command -Session $session -ScriptBlock {
-                    $content = @(
-                        '# Set environment variables'
-                        '$env:NODE_ENV = "development"'
-                        '$env:PORT = "5000"'
-                        '$env:HOST = "127.0.0.1"'
-                        '$env:DATABASE_DIALECT = "sqlserver"'
-                        '$env:DB_VENDOR = "mssql"'
-
-                        '# SQL Server connection'
-                        '$env:MSSQL_SERVER = "$(DBServer)"'
-                        '$env:MSSQL_DATABASE = "$(DBName)"'
-                        '$env:MSSQL_USER = "$(DBUser)"'
-                        '$env:MSSQL_PASSWORD = "$(DBPassword)"'
-                        '$env:MSSQL_PORT = "1433"'
-                        '$env:MSSQL_ENCRYPT = "false"'
-                        '$env:MSSQL_TRUST_SERVER_CERTIFICATE = "true"'
-                        '$env:SAML_ENABLED = "false"'
-
-                        '# Session secret'
-                        '$env:SESSION_SECRET = "$(SessionSecret)"'
-
-                        '# SSO'
-                        '$env:SAML_ENABLED = "false"'
-                        '$env:SAML_ENTITY_ID="https://preprod-clientiq.fmb.com"'
-                        '$env:SAML_ENTRYPOINT="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
-                        '$env:SAML_ISSUER="$(SAMLIssuer)"'
-                        '$env:SAML_CALLBACK_URL="https://preprod-clientiq.fmb.com/saml/acs"'
-                        '$env:SAML_IDP_INITIATED_URL="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
-                        '$env:SAML_CERT="./saml_cert.pem"'
-
-                        '# Navigate to application directory'
-                        'Set-Location -Path "C:\ClientIQ"'
-
-                        '# Start server'
-                        'Write-Host "Starting ClientIQ Server..." -ForegroundColor Green'
-                        'Write-Host "URL: http://localhost:5000" -ForegroundColor Cyan'
-                        'npx tsx watch --clear-screen=false server/index.ts'
-                    )
-                    $content | Out-File -FilePath "C:\ClientIQ\Start-Dev.ps1" -Encoding ascii
-                }
-
-                Write-Host "Starting service"
-                Invoke-Command -Session $session -ScriptBlock {
-                    Start-Service -Name "ClientIQ"
-                    Sleep(5)
-                    Remove-Item $(AppPath)\Start-Dev.ps1
-                }
-
-                Write-Host "Closing remote session"
-                Remove-PSSession $session
+          - template: PipelineTemplates/deploy-nodejs.yml

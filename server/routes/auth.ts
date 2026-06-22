@@ -297,7 +297,7 @@ export function createSamlRoutes() {
           return res.redirect(spaLoginErrorUrl('session_error'));
         }
 
-        req.logIn(user, async (loginErr) => {
+        req.logIn(user, { session: false }, async (loginErr) => {
           if (loginErr) {
             authLogger.error({ err: loginErr }, 'req.logIn failed after SAML validation');
             return res.redirect(spaLoginErrorUrl('login_error'));
@@ -417,6 +417,7 @@ export function createSamlRoutes() {
             });
           } catch (permErr) {
             authLogger.error({ err: permErr }, 'Failed to load permissions during ACS');
+            return res.redirect(spaLoginErrorUrl('login_error'));
           }
 
           req.session.save((saveErr) => {
