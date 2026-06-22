@@ -11,12 +11,18 @@ import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Chip from '@mui/material/Chip';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuth } from '@/contexts/AuthContext';
+import { useMinPrivilegeLevel } from '@/hooks/usePermissions';
 
 import { useLocation } from 'wouter';
 import { drawerWidth } from '../../constants';
@@ -63,7 +69,9 @@ export default function Navbar({ drawerOpen, handleDrawerClose }: NavbarProps) {
   const init = {}; // useInitData();
   const projects = PROJECTS;
 
-  const { user: userInfo } = useAuth();
+  const { user: userInfo, logout } = useAuth();
+  const isSystemAdmin = useMinPrivilegeLevel(4);
+  const [menuAnchor, setMenuAnchor] = React.useState<null | HTMLElement>(null);
 
   const user = userInfo;
 
@@ -283,9 +291,39 @@ export default function Navbar({ drawerOpen, handleDrawerClose }: NavbarProps) {
             {userRole}
           </Typography>
         </Box>
-        <IconButton size="small" sx={{ color: C.textSubdued, ml: "auto"}}>
+        <IconButton
+          size="small"
+          sx={{ color: C.textSubdued, ml: "auto" }}
+          onClick={(e) => setMenuAnchor(e.currentTarget)}
+          aria-label="account menu"
+          data-testid="button-user-menu"
+        >
           <MoreVertIcon fontSize="small" />
         </IconButton>
+        <Menu
+          anchorEl={menuAnchor}
+          open={Boolean(menuAnchor)}
+          onClose={() => setMenuAnchor(null)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          {isSystemAdmin && (
+            <MenuItem
+              onClick={() => { setMenuAnchor(null); navigate('/admin/users'); }}
+              data-testid="menu-user-management"
+            >
+              <ListItemIcon><ManageAccountsIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>User Management</ListItemText>
+            </MenuItem>
+          )}
+          <MenuItem
+            onClick={() => { setMenuAnchor(null); logout(); }}
+            data-testid="menu-sign-out"
+          >
+            <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Sign out</ListItemText>
+          </MenuItem>
+        </Menu>
       </Box>
     </Drawer>
   );
