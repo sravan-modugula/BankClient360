@@ -289,6 +289,211 @@ export async function ensureEmployeeHasDefaultRoleSqlServer(
   }
 }
 
+export interface AdRoleSyncResult {
+  assigned: string[];       // role names newly granted this login
+  revoked: string[];        // AD-derived role names removed this login
+  usedFallback: boolean;    // no AD group mapped → fell back to the default role
+  fallbackRoleMissing: boolean; // even the fallback role doesn't exist in the role table
+  unresolved: string[];     // desired role names with no matching row in the role table
+}
+
+/**
+ * Best-effort audit row in employee_role_history. Never throws — a logging
+ * failure (e.g. an environment missing an optional history column) must not
+ * break role assignment or login.
+ */
+export async function logRoleHistorySqlServer(
+  pool: sql.ConnectionPool,
+  params: {
+    employeeId: number;
+    roleId: number;
+    action: 'assigned' | 'revoked';
+    source: 'saml' | 'manual';
+    assignedBy: number | null;
+    samlRoleAttribute: string | null;
+    isPrimary: boolean;
+    reason: string | null;
+  },
+): Promise<void> {
+  try {
+    const r = pool.request();
+    r.input('employeeId', sql.BigInt, params.employeeId);
+    r.input('roleId', sql.BigInt, params.roleId);
+    r.input('action', sql.NVarChar, params.action);
+    r.input('source', sql.NVarChar, params.source);
+    r.input('assignedBy', sql.BigInt, params.assignedBy);
+    r.input('samlRoleAttribute', sql.NVarChar, params.samlRoleAttribute?.slice(0, 255) ?? null);
+    r.input('isPrimary', sql.Bit, params.isPrimary ? 1 : 0);
+    r.input('reason', sql.NVarChar, params.reason);
+    await r.query(`
+      INSERT INTO employee_role_history (
+        employee_id, role_id, action, source, assigned_by,
+        saml_role_attribute, is_primary, reason, assigned_at
+      ) VALUES (
+        @employeeId, @roleId, @action, @source, @assignedBy,
+        @samlRoleAttribute, @isPrimary, @reason, GETDATE()
+      )
+    `);
+  } catch (error) {
+    fileLogger.warn({ err: error, employeeId: params.employeeId, roleId: params.roleId },
+      'Best-effort role history insert failed (ignored)');
+  }
+}
+
+/**
+ * Enforced sync of an employee's roles from their AD groups (resolved to role
+ * names by the caller). Reconciles only AD/system-derived rows — rows with a
+ * non-null assigned_by were granted by an admin and are left untouched.
+ *
+ *  - desiredRoleNames empty  -> fall back to `fallbackRoleName`
+ *  - revoke: active system rows (assigned_by IS NULL) whose role is no longer desired
+ *  - assign: desired roles that aren't already active (reactivate an inactive
+ *    row in place — the (employee_id, role_id) composite PK forbids duplicates)
+ *
+ * Idempotent: a login with unchanged groups performs no writes.
+ */
+export async function syncEmployeeRolesFromAdGroupsSqlServer(
+  pool: sql.ConnectionPool,
+  employeeId: number,
+  desiredRoleNames: string[],
+  fallbackRoleName = 'Branch Manager',
+  samlRoleAttribute: string | null = null,
+): Promise<AdRoleSyncResult> {
+  const result: AdRoleSyncResult = {
+    assigned: [], revoked: [], usedFallback: false, fallbackRoleMissing: false, unresolved: [],
+  };
+
+  try {
+    // 1. Decide the effective desired role names (fallback when AD yields none).
+    let effectiveNames = Array.from(new Set(desiredRoleNames.map((n) => n.trim()).filter(Boolean)));
+    if (effectiveNames.length === 0) {
+      effectiveNames = [fallbackRoleName];
+      result.usedFallback = true;
+    }
+
+    // 2. Resolve names -> active role rows (case-insensitive, trimmed).
+    let resolved = await resolveRolesByNameSqlServer(pool, effectiveNames);
+    let resolvedNames = new Set(resolved.map((r) => r.roleName.trim().toUpperCase()));
+    result.unresolved = effectiveNames.filter((n) => !resolvedNames.has(n.trim().toUpperCase()));
+
+    // If nothing resolved (e.g. AD groups mapped to roles absent from the table),
+    // fall back to the default role before giving up.
+    if (resolved.length === 0 && !result.usedFallback) {
+      result.usedFallback = true;
+      resolved = await resolveRolesByNameSqlServer(pool, [fallbackRoleName]);
+    }
+    if (resolved.length === 0) {
+      result.fallbackRoleMissing = true;
+      fileLogger.warn({ employeeId, desiredRoleNames, fallbackRoleName },
+        'AD role sync resolved no roles — desired and fallback both absent from role table');
+      return result;
+    }
+
+    const desiredIds = new Set(resolved.map((r) => r.roleId));
+    const roleNameById = new Map(resolved.map((r) => [r.roleId, r.roleName]));
+
+    // 3. Load all existing rows for this employee (active or not).
+    const curReq = pool.request();
+    curReq.input('employeeId', sql.BigInt, employeeId);
+    const cur = await curReq.query(`
+      SELECT role_id AS roleId, is_active AS isActive, assigned_by AS assignedBy, role_name AS roleName
+      FROM employee_role er
+      INNER JOIN role r ON r.role_id = er.role_id
+      WHERE er.employee_id = @employeeId
+    `);
+    const currentRows = cur.recordset as Array<{ roleId: number; isActive: boolean; assignedBy: number | null; roleName: string }>;
+
+    // 4. Revoke: active, system-derived (assigned_by IS NULL) roles not desired.
+    for (const row of currentRows) {
+      if (row.isActive && row.assignedBy == null && !desiredIds.has(row.roleId)) {
+        const rev = pool.request();
+        rev.input('employeeId', sql.BigInt, employeeId);
+        rev.input('roleId', sql.BigInt, row.roleId);
+        await rev.query(`
+          UPDATE employee_role
+          SET is_active = 0, expiration_date = CAST(GETDATE() AS DATE)
+          WHERE employee_id = @employeeId AND role_id = @roleId AND is_active = 1
+        `);
+        result.revoked.push(row.roleName);
+        await logRoleHistorySqlServer(pool, {
+          employeeId, roleId: row.roleId, action: 'revoked', source: 'saml',
+          assignedBy: null, samlRoleAttribute, isPrimary: false,
+          reason: 'AD group removed — enforced sync',
+        });
+      }
+    }
+
+    // 5. Assign: desired roles not already active. Reactivate an inactive row in
+    //    place (composite PK forbids a duplicate INSERT); insert when absent.
+    for (const roleId of Array.from(desiredIds)) {
+      const existing = currentRows.find((r) => r.roleId === roleId);
+      if (existing?.isActive) continue; // already active (manual or system) — nothing to do
+
+      const asg = pool.request();
+      asg.input('employeeId', sql.BigInt, employeeId);
+      asg.input('roleId', sql.BigInt, roleId);
+      if (existing) {
+        // Reactivate; preserve original provenance (assigned_by unchanged).
+        await asg.query(`
+          UPDATE employee_role
+          SET is_active = 1, expiration_date = NULL,
+              assigned_date = GETDATE(), effective_date = CAST(GETDATE() AS DATE)
+          WHERE employee_id = @employeeId AND role_id = @roleId
+        `);
+      } else {
+        // New system-derived row (assigned_by NULL marks it AD-derived).
+        await asg.query(`
+          INSERT INTO employee_role (
+            employee_id, role_id, is_primary, assigned_by, assigned_date, effective_date, is_active
+          ) VALUES (
+            @employeeId, @roleId, 0, NULL, GETDATE(), CAST(GETDATE() AS DATE), 1
+          )
+        `);
+      }
+      const roleName = roleNameById.get(roleId) || String(roleId);
+      result.assigned.push(roleName);
+      await logRoleHistorySqlServer(pool, {
+        employeeId, roleId, action: 'assigned', source: 'saml',
+        assignedBy: null, samlRoleAttribute, isPrimary: false,
+        reason: result.usedFallback ? 'Default role (no AD group matched)' : 'AD group mapping — enforced sync',
+      });
+    }
+
+    fileLogger.info({ employeeId, desiredRoleNames, ...result }, 'Synced employee roles from AD groups');
+    return result;
+  } catch (error) {
+    fileLogger.error({ err: error, employeeId, desiredRoleNames }, 'Failed to sync employee roles from AD groups');
+    return result;
+  }
+}
+
+/**
+ * Resolve a list of role names to active role rows (case-insensitive, trimmed).
+ * Reuses the matching philosophy of ensureEmployeeHasDefaultRoleSqlServer but
+ * for a set of canonical names.
+ */
+async function resolveRolesByNameSqlServer(
+  pool: sql.ConnectionPool,
+  roleNames: string[],
+): Promise<Array<{ roleId: number; roleName: string; privilegeLevel: number }>> {
+  const names = Array.from(new Set(roleNames.map((n) => n.trim()).filter(Boolean)));
+  if (names.length === 0) return [];
+
+  const req = pool.request();
+  const params: string[] = [];
+  names.forEach((n, i) => {
+    req.input(`n${i}`, sql.NVarChar, n.toUpperCase());
+    params.push(`@n${i}`);
+  });
+  const res = await req.query(`
+    SELECT role_id AS roleId, role_name AS roleName, privilege_level AS privilegeLevel
+    FROM role
+    WHERE is_active = 1
+      AND UPPER(LTRIM(RTRIM(role_name))) IN (${params.join(', ')})
+  `);
+  return res.recordset as Array<{ roleId: number; roleName: string; privilegeLevel: number }>;
+}
+
 /**
  * Get all employees (optionally filtered by branch)
  */

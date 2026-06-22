@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { Strategy as SamlStrategy } from '@node-saml/passport-saml';
 import { ValidateInResponseTo } from '@node-saml/node-saml';
 import logger from '../services/logger';
+import { normalizeSamlGroups } from './adGroupRoleMap';
 
 const fileLogger = logger.child({ module: 'saml-strategy' });
 
@@ -151,12 +152,15 @@ export function createSamlStrategy() {
         const email = profile.email ?? profile[ATTRIBUTE_MAP.email] ?? profile.nameID ?? null;
         const department = profile.department ?? profile[ATTRIBUTE_MAP.department] ?? null;
         const rawSamlRole = profile.role ?? profile[ATTRIBUTE_MAP.role] ?? null;
-        // IdPs occasionally send the user's full AD group list (multi-kilobyte) as the role
-        // attribute. Cap defensively so a runaway value can't blow past sensible bounds
-        // even after the column was widened to NVARCHAR(MAX).
+        // The IdP sends the user's full AD group list as the role attribute
+        // (array of AttributeValues, or a delimited string). Parse the FULL
+        // value into individual groups first — role mapping needs every group,
+        // so this must happen before any length cap.
+        const samlGroups = normalizeSamlGroups(rawSamlRole);
+        // Keep a capped raw copy for audit (stored in last_seen_saml_role).
         const samlRoleKey = typeof rawSamlRole === 'string' && rawSamlRole.length > 4000
           ? rawSamlRole.slice(0, 4000)
-          : rawSamlRole;
+          : (Array.isArray(rawSamlRole) ? samlGroups.join(';').slice(0, 4000) : rawSamlRole);
 
         if (!email) {
           fileLogger.error({ profileKeys: Object.keys(profile) }, 'SAML profile missing email/nameID');
@@ -173,6 +177,7 @@ export function createSamlStrategy() {
           email,
           department,
           samlRoleKey,
+          samlGroups,
           ssoSubject: profile.nameID ?? email,
         });
       } catch (error) {

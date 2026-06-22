@@ -8,8 +8,9 @@ import { getMssqlPool } from '../db';
 import {
   getEmployeeBySsoSubjectOrEmailSqlServer,
   upsertEmployeeFromSamlSqlServer,
-  ensureEmployeeHasDefaultRoleSqlServer,
+  syncEmployeeRolesFromAdGroupsSqlServer,
 } from '../storage/sqlServerEmployee';
+import { mapAdGroupsToRoleNames } from '../auth/adGroupRoleMap';
 
 const authLogger = logger.child({ module: 'auth' });
 
@@ -347,23 +348,32 @@ export function createSamlRoutes() {
                   resolvedEmployeeId: dbEmployeeId,
                 }, 'Resolved/created DB employee for SAML user');
 
-                // Auto-grant a default role if the user has none yet.
-                // Configurable via SAML_DEFAULT_ROLE_NAME (defaults to
-                // "Employee" — the org always keeps this role provisioned).
-                // Use `|| default` (not `??`) so an empty/whitespace env var
-                // still falls back rather than disabling the grant.
-                const defaultRoleName = process.env.SAML_DEFAULT_ROLE_NAME?.trim() || 'Employee';
-                const outcome = await ensureEmployeeHasDefaultRoleSqlServer(
-                  pool, dbEmployeeId, defaultRoleName,
+                // Enforced role sync from the user's AD groups (carried in the
+                // SAML role claim). Roles mirror current AD group membership on
+                // every login; admin-assigned roles (assigned_by IS NOT NULL)
+                // are preserved. When no AD group maps to a role, fall back to
+                // SAML_DEFAULT_ROLE_NAME (defaults to "Branch Manager").
+                const fallbackRoleName = process.env.SAML_DEFAULT_ROLE_NAME?.trim() || 'Branch Manager';
+                const { roleNames: desiredRoleNames, unmatched } = mapAdGroupsToRoleNames(user.samlGroups ?? []);
+                const sync = await syncEmployeeRolesFromAdGroupsSqlServer(
+                  pool, dbEmployeeId, desiredRoleNames, fallbackRoleName,
+                  (user.samlGroups ?? []).join(';') || null,
                 );
                 // Flag the "role missing from the system" case so the SPA can
                 // show a distinct misconfiguration message (vs the generic
                 // "awaiting role assignment"). Set explicitly every login so
                 // the flag never goes stale.
-                req.session.defaultRoleMissing = outcome.status === 'role_not_found';
-                if (outcome.status === 'assigned') {
-                  authLogger.info({ dbEmployeeId, defaultRoleName: outcome.roleName }, 'Granted default role to new SAML user');
-                }
+                req.session.defaultRoleMissing = sync.fallbackRoleMissing;
+                authLogger.info({
+                  dbEmployeeId,
+                  groupCount: (user.samlGroups ?? []).length,
+                  desiredRoleNames,
+                  assigned: sync.assigned,
+                  revoked: sync.revoked,
+                  usedFallback: sync.usedFallback,
+                  unmatchedClientIqGroups: unmatched,
+                  unresolvedRoleNames: sync.unresolved,
+                }, 'Synced SAML user roles from AD groups');
               } else {
                 authLogger.warn({
                   email: user.email,
@@ -380,6 +390,7 @@ export function createSamlRoutes() {
             req.session.email = user.email;
             req.session.department = user.department;
             req.session.samlRoleKey = user.samlRoleKey;
+            req.session.samlGroups = user.samlGroups;
             req.session.lastActivity = new Date();
 
             if (dbEmployeeId) {

@@ -11,6 +11,7 @@ declare module 'express-session' {
     roles: string[];          // Array of role names
     permissions: string[];    // Computed permissions
     samlRoleKey: string | null;
+    samlGroups?: string[];    // parsed AD groups from the SAML role claim
     lastActivity: Date;
     defaultRoleMissing?: boolean;  // configured default role absent from role table
   }
@@ -30,6 +31,7 @@ declare global {
       email: string;
       department: string | null;
       samlRoleKey: string | null;
+      samlGroups?: string[];
     }
   }
 }
