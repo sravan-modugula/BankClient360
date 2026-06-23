@@ -18,18 +18,22 @@
  * existing `role` table (case-insensitive) by the caller.
  */
 
-/** RoleToken (as it appears in the group name) -> application role name. */
+/**
+ * RoleToken (as it appears in the group name) -> application role name.
+ * The right-hand values MUST match rows in the `role` table. Current roles:
+ *   Employee, Teller, BRS, Branch Manager, Ops Manager, Relationship Manager,
+ *   Regional Manager, Executive, System Admin.
+ *
+ * Tokens that have no corresponding role row are intentionally omitted (Risk,
+ * LoanOfficer, DataAnalyst, Compliance): a user whose only ClientIQ group is
+ * one of these maps to nothing and therefore falls back to Branch Manager.
+ * Add a row here (and a matching `role`) when those roles are created.
+ */
 export const AD_GROUP_TOKEN_TO_ROLE: Record<string, string> = {
   appadmin: 'System Admin',
   branchmanager: 'Branch Manager',
-  assistantmanager: 'Assistant Manager',
-  loanofficer: 'Loan Officer',
-  businessbanker: 'Business Banker',
   teller: 'Teller',
-  customerservicerep: 'Customer Service Rep',
-  risk: 'Risk Analyst',
-  dataanalyst: 'Risk Analyst', // no dedicated Data Analyst role; closest read-only analyst
-  compliance: 'Compliance Officer',
+  businessbanker: 'BRS', // BRS = Business Relationship Specialist (confirm this is the intended target)
 };
 
 /** Tokens that grant app access but no role of their own. */
