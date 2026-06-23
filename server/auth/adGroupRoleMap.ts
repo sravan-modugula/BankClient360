@@ -22,14 +22,18 @@
  * RoleToken (as it appears in the group name) -> application role name.
  * The right-hand values MUST match rows in the `role` table:
  *   Employee, Teller, BRS, Branch Manager, Ops Manager, Relationship Manager,
- *   Regional Manager, Executive, System Admin.
+ *   Regional Manager, Executive, System Admin, Loan Officer, Risk Analyst,
+ *   Compliance Officer.
  *
  * Authoritative mapping confirmed by the bank (preprod/prod entitlement list):
- *   APPSVCS / AppAdmin                          -> System Admin   (priv 4)
- *   BranchManager                               -> Branch Manager (priv 3)
- *   BusinessBanker / LoanOfficer / AsstManager  -> BRS            (priv 2)
- *   Teller / Risk / DataAnalyst / Compliance    -> Teller         (priv 1)
- *   GEN (+ the IAM RSA access group)            -> no role (app-access entitlement only)
+ *   APPSVCS / AppAdmin               -> System Admin       (priv 4)
+ *   BranchManager                    -> Branch Manager     (priv 3)
+ *   BusinessBanker / AsstManager     -> BRS                (priv 2)
+ *   LoanOfficer                      -> Loan Officer       (role_id 10)
+ *   Risk                             -> Risk Analyst       (role_id 11)
+ *   Compliance                       -> Compliance Officer (role_id 12)
+ *   Teller / DataAnalyst             -> Teller             (priv 1)
+ *   GEN (+ the IAM RSA access group) -> no role (app-access entitlement only)
  *
  * Note: the admin group token differs by environment — APPSVCS in preprod
  * (CTRL_PRE_..._APPSVCS_ADM), AppAdmin in dev/test/stg/prod per the IdP list —
@@ -43,13 +47,15 @@ export const AD_GROUP_TOKEN_TO_ROLE: Record<string, string> = {
   branchmanager: 'Branch Manager',
   // Business Relationship Specialist tier (privilege 2)
   businessbanker: 'BRS',
-  loanofficer: 'BRS',
   assistantmanager: 'BRS',
+  // Dedicated roles — each has its own row (id/name/privilege) in the role table,
+  // so they map directly instead of collapsing into BRS/Teller.
+  loanofficer: 'Loan Officer',        // role_id 10
+  risk: 'Risk Analyst',               // role_id 11
+  compliance: 'Compliance Officer',   // role_id 12
   // Teller tier (privilege 1)
   teller: 'Teller',
-  risk: 'Teller',
   dataanalyst: 'Teller',
-  compliance: 'Teller',
 };
 
 /** Tokens that grant app access but no role of their own. */
