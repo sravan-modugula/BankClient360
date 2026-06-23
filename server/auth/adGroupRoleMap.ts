@@ -55,7 +55,13 @@ export function normalizeSamlGroups(rawSamlRole: unknown): string[] {
   const parts = Array.isArray(rawSamlRole)
     ? rawSamlRole.flatMap((v) => String(v).split(/[;,\n\r]+/))
     : String(rawSamlRole).split(/[;,\n\r]+/);
-  return parts.map((g) => g.trim()).filter((g) => g.length > 0);
+  // The IdP delivers the group list as a quoted, comma-separated string, e.g.
+  //   'CTRL_..._DataAnalyst_RO','IAM_..._GEN_EXEC'
+  // Strip surrounding quotes/brackets/whitespace from each entry so the
+  // end-anchored group regex matches (a trailing quote would otherwise fail).
+  return parts
+    .map((g) => g.replace(/^[\s'"\[\]]+|[\s'"\[\]]+$/g, ''))
+    .filter((g) => g.length > 0);
 }
 
 /**
