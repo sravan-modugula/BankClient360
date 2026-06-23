@@ -18,18 +18,38 @@
  * existing `role` table (case-insensitive) by the caller.
  */
 
-/** RoleToken (as it appears in the group name) -> application role name. */
+/**
+ * RoleToken (as it appears in the group name) -> application role name.
+ * The right-hand values MUST match rows in the `role` table:
+ *   Employee, Teller, BRS, Branch Manager, Ops Manager, Relationship Manager,
+ *   Regional Manager, Executive, System Admin.
+ *
+ * Authoritative mapping confirmed by the bank (preprod/prod entitlement list):
+ *   APPSVCS / AppAdmin                          -> System Admin   (priv 4)
+ *   BranchManager                               -> Branch Manager (priv 3)
+ *   BusinessBanker / LoanOfficer / AsstManager  -> BRS            (priv 2)
+ *   Teller / Risk / DataAnalyst / Compliance    -> Teller         (priv 1)
+ *   GEN (+ the IAM RSA access group)            -> no role (app-access entitlement only)
+ *
+ * Note: the admin group token differs by environment — APPSVCS in preprod
+ * (CTRL_PRE_..._APPSVCS_ADM), AppAdmin in dev/test/stg/prod per the IdP list —
+ * so both are mapped. The environment segment is ignored by the parser.
+ */
 export const AD_GROUP_TOKEN_TO_ROLE: Record<string, string> = {
+  // Admin (privilege 4)
+  appsvcs: 'System Admin',
   appadmin: 'System Admin',
+  // Management (privilege 3)
   branchmanager: 'Branch Manager',
-  assistantmanager: 'Assistant Manager',
-  loanofficer: 'Loan Officer',
-  businessbanker: 'Business Banker',
+  // Business Relationship Specialist tier (privilege 2)
+  businessbanker: 'BRS',
+  loanofficer: 'BRS',
+  assistantmanager: 'BRS',
+  // Teller tier (privilege 1)
   teller: 'Teller',
-  customerservicerep: 'Customer Service Rep',
-  risk: 'Risk Analyst',
-  dataanalyst: 'Risk Analyst', // no dedicated Data Analyst role; closest read-only analyst
-  compliance: 'Compliance Officer',
+  risk: 'Teller',
+  dataanalyst: 'Teller',
+  compliance: 'Teller',
 };
 
 /** Tokens that grant app access but no role of their own. */
