@@ -115,35 +115,43 @@ function ActiveUsersPanel() {
     return <Chip label="Manually Assigned" size="small" color="default" data-testid={`status-manual-${user.employeeId}`} />;
   }
 
+  // Flex widths so the grid fills the container and the Actions column stays
+  // visible without horizontal scrolling. minWidth keeps columns readable when
+  // the viewport is narrow.
   const columns: GridColDef[] = [
     {
       field: 'employeeNumber',
       headerName: 'Employee #',
-      width: 130,
+      flex: 0.6,
+      minWidth: 110,
     },
     {
       field: 'fullName',
       headerName: 'Name',
-      width: 200,
+      flex: 1,
+      minWidth: 150,
       valueGetter: (_, row) => `${row.firstName} ${row.lastName}`,
     },
     {
       field: 'email',
       headerName: 'Email',
-      width: 220,
+      flex: 1.4,
+      minWidth: 190,
     },
     {
       field: 'department',
       headerName: 'Department',
-      width: 150,
+      flex: 0.9,
+      minWidth: 120,
     },
     {
       field: 'primaryRoleName',
       headerName: 'Current Role',
-      width: 180,
+      flex: 0.9,
+      minWidth: 120,
       renderCell: (params: GridRenderCellParams) => (
-        <Chip 
-          label={params.value || 'No Role'} 
+        <Chip
+          label={params.value || 'No Role'}
           size="small"
           color={params.row.privilegeLevel === 4 ? 'primary' : 'default'}
           data-testid={`role-${params.row.employeeId}`}
@@ -153,16 +161,18 @@ function ActiveUsersPanel() {
     {
       field: 'roleAssignmentSource',
       headerName: 'Assignment Status',
-      width: 200,
+      flex: 1,
+      minWidth: 160,
       renderCell: (params: GridRenderCellParams) => getStatusBadge(params.row),
     },
     {
       field: 'lastSeenSamlRole',
       headerName: 'SAML Role',
-      width: 160,
+      flex: 0.9,
+      minWidth: 110,
       renderCell: (params: GridRenderCellParams) => (
         params.value ? (
-          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{params.value}</Typography>
+          <Typography variant="caption" noWrap title={String(params.value)} sx={{ fontFamily: 'monospace' }}>{params.value}</Typography>
         ) : (
           <Typography variant="caption" color="text.secondary">None</Typography>
         )
@@ -171,21 +181,20 @@ function ActiveUsersPanel() {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 120,
+      width: 80,
       sortable: false,
+      filterable: false,
       renderCell: (params: GridRenderCellParams) => (
-        <Box>
-          <IconButton
-            size="small"
-            onClick={() => {
-              setSelectedUser(params.row);
-              setRoleDialogOpen(true);
-            }}
-            data-testid={`button-assign-role-${params.row.employeeId}`}
-          >
-            <AdminPanelSettings fontSize="small" />
-          </IconButton>
-        </Box>
+        <IconButton
+          size="small"
+          onClick={() => {
+            setSelectedUser(params.row);
+            setRoleDialogOpen(true);
+          }}
+          data-testid={`button-assign-role-${params.row.employeeId}`}
+        >
+          <AdminPanelSettings fontSize="small" />
+        </IconButton>
       ),
     },
   ];
@@ -315,7 +324,11 @@ function ManualRoleAssignmentDialog({
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      // Match the list query regardless of active search/filter params, whose
+      // key is the full URL (e.g. '/api/admin/users?search=...').
+      queryClient.invalidateQueries({
+        predicate: (q) => typeof q.queryKey[0] === 'string' && (q.queryKey[0] as string).startsWith('/api/admin/users'),
+      });
       onClose();
       setRoleId(0);
       setReason('');

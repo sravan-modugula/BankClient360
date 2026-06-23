@@ -499,6 +499,7 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
           e.is_active as isActive,
           e.sso_subject as ssoSubject,
           e.last_login_at as lastLoginAt,
+          e.last_seen_saml_role as lastSeenSamlRole,
           e.created_at as createdAt
         FROM employee e
         ${whereClause}
@@ -556,29 +557,36 @@ export class SqlServerRoleManagementStore implements IRoleManagementStore {
         });
       }
       
-      return filteredUsers.map(u => {
+      return filteredUsers.map((u): UserListItem => {
         const roles = rolesByUser.get(u.employeeId) || [];
-        const maxPrivilege = roles.length > 0 ? Math.max(...roles.map(r => r.privilegeLevel)) : 0;
-        const sourceInfo = roleSourceByUser.get(u.employeeId) || { source: 'manual' as const, samlRoleAttribute: null };
-        
+        // Primary = highest-privilege active role (matches getUserPermissions).
+        const primary = roles.reduce<{ roleId: number; roleName: string; privilegeLevel: number } | null>(
+          (hi, cur) => (hi === null || cur.privilegeLevel > hi.privilegeLevel ? cur : hi),
+          null,
+        );
+        const sourceInfo = roleSourceByUser.get(u.employeeId);
+
         return {
           employeeId: u.employeeId,
           employeeNumber: u.employeeNumber,
           firstName: u.firstName,
           lastName: u.lastName,
-          fullName: `${u.firstName} ${u.lastName}`,
-          email: u.email,
+          email: u.email ?? null,
           phone: u.phone ?? null,
-          department: u.department ?? null,
           position: u.position ?? null,
+          department: u.department ?? null,
+          primaryRoleName: primary ? primary.roleName : null,
+          privilegeLevel: primary ? primary.privilegeLevel : null,
           isActive: u.isActive,
+          isLocked: false,
           ssoSubject: u.ssoSubject ?? null,
           lastLoginAt: u.lastLoginAt ?? null,
-          createdAt: u.createdAt,
-          roles,
-          maxPrivilegeLevel: maxPrivilege,
-          roleSource: sourceInfo.source,
-          samlRoleAttribute: sourceInfo.samlRoleAttribute
+          lastSeenSamlRole: u.lastSeenSamlRole ?? null,
+          // Only report a source when the user actually holds a role; otherwise
+          // null so the UI shows "Needs Role Assignment". Default AD-derived
+          // roles (no history row) read as 'saml'.
+          roleAssignmentSource: roles.length > 0 ? (sourceInfo?.source ?? 'saml') : null,
+          samlRoleAttribute: sourceInfo?.samlRoleAttribute ?? null,
         };
       });
     } catch (error) {
