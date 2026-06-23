@@ -9,7 +9,6 @@ import {
   getEmployeeBySsoSubjectOrEmailSqlServer,
   upsertEmployeeFromSamlSqlServer,
   syncEmployeeRolesFromAdGroupsSqlServer,
-  ensureEmployeeHasDefaultRoleSqlServer,
 } from '../storage/sqlServerEmployee';
 import { mapAdGroupsToRoleNames } from '../auth/adGroupRoleMap';
 
@@ -360,9 +359,11 @@ export function createSamlRoutes() {
                   pool, dbEmployeeId, desiredRoleNames, fallbackRoleName,
                   (user.samlGroups ?? []).join(';') || null,
                 );
-                // (defaultRoleMissing is decided authoritatively below, after a
-                // guaranteed Branch Manager fallback, so a transient sync error
-                // never strands an authenticated user on "Awaiting Role".)
+                // Flag the "role missing from the system" case so the SPA can
+                // show a distinct misconfiguration message (vs the generic
+                // "awaiting role assignment"). Set explicitly every login so
+                // the flag never goes stale.
+                req.session.defaultRoleMissing = sync.fallbackRoleMissing;
                 authLogger.info({
                   dbEmployeeId,
                   groupCount: (user.samlGroups ?? []).length,
@@ -393,37 +394,12 @@ export function createSamlRoutes() {
             req.session.lastActivity = new Date();
 
             if (dbEmployeeId) {
-              let userPermissions = await permissionService.getUserPermissions(dbEmployeeId);
-
-              // Bulletproof fallback: an authenticated RSA user must never be
-              // stranded on "Awaiting Role Assignment". If no role was realized
-              // (AD groups matched nothing, the enforced sync errored, or the
-              // nightly ETL wiped employee_role rows), grant Branch Manager via
-              // the simple column-safe insert (no assigned_by dependency, so it
-              // works even before the provenance migration is applied).
-              if (userPermissions.roles.length === 0) {
-                try {
-                  const pool = await getMssqlPool();
-                  const fb = await ensureEmployeeHasDefaultRoleSqlServer(
-                    pool, dbEmployeeId, process.env.SAML_DEFAULT_ROLE_NAME?.trim() || 'Branch Manager',
-                  );
-                  authLogger.warn({ dbEmployeeId, fallbackOutcome: fb.status },
-                    'No role realized from AD sync — applied Branch Manager fallback');
-                  userPermissions = await permissionService.getUserPermissions(dbEmployeeId);
-                } catch (fbErr) {
-                  authLogger.error({ err: fbErr, dbEmployeeId }, 'Branch Manager fallback failed');
-                }
-              }
-
+              const userPermissions = await permissionService.getUserPermissions(dbEmployeeId);
               req.session.roles = userPermissions.roles.map((r: any) => r.roleName);
               req.session.permissions = userPermissions.permissions;
-              // Only flag misconfiguration if even Branch Manager couldn't be
-              // applied (role absent from the role table) — the rare real case.
-              req.session.defaultRoleMissing = userPermissions.roles.length === 0;
             } else {
               req.session.roles = [];
               req.session.permissions = [];
-              req.session.defaultRoleMissing = false;
             }
 
             authLogger.info({
