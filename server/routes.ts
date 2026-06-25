@@ -2467,8 +2467,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     body: z.string().min(1),
     legalHold: z.boolean().optional(),
     retentionYears: z.coerce.number().int().positive().optional(),
-    isPinned: z.boolean().optional(),
-    authorEmployeeId: z.coerce.number().int().positive().optional()
+    isPinned: z.boolean().optional()
+    // Authorship is taken from the authenticated session, never the request body.
   }).refine(data => {
     if (data.targetType === 'customer') {
       return data.customerId !== undefined && data.accountId === undefined;
@@ -2487,16 +2487,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     visibility: z.enum(['public', 'internal', 'confidential']).optional(),
     legalHold: z.boolean().optional(),
     retentionYears: z.coerce.number().int().positive().nullable().optional(),
-    isPinned: z.boolean().optional(),
-    authorEmployeeId: z.coerce.number().int().positive().optional()
+    isPinned: z.boolean().optional()
+    // Authorship is taken from the authenticated session, never the request body.
   });
 
   const pinNoteSchema = z.object({
     isPinned: z.boolean()
-  });
-
-  const restoreNoteSchema = z.object({
-    employeeId: z.coerce.number().int().positive().optional()
   });
 
   const searchNotesSchema = z.object({
@@ -2582,17 +2578,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new note
   app.post("/api/notes", async (req, res) => {
     try {
+      // Author = the authenticated session user (set by the SAML bridge / dev mock).
+      const employeeId = req.employeeId;
+      if (!employeeId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
       const validation = createNoteSchema.safeParse(req.body);
-      
+
       if (!validation.success) {
-        return res.status(400).json({ 
-          error: "Invalid request data", 
-          details: validation.error.format() 
+        return res.status(400).json({
+          error: "Invalid request data",
+          details: validation.error.format()
         });
       }
 
-      const { authorEmployeeId = 1, ...noteData } = validation.data;
-      const newNote = await storage.createNote(noteData, authorEmployeeId);
+      const newNote = await storage.createNote(validation.data, employeeId);
       res.status(201).json(newNote);
     } catch (error: any) {
       logger.error({ err: error, module: 'routes' }, 'Error creating note');
@@ -2608,26 +2609,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid note ID" });
       }
 
+      // Author of the new version = the authenticated session user.
+      const employeeId = req.employeeId;
+      if (!employeeId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
       const validation = updateNoteSchema.safeParse(req.body);
-      
+
       if (!validation.success) {
-        return res.status(400).json({ 
-          error: "Invalid request data", 
-          details: validation.error.format() 
+        return res.status(400).json({
+          error: "Invalid request data",
+          details: validation.error.format()
         });
       }
 
-      const { authorEmployeeId = 1, ...rawUpdateData } = validation.data;
-      
-      // Coerce null values to undefined for clean database writes
-      const updateData: any = {};
-      for (const [key, value] of Object.entries(rawUpdateData)) {
-        if (value !== null) {
-          updateData[key] = value;
-        }
-      }
-      
-      const updatedNote = await storage.updateNote(noteId, updateData, authorEmployeeId);
+      // Pass the validated fields through as-is. A null categoryId / retentionYears is
+      // an intentional "clear" and must reach updateNoteSqlServer (which writes NULL);
+      // fields the client omitted stay undefined and are left untouched.
+      const updatedNote = await storage.updateNote(noteId, validation.data, employeeId);
       
       if (!updatedNote) {
         return res.status(404).json({ error: "Note not found" });
@@ -2648,11 +2648,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid note ID" });
       }
 
-      const employeeIdParam = req.query.employeeId as string;
-      const deletedByEmployeeId = employeeIdParam ? parseInt(employeeIdParam) : 1;
-      
-      if (isNaN(deletedByEmployeeId)) {
-        return res.status(400).json({ error: "Invalid employee ID" });
+      // Deleting actor = the authenticated session user, not a client-supplied id.
+      const deletedByEmployeeId = req.employeeId;
+      if (!deletedByEmployeeId) {
+        return res.status(401).json({ error: "Authentication required" });
       }
 
       const success = await storage.softDeleteNote(noteId, deletedByEmployeeId);
@@ -2676,16 +2675,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid note ID" });
       }
 
-      const validation = restoreNoteSchema.safeParse(req.body);
-      
-      if (!validation.success) {
-        return res.status(400).json({ 
-          error: "Invalid request data", 
-          details: validation.error.format() 
-        });
+      // Restoring actor = the authenticated session user.
+      const restoredByEmployeeId = req.employeeId;
+      if (!restoredByEmployeeId) {
+        return res.status(401).json({ error: "Authentication required" });
       }
 
-      const restoredByEmployeeId = validation.data.employeeId || 1;
       const success = await storage.restoreNote(noteId, restoredByEmployeeId);
       
       if (!success) {
