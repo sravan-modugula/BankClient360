@@ -467,9 +467,6 @@ export function AccountTable({
 
 interface AccountListProps {
   customerId?: number;
-  /** Pre-supplied accounts (e.g. the household aggregate). When provided, the
-   *  component renders these instead of fetching by customerId. */
-  accounts?: Account[];
   title?: string;
   onAccountSelect?: (accountId: number | null, accountLabel: string) => void;
   selectedAccountId?: number | null;
@@ -479,7 +476,6 @@ interface AccountListProps {
 
 export default function AccountList({
   customerId,
-  accounts: suppliedAccounts,
   title = 'Accounts',
   onAccountSelect,
   selectedAccountId = null,
@@ -490,18 +486,15 @@ export default function AccountList({
 
   const canViewBalances = useHasPermission('account.view.balances');
 
-  const hasSupplied = Array.isArray(suppliedAccounts);
 
-  // Fetch accounts from API only when no pre-supplied accounts and customerId is provided.
+  // Fetch accounts from API only when no pre-supplied accounts and customerId is provided
   const { data: fetchedAccounts = [], isLoading: queryLoading, error: queryError } = useQuery<Account[]>({
     queryKey: [`/api/customers/${customerId}/accounts`],
-    enabled: !hasSupplied && !!customerId && Number.isFinite(customerId)
+    enabled: !!customerId && Number.isFinite(customerId)
   });
 
-  const accounts = hasSupplied ? suppliedAccounts! : fetchedAccounts;
-
-  const primaryAccounts = accounts.filter((x) => ["Primary account owner", "Joint Account Owner"].includes((x.ownershipType || "").trim()));
-  const secondaryAccount = accounts.filter((x) => !["Primary account owner", "Joint Account Owner"].includes((x.ownershipType || "").trim()));
+  const primaryAccounts = fetchedAccounts.filter((x) => ["Primary account owner", "Joint Account Owner"].includes((x.ownershipType || "").trim()));
+  const secondaryAccount = fetchedAccounts.filter((x) => !["Primary account owner", "Joint Account Owner"].includes((x.ownershipType || "").trim()));
 
   if (queryLoading) {
     return (
@@ -531,7 +524,7 @@ export default function AccountList({
     );
   }
 
-  if (accounts.length === 0) {
+  if (fetchedAccounts.length === 0) {
     return (
       <Card elevation={2} sx={{ mb: 3 }}>
         <CardContent>
