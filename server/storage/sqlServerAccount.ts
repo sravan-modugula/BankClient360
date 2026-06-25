@@ -121,43 +121,62 @@ export async function getHouseholdAccountsSqlServer(
           INNER JOIN customer c ON c.customer_id = hm.customer_id
           WHERE hm.household_id = @householdId
           AND hm.membership_end_date IS NULL
+      ),
+      -- A joint account owned by two household members has one ownership row
+      -- per member. Rank them so we keep exactly ONE row per account (prefer a
+      -- primary owner) — otherwise the account is returned twice and its
+      -- balance is double-counted in the household rollup.
+      hh_accounts as (
+        SELECT
+          a.account_id,
+          a.account_number,
+          a.account_type,
+          a.account_subtype,
+          a.account_status,
+          a.balance,
+          a.available_balance,
+          a.currency,
+          a.interest_rate,
+          a.credit_limit,
+          a.branch_id,
+          a.product_code,
+          a.opened_date,
+          a.closed_date,
+          a.last_transaction_date,
+          a.maturity_date,
+          a.jack_henry_account_id,
+          a.silverlake_account_structure,
+          a.account_class,
+          a.statement_cycle,
+          a.statement_code_desc,
+          a.average_balance,
+          a.last_maintenance_date,
+          a.created_at,
+          a.updated_at,
+          ao.customer_id,
+          ao.ownership_type,
+          ROW_NUMBER() OVER (
+            PARTITION BY a.account_id
+            ORDER BY
+              CASE WHEN ao.ownership_type IN ('Primary account owner', 'primary') THEN 0 ELSE 1 END,
+              ao.customer_id
+          ) AS rn
+        FROM account a
+        INNER JOIN account_ownership ao ON ao.account_id = a.account_id
+          -- Ownership type is different in dev and test
+          AND (ao.ownership_type = 'Primary account owner' OR ao.ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
+        WHERE ao.customer_id IN (SELECT customer_id FROM hh_members)
+          AND a.account_status != 'closed'
       )
-      SELECT 
-        a.account_id, 
-        a.account_number,
-        a.account_type, 
-        a.account_subtype,
-        a.account_status,
-        a.balance,
-        a.available_balance,
-        a.currency,
-        a.interest_rate,
-        a.credit_limit,
-        a.branch_id,
-        a.product_code,
-        a.opened_date,
-        a.closed_date,
-        a.last_transaction_date, 
-        a.maturity_date,
-        a.jack_henry_account_id,
-        a.silverlake_account_structure,
-        a.account_class,
-        a.statement_cycle,
-        a.statement_code_desc,
-        a.average_balance,
-        a.last_maintenance_date,
-        a.created_at,
-        a.updated_at,
-        -- a.account_number_bigint,
-        -- a.unique_act_number,
-        ao.customer_id
-      FROM account a
-      INNER JOIN 
-        account_ownership ao ON ao.account_id = a.account_id
-        -- Ownership type is different in dev and test
-	      and (ownership_type = 'Primary account owner' or ownership_type = 'primary' OR ao.ownership_type = 'Joint Account Owner')
-      WHERE ao.customer_id in (select customer_id from hh_members)
-      AND account_status != 'closed'
+      SELECT
+        account_id, account_number, account_type, account_subtype, account_status,
+        balance, available_balance, currency, interest_rate, credit_limit,
+        branch_id, product_code, opened_date, closed_date, last_transaction_date,
+        maturity_date, jack_henry_account_id, silverlake_account_structure,
+        account_class, statement_cycle, statement_code_desc, average_balance,
+        last_maintenance_date, created_at, updated_at, customer_id, ownership_type
+      FROM hh_accounts
+      WHERE rn = 1
       ORDER BY account_type, account_number;
     `);
 
