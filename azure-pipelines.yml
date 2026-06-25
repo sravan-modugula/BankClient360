@@ -122,10 +122,6 @@ stages:
           steps:
 
           - template: PipelineTemplates/start-script.yml
-            parameters:
-              samlEnabled: 'false' # true/false
-              samlHost: 'dev-clientiq.fmb.com' # Could maybe try to "map" these to later build the URL, but it's a bit clunky.  
-
           - template: PipelineTemplates/deploy-nodejs.yml
 
 # Test Deploy stage
@@ -149,10 +145,6 @@ stages:
           steps:
 
           - template: PipelineTemplates/start-script.yml
-            parameters:
-              samlEnabled: 'true' # true/false
-              samlHost: 'test-clientiq.fmb.com'
-
           - template: PipelineTemplates/deploy-nodejs.yml
           
 
@@ -174,13 +166,6 @@ stages:
       - checkout: none
       
       - template: PipelineTemplates/dast-scan.yml
-        parameters:
-          dastServer: '$(DASTServer)'
-          dastService: '$(DASTService)'
-          dastServerUrl: '$(DASTServerUrl)'
-          dastApiKey: '$(DASTAPIKey)'
-          dastScanUrl: '$(DASTScanTarget)' # VG
-          allowedHighs: 0
 
 
 # Preprod Deploy stage
@@ -204,8 +189,52 @@ stages:
           steps:
 
           - template: PipelineTemplates/start-script.yml
-            parameters:
-              samlEnabled: 'false' # true/false
-              samlHost: 'preprod-clientiq.fmb.com'
+          - template: PipelineTemplates/deploy-nodejs.yml
 
+
+# Prod Deploy stage Server 1
+- stage: Deploy_Prod
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/prod')
+  dependsOn: Build
+  variables:
+    - group: VG-Prod
+    - name: commitMessage
+      value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
+
+  jobs:
+  - deployment: ProdDeployment
+    environment: 'Prod'
+    pool:
+      name: 'ADODeployPool'
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - template: PipelineTemplates/start-script.yml
+          - template: PipelineTemplates/deploy-nodejs.yml
+
+
+# Prod Deploy stage Server 2
+- stage: Deploy_Prod2
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/prod')
+  dependsOn: Build
+  variables:
+    - group: VG-Prod2
+    - name: commitMessage
+      value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
+
+  jobs:
+  - deployment: ProdDeployment
+    environment: 'Prod'
+    pool:
+      name: 'ADODeployPool'
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - template: PipelineTemplates/start-script.yml
           - template: PipelineTemplates/deploy-nodejs.yml

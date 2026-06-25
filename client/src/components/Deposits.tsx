@@ -70,13 +70,13 @@ interface DepositTrendPoint {
   weightedAvgCD?: number;
 }
 
-interface DepositTrendResponse {
+export interface DepositTrendResponse {
   trendData: {
     month: DepositTrendPoint[],
     quarter: DepositTrendPoint[],
     year: DepositTrendPoint[],
   }
-  weightedAverageBalance: number;
+  weightedAverageBalance?: number;
 }
 
 interface DepositRecentTransaction {

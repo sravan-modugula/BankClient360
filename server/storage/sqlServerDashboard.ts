@@ -454,7 +454,7 @@ export async function getDepositTrendSqlServer(
             ft.amount transaction_amount,
             ft.transaction_date
           FROM financial_transaction ft
-          WHERE ft.account_number IN (SELECT account_number FROM customer_accounts)
+          WHERE ft.account_id IN (SELECT account_id FROM customer_accounts)
               AND ft.transaction_date >= DATEADD(month, -@months, GETDATE())
       `),
         request.query(`
@@ -589,83 +589,45 @@ export async function getDepositAccountAnalyticsSqlServer(
 export async function getAccountBalanceHistorySqlServer(
   pool: sql.ConnectionPool,
   accountId: number
-): Promise<Array<{ month: string; date: string; balance: number }>> {
+): Promise<AggregatedAccountData> {
   try {
-    // Resolve accountId → accountNumber once; transaction queries pivot on
-    // account_number because ft.account_id is no longer reliable.
-    const acctLookup = pool.request();
-    acctLookup.input('accountId', sql.BigInt, accountId);
-    const acctLookupResult = await acctLookup.query(`
-      SELECT account_number, balance FROM account WHERE account_id = @accountId
-    `);
-    if (acctLookupResult.recordset.length === 0) {
-      return [];
-    }
-    const accountNumber: string = acctLookupResult.recordset[0].account_number;
-    const currentBal = Number(acctLookupResult.recordset[0].balance) || 0;
-
     const request = pool.request();
-    request.input('accountNumber', sql.VarChar(50), accountNumber);
+    request.input('accountId', sql.BigInt, accountId);
+    request.input('months', sql.Int, 12);
 
-    const result = await request.query(`
-      WITH month_series AS (
-        SELECT DATEADD(month, n, DATEADD(month, -11, DATEADD(day, 1-DAY(GETDATE()), GETDATE()))) as month
-        FROM (
-          SELECT 0 as n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
-          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
-          SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
-        ) numbers
-      ),
-      account_monthly_balances AS (
-        SELECT DISTINCT
-          ft.account_number,
-          DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date) as month,
-          FIRST_VALUE(ft.ledger_balance_after) OVER (
-            PARTITION BY ft.account_number, DATEADD(day, 1-DAY(ft.transaction_date), ft.transaction_date)
-            ORDER BY ft.transaction_date DESC, ft.transaction_id DESC
-          ) as ledger_balance_after
-        FROM financial_transaction ft
-        WHERE ft.account_number = @accountNumber
-          AND ft.transaction_date >= DATEADD(month, -12, GETDATE())
-      ),
-      filled_balances AS (
-        SELECT
-          ms.month,
-          COALESCE(
-            amb.ledger_balance_after,
-            (
-              SELECT TOP 1 amb2.ledger_balance_after
-              FROM account_monthly_balances amb2
-              WHERE amb2.month < ms.month
-              ORDER BY amb2.month DESC
-            )
-          ) as balance
-        FROM month_series ms
-        LEFT JOIN account_monthly_balances amb
-          ON amb.month = ms.month
-      )
-      SELECT
-        month,
-        COALESCE(balance, 0) as balance
-      FROM filled_balances
-      ORDER BY month ASC
-    `);
+    // One row per (account, month) with that month's last ledger balance.
+    // Plus current account metadata (interest_rate, account_type, balance)
+    // so we don't need a second query. Months are emitted as the first of
+    // the month so the JS side can group them deterministically.
+    const [accountTransaction, accountMetadata] = await Promise.all(
+      [
+        request.query(`
+          SELECT
+            ft.account_number,
+            ft.ledger_balance_after,
+            ft.amount transaction_amount,
+            ft.transaction_date
+          FROM financial_transaction ft
+          WHERE ft.account_id = @accountId
+              AND ft.transaction_date >= DATEADD(month, -@months, GETDATE())
+      `),
+        request.query(`
+          select
+            account_number,
+            account_type,
+            interest_rate,
+            balance current_balance
+          from
+            account 
+          where account_id = @accountId
+      `)
+      ]
+    );
 
-    const trendData = result.recordset.map((row: any) => {
-      const monthDate = new Date(row.month);
-      return {
-        month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
-        date: monthDate.toISOString(),
-        balance: Number(row.balance) || 0
-      };
-    });
-
-    // If all balances are 0, fall back to the account's current balance for the latest month.
-    if (trendData.length > 0 && trendData.every(d => d.balance === 0) && currentBal !== 0) {
-      trendData[trendData.length - 1].balance = currentBal;
-    }
-
-    return trendData;
+    return aggregateAccountData(
+      accountMetadata.recordset, 
+      accountTransaction.recordset
+    );
   } catch (error) {
     fileLogger.error({ err: error }, 'Get account balance history error');
     throw error;

@@ -1,7 +1,3 @@
-parameters:
-  samlEnabled: ''
-  samlHost: ''
-
 steps:
 
 - task: PowerShell@2
@@ -32,11 +28,11 @@ steps:
             '$env:MSSQL_TRUST_SERVER_CERTIFICATE = "true"'
 
             '# SSO'
-            '$env:SAML_ENABLED = ${{ parameters.samlEnabled }}'
-            '$env:SAML_ENTITY_ID="https://${{ parameters.samlHost }}"'
+            '$env:SAML_ENABLED = "$(SAMLEnabled)"'
+            '$env:SAML_ENTITY_ID="https://$(SAMLHost))"'
             '$env:SAML_ENTRYPOINT="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
             '$env:SAML_ISSUER="$(SAMLIssuer)"'
-            '$env:SAML_CALLBACK_URL="https://${{ parameters.samlHost }}/saml/acs"'
+            '$env:SAML_CALLBACK_URL="https://$(SAMLHost)/saml/acs"'
             '$env:SAML_IDP_INITIATED_URL="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
             '$env:SAML_CERT="./saml_cert.pem"'
 

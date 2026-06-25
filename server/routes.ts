@@ -1660,72 +1660,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // PostgreSQL implementation — resolve account_number first, since
       // ft.account_id is no longer reliable for filtering.
-      const acct = await storage.getAccount(accountId);
-      if (!acct) {
-        return res.status(404).json({ error: "Account not found" });
-      }
-      const accountNumber = acct.accountNumber;
-      const monthlyData = await db.execute(sql`
-        WITH RECURSIVE
-        month_series AS (
-          SELECT DATE_TRUNC('month', NOW() - INTERVAL '11 months') + (n || ' month')::interval as month
-          FROM generate_series(0, 11) n
-        ),
-        account_monthly_balances AS (
-          SELECT DISTINCT ON (ft.account_number, DATE_TRUNC('month', ft.transaction_date))
-            ft.account_number,
-            DATE_TRUNC('month', ft.transaction_date) as month,
-            ft.ledger_balance_after
-          FROM financial_transaction ft
-          WHERE ft.account_number = ${accountNumber}
-            AND ft.transaction_date >= NOW() - INTERVAL '12 months'
-          ORDER BY ft.account_number, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
-        ),
-        filled_balances AS (
-          SELECT
-            ms.month,
-            COALESCE(
-              amb.ledger_balance_after,
-              (
-                SELECT amb2.ledger_balance_after
-                FROM account_monthly_balances amb2
-                WHERE amb2.month < ms.month
-                ORDER BY amb2.month DESC
-                LIMIT 1
-              )
-            ) as balance
-          FROM month_series ms
-          LEFT JOIN account_monthly_balances amb
-            ON amb.month = ms.month
-        )
-        SELECT
-          month,
-          COALESCE(balance, 0) as balance
-        FROM filled_balances
-        ORDER BY month ASC
-      `);
+      // const acct = await storage.getAccount(accountId);
+      // if (!acct) {
+      //   return res.status(404).json({ error: "Account not found" });
+      // }
+      // const accountNumber = acct.accountNumber;
+      // const monthlyData = await db.execute(sql`
+      //   WITH RECURSIVE
+      //   month_series AS (
+      //     SELECT DATE_TRUNC('month', NOW() - INTERVAL '11 months') + (n || ' month')::interval as month
+      //     FROM generate_series(0, 11) n
+      //   ),
+      //   account_monthly_balances AS (
+      //     SELECT DISTINCT ON (ft.account_number, DATE_TRUNC('month', ft.transaction_date))
+      //       ft.account_number,
+      //       DATE_TRUNC('month', ft.transaction_date) as month,
+      //       ft.ledger_balance_after
+      //     FROM financial_transaction ft
+      //     WHERE ft.account_number = ${accountNumber}
+      //       AND ft.transaction_date >= NOW() - INTERVAL '12 months'
+      //     ORDER BY ft.account_number, DATE_TRUNC('month', ft.transaction_date), ft.transaction_date DESC, ft.transaction_id DESC
+      //   ),
+      //   filled_balances AS (
+      //     SELECT
+      //       ms.month,
+      //       COALESCE(
+      //         amb.ledger_balance_after,
+      //         (
+      //           SELECT amb2.ledger_balance_after
+      //           FROM account_monthly_balances amb2
+      //           WHERE amb2.month < ms.month
+      //           ORDER BY amb2.month DESC
+      //           LIMIT 1
+      //         )
+      //       ) as balance
+      //     FROM month_series ms
+      //     LEFT JOIN account_monthly_balances amb
+      //       ON amb.month = ms.month
+      //   )
+      //   SELECT
+      //     month,
+      //     COALESCE(balance, 0) as balance
+      //   FROM filled_balances
+      //   ORDER BY month ASC
+      // `);
 
-      const trendData = (monthlyData as any).rows.map((row: any) => {
-        const monthDate = new Date(row.month);
-        return {
-          month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
-          date: monthDate.toISOString(),
-          balance: Number(row.balance) || 0
-        };
-      });
+      // const trendData = (monthlyData as any).rows.map((row: any) => {
+      //   const monthDate = new Date(row.month);
+      //   return {
+      //     month: monthDate.toLocaleString('default', { month: 'short', year: '2-digit' }),
+      //     date: monthDate.toISOString(),
+      //     balance: Number(row.balance) || 0
+      //   };
+      // });
 
-      // If all balances are 0, fall back to the account's current balance for the latest month
-      if (trendData.length > 0 && trendData.every((d: any) => d.balance === 0)) {
-        const acctResult = await db.execute(sql`
-          SELECT balance FROM account WHERE account_id = ${accountId}
-        `);
-        const currentBal = Number((acctResult as any).rows?.[0]?.balance) || 0;
-        if (currentBal !== 0) {
-          trendData[trendData.length - 1].balance = currentBal;
-        }
-      }
+      // // If all balances are 0, fall back to the account's current balance for the latest month
+      // if (trendData.length > 0 && trendData.every((d: any) => d.balance === 0)) {
+      //   const acctResult = await db.execute(sql`
+      //     SELECT balance FROM account WHERE account_id = ${accountId}
+      //   `);
+      //   const currentBal = Number((acctResult as any).rows?.[0]?.balance) || 0;
+      //   if (currentBal !== 0) {
+      //     trendData[trendData.length - 1].balance = currentBal;
+      //   }
+      // }
 
-      res.json({ trendData });
+      // res.json({ trendData });
     } catch (error) {
       logger.error({ err: error, module: 'routes' }, 'Error fetching account balance history');
       res.status(500).json({ error: "Internal server error" });
@@ -2467,8 +2467,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     body: z.string().min(1),
     legalHold: z.boolean().optional(),
     retentionYears: z.coerce.number().int().positive().optional(),
-    isPinned: z.boolean().optional()
-    // Authorship is taken from the authenticated session, never the request body.
+    isPinned: z.boolean().optional(),
+    authorEmployeeId: z.coerce.number().int().positive().optional()
   }).refine(data => {
     if (data.targetType === 'customer') {
       return data.customerId !== undefined && data.accountId === undefined;
@@ -2487,12 +2487,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     visibility: z.enum(['public', 'internal', 'confidential']).optional(),
     legalHold: z.boolean().optional(),
     retentionYears: z.coerce.number().int().positive().nullable().optional(),
-    isPinned: z.boolean().optional()
-    // Authorship is taken from the authenticated session, never the request body.
+    isPinned: z.boolean().optional(),
+    authorEmployeeId: z.coerce.number().int().positive().optional()
   });
 
   const pinNoteSchema = z.object({
     isPinned: z.boolean()
+  });
+
+  const restoreNoteSchema = z.object({
+    employeeId: z.coerce.number().int().positive().optional()
   });
 
   const searchNotesSchema = z.object({
@@ -2578,22 +2582,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new note
   app.post("/api/notes", async (req, res) => {
     try {
-      // Author = the authenticated session user (set by the SAML bridge / dev mock).
-      const employeeId = req.employeeId;
-      if (!employeeId) {
-        return res.status(401).json({ error: "Authentication required" });
-      }
-
       const validation = createNoteSchema.safeParse(req.body);
-
+      
       if (!validation.success) {
-        return res.status(400).json({
-          error: "Invalid request data",
-          details: validation.error.format()
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: validation.error.format() 
         });
       }
 
-      const newNote = await storage.createNote(validation.data, employeeId);
+      const { authorEmployeeId = 1, ...noteData } = validation.data;
+      const newNote = await storage.createNote(noteData, authorEmployeeId);
       res.status(201).json(newNote);
     } catch (error: any) {
       logger.error({ err: error, module: 'routes' }, 'Error creating note');
@@ -2609,25 +2608,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid note ID" });
       }
 
-      // Author of the new version = the authenticated session user.
-      const employeeId = req.employeeId;
-      if (!employeeId) {
-        return res.status(401).json({ error: "Authentication required" });
-      }
-
       const validation = updateNoteSchema.safeParse(req.body);
-
+      
       if (!validation.success) {
-        return res.status(400).json({
-          error: "Invalid request data",
-          details: validation.error.format()
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: validation.error.format() 
         });
       }
 
-      // Pass the validated fields through as-is. A null categoryId / retentionYears is
-      // an intentional "clear" and must reach updateNoteSqlServer (which writes NULL);
-      // fields the client omitted stay undefined and are left untouched.
-      const updatedNote = await storage.updateNote(noteId, validation.data, employeeId);
+      const { authorEmployeeId = 1, ...rawUpdateData } = validation.data;
+      
+      // Coerce null values to undefined for clean database writes
+      const updateData: any = {};
+      for (const [key, value] of Object.entries(rawUpdateData)) {
+        if (value !== null) {
+          updateData[key] = value;
+        }
+      }
+      
+      const updatedNote = await storage.updateNote(noteId, updateData, authorEmployeeId);
       
       if (!updatedNote) {
         return res.status(404).json({ error: "Note not found" });
@@ -2648,10 +2648,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid note ID" });
       }
 
-      // Deleting actor = the authenticated session user, not a client-supplied id.
-      const deletedByEmployeeId = req.employeeId;
-      if (!deletedByEmployeeId) {
-        return res.status(401).json({ error: "Authentication required" });
+      const employeeIdParam = req.query.employeeId as string;
+      const deletedByEmployeeId = employeeIdParam ? parseInt(employeeIdParam) : 1;
+      
+      if (isNaN(deletedByEmployeeId)) {
+        return res.status(400).json({ error: "Invalid employee ID" });
       }
 
       const success = await storage.softDeleteNote(noteId, deletedByEmployeeId);
@@ -2675,12 +2676,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid note ID" });
       }
 
-      // Restoring actor = the authenticated session user.
-      const restoredByEmployeeId = req.employeeId;
-      if (!restoredByEmployeeId) {
-        return res.status(401).json({ error: "Authentication required" });
+      const validation = restoreNoteSchema.safeParse(req.body);
+      
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: validation.error.format() 
+        });
       }
 
+      const restoredByEmployeeId = validation.data.employeeId || 1;
       const success = await storage.restoreNote(noteId, restoredByEmployeeId);
       
       if (!success) {

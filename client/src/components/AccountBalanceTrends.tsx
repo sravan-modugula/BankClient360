@@ -20,18 +20,13 @@ import {
   Tooltip,
   ResponsiveContainer,
   Area,
-  AreaChart
+  AreaChart,
+  ComposedChart,
+  Legend
 } from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { useDateFormatter } from "@/lib/dateFormatters";
-
-interface BalanceHistoryData {
-  trendData: Array<{
-    month: string;
-    date: string;
-    balance: number;
-  }>;
-}
+import type { DepositTrendResponse } from "./Deposits";
 
 interface AccountBalanceTrendsProps {
   accountId: string;
@@ -43,30 +38,24 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
   const [timeRange, setTimeRange] = useState<'monthly' | 'quarterly' | 'ytd'>('ytd');
   const { formatCurrency } = useDateFormatter();
 
-  const { data, isLoading } = useQuery<BalanceHistoryData>({
+  const { data: trend, isLoading } = useQuery<DepositTrendResponse>({
     queryKey: [`/api/accounts/${accountId}/balance-history`],
     enabled: !!accountId
   });
 
-  // Patch chart data: if all API balances are 0 but we know the current balance, use it
-  const patchedTrendData = (() => {
-    if (!data?.trendData || data.trendData.length === 0) return [];
-    const trendData = data.trendData.map(d => ({ ...d }));
-    if (currentBalance && currentBalance > 0 && trendData.every(d => d.balance === 0)) {
-      trendData[trendData.length - 1].balance = currentBalance;
-    }
-    return trendData;
-  })();
-
+  // Filter trend data based on time range
   const getTrendData = () => {
+    if (!trend?.trendData) return [];
+
+    const data = trend?.trendData;
     switch (timeRange) {
       case 'monthly':
-        return patchedTrendData.slice(-2);
+        return data?.month;
       case 'quarterly':
-        return patchedTrendData.slice(-3);
+        return data?.quarter;
       case 'ytd':
       default:
-        return patchedTrendData;
+        return data?.year;
     }
   };
 
@@ -96,7 +85,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
     );
   }
 
-  if (!data?.trendData || data.trendData.length === 0) {
+  if (!trendData || trendData.length === 0) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
         <Typography variant="body2" color="text.secondary">
@@ -110,8 +99,9 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
       </Box>
     );
   }
+  
 
-  const displayBalance = currentBalance ?? (data.trendData.length > 0 ? data.trendData[data.trendData.length - 1].balance : 0);
+  const displayBalance = currentBalance ?? (trendData && trendData.length > 0 ? trendData[trendData.length - 1].balance : 0);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -127,41 +117,75 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
 
       <Box sx={{ flex: 1, minHeight: 180 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <ComposedChart data={getTrendData()} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
             <defs>
-              <linearGradient id="colorAccountBalance" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.8} />
-                <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0.1} />
+              <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.8}/>
+                <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0.1}/>
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.3)} />
-            <XAxis
-              dataKey="month"
+            <XAxis 
+              dataKey="xAxis" 
               tick={{ fontSize: 10 }}
               stroke={theme.palette.text.secondary}
             />
-            <YAxis
+            <YAxis 
+              yAxisId="left"
               tick={{ fontSize: 10 }}
               stroke={theme.palette.text.secondary}
-              tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : `$${value.toFixed(0)}`}
+              tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
             />
-            <Tooltip
-              formatter={(value: number) => [formatCurrency(value), 'Balance']}
-              contentStyle={{
+            {/* <YAxis 
+              yAxisId="right"
+              orientation="right"
+              tick={{ fontSize: 10 }}
+              stroke={theme.palette.text.secondary}
+              tickFormatter={(value) => `${value.toFixed(1)}%`}
+            />*/}
+            <Tooltip 
+              formatter={(value: number, name: string) => {
+                if (name === 'balance') {
+                  return [formatCurrency(value), 'Total Balance'];
+                } else if (name === 'weightedAverage') {
+                  return [`${value.toFixed(4)}%`, 'Overall Weighted Avg'];
+                }
+                return [value, name];
+              }}
+              contentStyle={{ 
                 backgroundColor: theme.palette.background.paper,
                 border: `1px solid ${theme.palette.divider}`
               }}
             />
-            <Area
-              type="monotone"
-              dataKey="balance"
-              stroke={theme.palette.primary.main}
-              fillOpacity={1}
-              fill="url(#colorAccountBalance)"
+            <Legend 
+              wrapperStyle={{ fontSize: '9px' }}
+              formatter={(value) => {
+                if (value === 'balance') return 'Balance';
+                // if (value === 'weightedAverage') return 'Overall %';
+                return value;
+              }}
             />
-          </AreaChart>
+            <Area 
+              yAxisId="left"
+              type="monotone" 
+              dataKey="balance" 
+              name="balance"
+              stroke={theme.palette.primary.main} 
+              fillOpacity={1}
+              fill="url(#colorBalance)" 
+            />
+            {/* <Line 
+              yAxisId="right"
+              type="monotone" 
+              dataKey="weightedAverage"
+              name="weightedAverage"
+              stroke="#00796b"
+              strokeWidth={2}
+              dot={false}
+            />*/}
+          </ComposedChart>
         </ResponsiveContainer>
-      </Box>
+</Box>
 
       <ToggleButtonGroup
         value={timeRange}
@@ -193,7 +217,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
         <Typography variant="body2" color={ growth > 0 ? "primary.main" : growth === 0 ? "textPrimary" : "error" }>
           {/* Note: toFixed already adds a negative sign in front of the number */}
           {growth > 0 ? '+' : ''}{growth === 0 ? "No Change" : `${growth.toFixed(1)}%`}
-        </Typography> 
+        </Typography>
       </Box>
     </Box>
   );

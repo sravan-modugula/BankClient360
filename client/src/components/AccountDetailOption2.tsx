@@ -293,25 +293,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <Grid size={{ xs: 12, md: 6 }}>
           <Card elevation={2} sx={{ height: '100%' }}>
             <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              {['checking', 'deposit checking', 'savings', 'money_market', 'cd', 'business_checking', 'time deposit', 'christmas club depo', 'loan'].includes(account.accountType?.toLowerCase()) ? (
-                <AccountBalanceTrends accountId={accountId!} currentBalance={balance} />
-              ) : (
-                <>
-                  <Typography variant="h6" gutterBottom>
-                    Balance History (12 Months)
-                  </Typography>
-                  <Divider sx={{ mb: 2 }} />
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 4 }}>
-                    <Info sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Balance history not available
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontFamily: 'Roboto Mono' }}>
-                      Current Balance: {formatCurrency(balance)}
-                    </Typography>
-                  </Box>
-                </>
-              )}
+              <AccountBalanceTrends accountId={accountId!} currentBalance={balance} /> 
             </CardContent>
           </Card>
         </Grid>

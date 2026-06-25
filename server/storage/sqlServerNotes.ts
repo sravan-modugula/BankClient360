@@ -9,11 +9,6 @@ import logger from '../services/logger';
 
 const fileLogger = logger.child({ module: 'sqlserver-notes' });
 
-// The mssql driver returns BIGINT columns as strings. Coerce them back to numbers
-// (preserving null) so the notes JSON API matches its declared TS `number` types and
-// numeric ids compare correctly on the client (e.g. the category <Select>).
-const toNumOrNull = (v: any): number | null => (v === null || v === undefined ? null : Number(v));
-
 /**
  * Resolve the Jack Henry CIF number for a note's target.
  * Customer-scoped: direct lookup on customer.
@@ -278,25 +273,25 @@ export async function createNoteSqlServer(
     await transaction.commit();
 
     return {
-      noteId: Number(newNote.note_id),
-      customerId: toNumOrNull(newNote.customer_id),
-      accountId: toNumOrNull(newNote.account_id),
+      noteId: newNote.note_id,
+      customerId: newNote.customer_id,
+      accountId: newNote.account_id,
       targetType: newNote.target_type,
-      categoryId: toNumOrNull(newNote.category_id),
+      categoryId: newNote.category_id,
       categoryName,
       importance: newNote.importance,
       visibility: newNote.visibility,
       legalHold: newNote.legal_hold || false,
-      retentionYears: toNumOrNull(newNote.retention_years),
+      retentionYears: newNote.retention_years,
       isPinned: newNote.is_pinned || false,
       createdAt: newNote.created_at,
       updatedAt: newNote.updated_at,
       currentVersion: {
-        versionId: Number(newVersion.version_id),
-        versionNumber: Number(newVersion.version_number),
+        versionId: newVersion.version_id,
+        versionNumber: newVersion.version_number,
         title: newVersion.title,
         body: newVersion.body,
-        authorEmployeeId: Number(newVersion.author_employee_id),
+        authorEmployeeId: newVersion.author_employee_id,
         authorEmployeeName: newVersion.author_employee_name,
         isSoftDeleted: newVersion.is_soft_deleted || false,
         createdAt: newVersion.created_at,
@@ -359,9 +354,7 @@ export async function updateNoteSqlServer(
     `);
 
     const currentVersion = currentVersionResult.recordset[0];
-    // mssql returns BIGINT (version_number) as a string, so "1" + 1 would concat to
-    // "11". Coerce to a number first to keep versions sequential (1, 2, 3, ...).
-    const nextVersionNumber = Number(currentVersion?.version_number ?? 0) + 1;
+    const nextVersionNumber = (currentVersion?.version_number || 0) + 1;
 
     // Mark current version as not current
     const markOldRequest = new sql.Request(transaction);
@@ -578,10 +571,10 @@ export async function getNoteCategoriesSqlServer(
     const result = await request.query(query);
 
     return result.recordset.map(row => ({
-      categoryId: Number(row.category_id),
+      categoryId: row.category_id,
       categoryName: row.category_name,
       categoryDescription: row.description,
-      displayOrder: toNumOrNull(row.display_order),
+      displayOrder: row.display_order,
       isActive: row.is_active || false,
       createdAt: row.created_at,
       updatedAt: row.updated_at
@@ -630,19 +623,19 @@ export async function getNoteVersionsSqlServer(
     `);
 
     return result.recordset.map(row => ({
-      versionId: Number(row.version_id),
-      noteId: Number(row.note_id),
-      versionNumber: Number(row.version_number),
+      versionId: row.version_id,
+      noteId: row.note_id,
+      versionNumber: row.version_number,
       title: row.title,
       body: row.body,
-      authorEmployeeId: Number(row.author_employee_id),
+      authorEmployeeId: row.author_employee_id,
       authorEmployeeName: row.author_employee_name,
       isCurrent: row.is_current || false,
       isSoftDeleted: row.is_soft_deleted || false,
       createdAt: row.created_at,
       modifiedAt: row.modified_at,
       deletedAt: row.deleted_at,
-      deletedByEmployeeId: toNumOrNull(row.deleted_by_employee_id)
+      deletedByEmployeeId: row.deleted_by_employee_id
     }));
   } catch (error) {
     fileLogger.error({ err: error }, 'Get note versions error');
@@ -655,25 +648,25 @@ export async function getNoteVersionsSqlServer(
  */
 function mapNoteWithVersionFromDb(row: any): NoteWithCurrentVersion {
   return {
-    noteId: Number(row.note_id),
-    customerId: toNumOrNull(row.customer_id),
-    accountId: toNumOrNull(row.account_id),
+    noteId: row.note_id,
+    customerId: row.customer_id,
+    accountId: row.account_id,
     targetType: row.target_type,
-    categoryId: toNumOrNull(row.category_id),
+    categoryId: row.category_id,
     categoryName: row.category_name || null,
     importance: row.importance,
     visibility: row.visibility,
     legalHold: row.legal_hold || false,
-    retentionYears: toNumOrNull(row.retention_years),
+    retentionYears: row.retention_years,
     isPinned: row.is_pinned || false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     currentVersion: {
-      versionId: Number(row.version_id),
-      versionNumber: Number(row.version_number),
+      versionId: row.version_id,
+      versionNumber: row.version_number,
       title: row.title,
       body: row.body,
-      authorEmployeeId: Number(row.author_employee_id),
+      authorEmployeeId: row.author_employee_id,
       authorEmployeeName: row.author_employee_name,
       isSoftDeleted: row.is_soft_deleted || false,
       createdAt: row.version_created_at,

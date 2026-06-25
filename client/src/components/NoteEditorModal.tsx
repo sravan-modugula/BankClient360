@@ -28,15 +28,11 @@ import { useToast } from '@/hooks/use-toast';
 const noteFormSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
   body: z.string().min(1, 'Note content is required'),
-  // SQL Server returns BIGINT columns (category_id, retention_years) as STRINGS,
-  // so an existing note loaded into the edit form arrives with string-typed numbers.
-  // Coerce here or plain z.number() silently rejects them, blocking the submit
-  // (handleSubmit never calls onSubmit) — the "Update Note" no-op / unsaved-edit bug.
-  categoryId: z.coerce.number().nullable().optional(),
+  categoryId: z.number().nullable().optional(),
   importance: z.enum(['low', 'medium', 'high', 'urgent']),
   visibility: z.enum(['public', 'internal', 'confidential']),
   legalHold: z.boolean().optional(),
-  retentionYears: z.coerce.number().int().positive().nullable().optional(),
+  retentionYears: z.number().int().positive().nullable().optional(),
   isPinned: z.boolean().optional()
 });
 
@@ -173,10 +169,12 @@ export default function NoteEditorModal({
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: NoteFormData) => {
-      // Send the full form, including a null categoryId / retentionYears, so the user
-      // can CLEAR them. The update endpoint accepts null (writes NULL); unlike create,
-      // nulls must NOT be stripped here or "No Category" / cleared retention is lost.
-      const res = await apiRequest('PATCH', `/api/notes/${noteId}`, data);
+      // Filter out null values - backend expects undefined/omitted for optional fields
+      const cleanedData = Object.fromEntries(
+        Object.entries(data).filter(([_, value]) => value !== null)
+      );
+      
+      const res = await apiRequest('PATCH', `/api/notes/${noteId}`, cleanedData);
       return res.json();
     },
     onSuccess: async () => {
@@ -424,7 +422,7 @@ export default function NoteEditorModal({
 
             {isEditMode && existingNote && (
               <Alert severity="info" sx={{ mt: 1 }}>
-                Editing will create a new version (v{(Number((existingNote as any).currentVersion?.versionNumber) || 0) + 1})
+                Editing will create a new version (v{((existingNote as any).currentVersion?.versionNumber || 0) + 1})
               </Alert>
             )}
           </Box>
