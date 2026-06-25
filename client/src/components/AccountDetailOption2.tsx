@@ -252,7 +252,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
               <Grid container spacing={2}>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Opened</Typography>
-                  <Typography variant="body1">{account.openedDate ? formatDate(account.openedDate) : '—'}</Typography>
+                  <Typography variant="body1">{account.openedDate ? formatFlatDate(account.openedDate) : '—'}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Branch</Typography>
@@ -268,7 +268,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Last Activity</Typography>
-                  <Typography variant="body1">{account.lastTransactionDate ? formatDate(account.lastTransactionDate) : 'N/A'}</Typography>
+                  <Typography variant="body1">{account.lastTransactionDate ? formatFlatDate(account.lastTransactionDate) : 'N/A'}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" color="text.secondary">Average Balance</Typography>
@@ -560,7 +560,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                           const amount = parseFloat(tx.amount) || 0;
                           return (
                             <TableRow key={tx.transactionId || idx} hover>
-                              <TableCell>{tx.postingDate ? formatDate(tx.postingDate) : "N/A"}</TableCell>
+                              <TableCell>{tx.postingDate ? formatFlatDate(tx.postingDate) : "N/A"}</TableCell>
                               <TableCell>{tx.description || tx.merchantName || '—'}</TableCell>
                               <TableCell>
                                 {tx.transactionType ? (

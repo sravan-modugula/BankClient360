@@ -489,7 +489,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       from search
       join customer
       on customer.customer_id = search.customer_id
-      where search.search_value like @query + '%' and search.entity_type = 2
+      where search.search_value like '%' + @query + '%' and search.entity_type = 2
 
       /* 
         Household Record
@@ -526,7 +526,7 @@ class SqlServerSearchProvider implements ISearchProvider {
       from search
       join household
       on household.household_id = search.household_id
-      where search.search_value like @query + '%' and search.entity_type = 3
+      where search.search_value like '%' + @query + '%' and search.entity_type = 3
 
       /* 
         Account Record

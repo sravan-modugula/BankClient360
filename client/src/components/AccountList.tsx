@@ -44,16 +44,18 @@ interface AccountTableProp {
   selectedAccountId?: number | null;
   onViewAccountDetail?: (accountId: number) => void;
   onRowClick?: (account: Account) => void;
+  showOwnershipType?: boolean;
 }
 
-function AccountTable({
+export function AccountTable({
   accounts,
   canViewBalances,
   title,
   onAccountSelect,
   selectedAccountId,
   onViewAccountDetail,
-  onRowClick
+  onRowClick,
+  showOwnershipType = true,
 }: AccountTableProp) {
   const theme = useTheme();
   const [, setLocation] = useLocation();
@@ -303,7 +305,7 @@ function AccountTable({
                 <TableCell sx={{ fontWeight: 400 }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 400 }}>Account #</TableCell>
                 <TableCell sx={{ fontWeight: 400 }}>Product</TableCell>
-                <TableCell sx={{ fontWeight: 400 }}>Ownership Type</TableCell>
+                {showOwnershipType && <TableCell sx={{ fontWeight: 400 }}>Ownership Type</TableCell>}
                 {canViewBalances && (
                   <TableCell align="right" sx={{ fontWeight: 400 }} sortDirection={orderBy === 'balance' ? order : false}>
                     <TableSortLabel
@@ -370,15 +372,17 @@ function AccountTable({
                       </Typography>
                     </TableCell>
 
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontFamily="monospace"
-                        sx={{ color: theme.palette.text.secondary }}
-                      >
-                        {account.ownershipType}
-                      </Typography>
-                    </TableCell>
+                    {showOwnershipType && (
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontFamily="monospace"
+                          sx={{ color: theme.palette.text.secondary }}
+                        >
+                          {account.ownershipType}
+                        </Typography>
+                      </TableCell>
+                    )}
 
                     {canViewBalances && (
                       <TableCell align="right">

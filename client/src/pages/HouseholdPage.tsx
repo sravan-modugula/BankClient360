@@ -60,8 +60,9 @@ import {
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
 import NoteEditorModal from '@/components/NoteEditorModal';
-import AccountList from '@/components/AccountList';
+import { AccountTable } from '@/components/AccountList';
 import type { Account as AccountSchema } from '@shared/schema';
+import { useHasPermission } from '@/hooks/usePermissions';
 
 interface Household {
   householdId: number;
@@ -187,6 +188,8 @@ export default function HouseholdPage() {
       setMemberOrder('asc');
     }
   };
+
+  const canViewBalances = useHasPermission('account.view.balances');
 
   const backFallback = customerId ? `/ciq/client?customerId=${encodeURIComponent(customerId)}` : '/ciq/client';
 
@@ -856,9 +859,11 @@ export default function HouseholdPage() {
           </Card>
         ) : (
           <Box data-testid="card-accounts">
-            <AccountList
+            <AccountTable
               accounts={allAccounts as unknown as AccountSchema[]}
               title="Aggregated Accounts"
+              canViewBalances={canViewBalances}
+              showOwnershipType={false}
               onRowClick={(account) => {
                 const customerIdForRow = (account as unknown as { customerId: number }).customerId;
                 setLocation(`/ciq/accounts?accountId=${account.accountId}&customerId=${customerIdForRow}`);
