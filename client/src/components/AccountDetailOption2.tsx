@@ -300,7 +300,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
         <Grid size={{ xs: 12, md: 6 }}>
           <Card elevation={2} sx={{ height: '100%' }}>
             <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <AccountBalanceTrends accountId={accountId!} currentBalance={balance} /> 
+              <AccountBalanceTrends accountId={accountId!} currentBalance={balance} accountType={account.accountType}/> 
             </CardContent>
           </Card>
         </Grid>

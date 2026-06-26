@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { Strategy as SamlStrategy } from '@node-saml/passport-saml';
 import { ValidateInResponseTo } from '@node-saml/node-saml';
 import logger from '../services/logger';
-import { normalizeSamlGroups, normalizeRoleEnv } from './adGroupRoleMap';
+import { normalizeSamlGroups } from './adGroupRoleMap';
 
 const fileLogger = logger.child({ module: 'saml-strategy' });
 
@@ -103,15 +103,6 @@ const ATTRIBUTE_MAP = {
 };
 
 export function createSamlStrategy() {
-  // Explicit, grep-able confirmation that the role-env scoping reached the app.
-  // received = the raw SAML_ROLE_ENV value; resolved = what it normalizes to
-  // (null/unscoped means it was unset or unrecognized → all environments honored).
-  const rawRoleEnv = process.env.SAML_ROLE_ENV ?? null;
-  fileLogger.info({
-    SAML_ROLE_ENV_received: rawRoleEnv ?? '<unset>',
-    SAML_ROLE_ENV_resolved: normalizeRoleEnv(rawRoleEnv) ?? '(unscoped — all environments honored)',
-  }, 'SAML role-env scoping config');
-
   fileLogger.info({
     entryPoint: process.env.SAML_ENTRYPOINT || '<missing>',
     callbackUrl: process.env.SAML_CALLBACK_URL || '<missing>',

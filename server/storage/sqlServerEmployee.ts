@@ -396,7 +396,7 @@ export async function syncEmployeeRolesFromAdGroupsSqlServer(
     const curReq = pool.request();
     curReq.input('employeeId', sql.BigInt, employeeId);
     const cur = await curReq.query(`
-      SELECT er.role_id AS roleId, er.is_active AS isActive, er.assigned_by AS assignedBy, r.role_name AS roleName
+      SELECT role_id AS roleId, is_active AS isActive, assigned_by AS assignedBy, role_name AS roleName
       FROM employee_role er
       INNER JOIN role r ON r.role_id = er.role_id
       WHERE er.employee_id = @employeeId

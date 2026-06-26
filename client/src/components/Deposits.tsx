@@ -64,6 +64,8 @@ interface DepositTrendPoint {
   checking: number;
   savings: number;
   cd: number;
+  loan: number;
+  loanBalance: number;
   weightedAverage?: number;
   weightedAvgChecking?: number;
   weightedAvgSavings?: number;
@@ -355,6 +357,7 @@ export default function Deposits({ customerId }: DepositsProps) {
                       tick={{ fontSize: 10 }}
                       stroke={theme.palette.text.secondary}
                       tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                      domain={[(dataMin: number) => (dataMin * 0.95), (dataMax: number) => (dataMax * 1.05)]}
                     />
                     {/* <YAxis 
                       yAxisId="right"

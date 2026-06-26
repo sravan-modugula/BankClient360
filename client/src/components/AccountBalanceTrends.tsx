@@ -31,12 +31,15 @@ import type { DepositTrendResponse } from "./Deposits";
 interface AccountBalanceTrendsProps {
   accountId: string;
   currentBalance?: number;
+  accountType: string;
 }
 
-export default function AccountBalanceTrends({ accountId, currentBalance }: AccountBalanceTrendsProps) {
+export default function AccountBalanceTrends({ accountId, currentBalance, accountType}: AccountBalanceTrendsProps) {
   const theme = useTheme();
   const [timeRange, setTimeRange] = useState<'monthly' | 'quarterly' | 'ytd'>('ytd');
   const { formatCurrency } = useDateFormatter();
+
+  const isLoan = accountType === "loan";
 
   const { data: trend, isLoading } = useQuery<DepositTrendResponse>({
     queryKey: [`/api/accounts/${accountId}/balance-history`],
@@ -62,8 +65,8 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
   const calculateGrowth = () => {
     const trendData = getTrendData();
     if (!trendData || trendData.length < 2) return 0;
-    const start = trendData.at(0)?.balance;
-    const end = trendData.at(-1)?.balance;
+    const start = isLoan ? trendData.at(0)?.loanBalance : trendData.at(0)?.balance;
+    const end = isLoan ? trendData.at(-1)?.loanBalance : trendData.at(-1)?.balance;
 
     // Guard against division by zero
     if (!end || end === 0 || !start || start === 0) {
@@ -99,9 +102,9 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
       </Box>
     );
   }
-  
 
-  const displayBalance = currentBalance ?? (trendData && trendData.length > 0 ? trendData[trendData.length - 1].balance : 0);
+
+  const displayBalance = currentBalance ?? (trendData && trendData.length > 0 ? trendData[trendData.length - 1][isLoan ? "loanBalance" : "balance"] : 0);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -120,21 +123,22 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
           <ComposedChart data={getTrendData()} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.8}/>
-                <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0.1}/>
+                <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.8} />
+                <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0.1} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.divider, 0.3)} />
-            <XAxis 
-              dataKey="xAxis" 
+            <XAxis
+              dataKey="xAxis"
               tick={{ fontSize: 10 }}
               stroke={theme.palette.text.secondary}
             />
-            <YAxis 
+            <YAxis
               yAxisId="left"
               tick={{ fontSize: 10 }}
               stroke={theme.palette.text.secondary}
               tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+              domain={[(dataMin: number) => (dataMin * 0.95), (dataMax: number) => (dataMax * 1.05)]}
             />
             {/* <YAxis 
               yAxisId="right"
@@ -143,7 +147,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
               stroke={theme.palette.text.secondary}
               tickFormatter={(value) => `${value.toFixed(1)}%`}
             />*/}
-            <Tooltip 
+            <Tooltip
               formatter={(value: number, name: string) => {
                 if (name === 'balance') {
                   return [formatCurrency(value), 'Total Balance'];
@@ -152,12 +156,12 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
                 }
                 return [value, name];
               }}
-              contentStyle={{ 
+              contentStyle={{
                 backgroundColor: theme.palette.background.paper,
                 border: `1px solid ${theme.palette.divider}`
               }}
             />
-            <Legend 
+            <Legend
               wrapperStyle={{ fontSize: '9px' }}
               formatter={(value) => {
                 if (value === 'balance') return 'Balance';
@@ -165,14 +169,14 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
                 return value;
               }}
             />
-            <Area 
+            <Area
               yAxisId="left"
-              type="monotone" 
-              dataKey="balance" 
+              type="monotone"
+              dataKey={ isLoan ? "loanBalance" : "balance" }
               name="balance"
-              stroke={theme.palette.primary.main} 
+              stroke={theme.palette.primary.main}
               fillOpacity={1}
-              fill="url(#colorBalance)" 
+              fill="url(#colorBalance)"
             />
             {/* <Line 
               yAxisId="right"
@@ -185,7 +189,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
             />*/}
           </ComposedChart>
         </ResponsiveContainer>
-</Box>
+      </Box>
 
       <ToggleButtonGroup
         value={timeRange}
@@ -214,7 +218,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance }: Acco
         {growth < 0 && (
           <ArrowDownward fontSize="small" color="error" />
         )}
-        <Typography variant="body2" color={ growth > 0 ? "primary.main" : growth === 0 ? "textPrimary" : "error" }>
+        <Typography variant="body2" color={growth > 0 ? "primary.main" : growth === 0 ? "textPrimary" : "error"}>
           {/* Note: toFixed already adds a negative sign in front of the number */}
           {growth > 0 ? '+' : ''}{growth === 0 ? "No Change" : `${growth.toFixed(1)}%`}
         </Typography>

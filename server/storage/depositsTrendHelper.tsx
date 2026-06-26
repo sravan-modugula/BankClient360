@@ -60,6 +60,8 @@ interface Snapshot {
   cd: number;
   savings: number;
   balance: number;
+  loan: number; 
+  loanBalance: number;
 }
 
 // ─── Main function ────────────────────────────────────────────────────────────
@@ -192,7 +194,7 @@ function walkWindow(
     if (dayTxns) Object.assign(running, dayTxns);
 
     if (isSampleDate(dk)) {
-      let checking = 0, cd = 0, savings = 0;
+      let checking = 0, cd = 0, savings = 0, loan = 0;
       for (const { balance, type } of Object.values(running)) {
         if (type === 'checking' || type === 'deposit checking') {
           checking += balance;
@@ -204,9 +206,13 @@ function walkWindow(
           type === 'christmas club depo'
         ) { 
           savings  += balance;
+        } else if (
+          type === 'loan'
+        ) {
+          loan += balance;
         }
       }
-      onSnapshot(dk, { checking, cd, savings, balance: checking + cd + savings });
+      onSnapshot(dk, { checking, cd, savings, loan, balance: checking + cd + savings, loanBalance: loan});
     }
 
     dk = addDays(dk, 1);
