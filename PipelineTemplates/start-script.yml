@@ -35,6 +35,9 @@ steps:
             '$env:SAML_CALLBACK_URL="https://$(SAMLHost)/saml/acs"'
             '$env:SAML_IDP_INITIATED_URL="https://portal.fmb.com/IdPServlet?idp_id=$(SAMLIssuer)"'
             '$env:SAML_CERT="./saml_cert.pem"'
+            '# Scope AD-group role mapping to this environment (DEV/TST/STG/PRD).'
+            '# Set SAMLRoleEnv per variable group: VG-Preprod=STG, VG-Prod=PRD.'
+            '$env:SAML_ROLE_ENV="$(SAMLRoleEnv)"'
 
             '# Session secret'
             '$env:SESSION_SECRET = "$(SessionSecret)"'

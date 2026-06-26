@@ -110,6 +110,8 @@ export function createSamlStrategy() {
     certPathOrInline: process.env.SAML_CERT?.includes('BEGIN CERTIFICATE')
       ? '<inline PEM>'
       : process.env.SAML_CERT || '<missing>',
+    roleEnv: process.env.SAML_ROLE_ENV?.trim() || '<unset — AD groups from all environments honored>',
+    defaultRole: process.env.SAML_DEFAULT_ROLE_NAME?.trim() || 'Branch Manager',
   }, 'Loading SAML strategy with resolved env config');
 
   return new SamlStrategy(

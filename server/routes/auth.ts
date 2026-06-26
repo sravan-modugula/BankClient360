@@ -355,7 +355,13 @@ export function createSamlRoutes() {
                 // are preserved. When no AD group maps to a role, fall back to
                 // SAML_DEFAULT_ROLE_NAME (defaults to "Branch Manager").
                 const fallbackRoleName = process.env.SAML_DEFAULT_ROLE_NAME?.trim() || 'Branch Manager';
-                const { roleNames: desiredRoleNames, unmatched } = mapAdGroupsToRoleNames(user.samlGroups ?? []);
+                // Scope AD-group role mapping to this deployment's environment.
+                // One on-prem AD means every user carries the ClientIQ groups for
+                // all environments; SAML_ROLE_ENV (DEV/TST/STG/PRD) makes preprod
+                // honor only STG groups and prod only PRD groups.
+                const roleEnv = process.env.SAML_ROLE_ENV?.trim() || null;
+                const { roleNames: desiredRoleNames, unmatched, ignoredOtherEnv } =
+                  mapAdGroupsToRoleNames(user.samlGroups ?? [], roleEnv);
                 const sync = await syncEmployeeRolesFromAdGroupsSqlServer(
                   pool, dbEmployeeId, desiredRoleNames, fallbackRoleName,
                   (user.samlGroups ?? []).join(';') || null,
@@ -365,12 +371,14 @@ export function createSamlRoutes() {
                 // never strands an authenticated user on "Awaiting Role".)
                 authLogger.info({
                   dbEmployeeId,
+                  roleEnv: roleEnv ?? '(unscoped)',
                   groupCount: (user.samlGroups ?? []).length,
                   desiredRoleNames,
                   assigned: sync.assigned,
                   revoked: sync.revoked,
                   usedFallback: sync.usedFallback,
                   unmatchedClientIqGroups: unmatched,
+                  ignoredOtherEnvGroups: ignoredOtherEnv,
                   unresolvedRoleNames: sync.unresolved,
                 }, 'Synced SAML user roles from AD groups');
               } else {
