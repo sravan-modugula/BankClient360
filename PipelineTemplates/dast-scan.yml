@@ -1,9 +1,9 @@
 parameters:
-  dastServer: ''
-  dastService: ''
-  dastServerUrl: ''
-  dastApiKey: ''
-  dastScanUrl: ''
+  dastServer: '$(DASTServer)'
+  dastService: '$(DASTService)'
+  dastServerUrl: '$(DASTServerUrl)'
+  dastApiKey: '$(DASTAPIKey)'
+  dastScanUrl: '$(DASTScanTarget)'
 
   allowedHighs: 0
   timeoutMinutes: 20
