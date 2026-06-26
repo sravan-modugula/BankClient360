@@ -454,7 +454,7 @@ export async function getDepositTrendSqlServer(
             ft.amount transaction_amount,
             ft.transaction_date
           FROM financial_transaction ft
-          WHERE ft.account_id IN (SELECT account_id FROM customer_accounts)
+          WHERE ft.account_number IN (SELECT account_number FROM customer_accounts)
               AND ft.transaction_date >= DATEADD(month, -@months, GETDATE())
       `),
         request.query(`
@@ -602,13 +602,17 @@ export async function getAccountBalanceHistorySqlServer(
     const [accountTransaction, accountMetadata] = await Promise.all(
       [
         request.query(`
+          with account_num as (
+            select account_number 
+            from account where account_id = @accountId
+          )
           SELECT
             ft.account_number,
             ft.ledger_balance_after,
             ft.amount transaction_amount,
             ft.transaction_date
           FROM financial_transaction ft
-          WHERE ft.account_id = @accountId
+          WHERE ft.account_number in (select account_number from account_num)
               AND ft.transaction_date >= DATEADD(month, -@months, GETDATE())
       `),
         request.query(`

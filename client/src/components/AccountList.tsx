@@ -60,7 +60,7 @@ export function AccountTable({
   const theme = useTheme();
   const [, setLocation] = useLocation();
   const { formatCurrency } = useDateFormatter();
-
+  
   // Pagination state
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -338,7 +338,11 @@ export function AccountTable({
                   <TableRow
                     key={account.accountId}
                     hover
-                    onClick={() => handleRowClick(account)}
+                    onClick={() => { 
+                      if (canViewBalances) {
+                        handleRowClick(account)
+                      }
+                    }}
                     sx={{
                       cursor: 'pointer',
                       backgroundColor: isSelected ? theme.palette.action.selected : 'inherit',

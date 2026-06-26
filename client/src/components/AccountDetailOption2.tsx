@@ -40,6 +40,7 @@ import type { DebitCardWithLimitProfile } from '@shared/schema';
 import { FormatTransactionAmount } from './FormatTransactionAmount';
 import BackButton from './BackButton';
 import { formatFlatDate } from '@/helpers';
+import { useHasPermission } from '@/hooks/usePermissions';
 
 interface AccountDetailOption2Props {
   accountId?: string;
@@ -148,6 +149,12 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
     }
     return 'Account';
   };
+
+  const canViewBalances = useHasPermission('account.view.balances');
+
+  if (!canViewBalances) {
+    return <div>Access Denied</div>
+  }
 
   if (accountLoading) {
     return (
