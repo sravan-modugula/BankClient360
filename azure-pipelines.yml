@@ -107,6 +107,8 @@ stages:
   dependsOn: Build
   variables:
     - group: VG-Dev
+    - name: SAMLRoleEnv         # scopes ClientIQ AD-group role mapping to this env
+      value: DEV
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
   jobs:
@@ -130,6 +132,8 @@ stages:
   dependsOn: Build
   variables:
     - group: VG-Test
+    - name: SAMLRoleEnv         # scopes ClientIQ AD-group role mapping to this env
+      value: TST
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
 
@@ -174,6 +178,8 @@ stages:
   dependsOn: Build
   variables:
     - group: VG-Preprod
+    - name: SAMLRoleEnv         # scopes ClientIQ AD-group role mapping to this env
+      value: STG
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
 
@@ -198,6 +204,8 @@ stages:
   dependsOn: Build
   variables:
     - group: VG-Prod
+    - name: SAMLRoleEnv         # scopes ClientIQ AD-group role mapping to this env
+      value: PRD
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
 
@@ -222,6 +230,8 @@ stages:
   dependsOn: Build
   variables:
     - group: VG-Prod2
+    - name: SAMLRoleEnv         # scopes ClientIQ AD-group role mapping to this env
+      value: PRD
     - name: commitMessage
       value: $[stageDependencies.Build.BuildJob.outputs['buildVar.commitMessage'] ]
 
