@@ -5,6 +5,7 @@ import type { UnifiedSearchResult, SearchEntityItem } from '@shared/schema';
 import { TextField, InputAdornment, Fade, CircularProgress } from '@mui/material';
 import { Search as SearchIcon, Person, Groups, Close, AccountBalance } from '@mui/icons-material';
 import { generateCustomerUrl } from '@/lib/navigation';
+import { useHasPermission } from '@/hooks/usePermissions';
 
 interface Customer {
   id: string;
@@ -129,6 +130,11 @@ const ResultRow = React.forwardRef<HTMLDivElement, {
     ? { bg: '#EAF3DE', color: '#3B6D11' }
     : { bg: 'rgba(0,0,0,0.06)', color: 'rgba(0,0,0,0.45)' };
 
+  const canViewBalances = useHasPermission('account.view.balances');
+
+  // if you can't view balances, filter the 
+  const primaryIdentifiers = (entity?.primaryIdentifiers || []).filter((x) => canViewBalances || !(x || "").includes("Balance"));
+
   return (
     <div
       ref={ref}
@@ -158,7 +164,7 @@ const ResultRow = React.forwardRef<HTMLDivElement, {
           {highlight(entity.displayName, query)}
         </div>
         <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
-          {entity.primaryIdentifiers.join(' · ')}
+          {primaryIdentifiers.join(' · ')}
         </div>
       </div>
       <span style={{

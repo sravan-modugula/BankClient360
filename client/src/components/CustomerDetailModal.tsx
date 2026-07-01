@@ -27,6 +27,7 @@ import {
   VerifiedUser
 } from '@mui/icons-material';
 import { useDateFormatter } from '@/lib/dateFormatters';
+import { formatFlatDate } from '@/helpers';
 
 interface CustomerDetail {
   customerId: number;
@@ -274,7 +275,7 @@ export default function CustomerDetailModal({ open, onClose, customerId }: Custo
                     )}
                     <Box>
                       <Typography variant="caption" color="text.secondary">Customer Since</Typography>
-                      <Typography variant="body2" fontWeight="400">{formatDate(customerData.customerSince)}</Typography>
+                      <Typography variant="body2" fontWeight="400">{formatFlatDate(customerData.customerSince)}</Typography>
                     </Box>
                   </Box>
                 </CardContent>

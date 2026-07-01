@@ -879,6 +879,7 @@ export default function CustomerDashboard() {
               <AccountList
                 customerId={selectedCustomer?.id ? parseInt(selectedCustomer.id) : 0}
                 onViewAccountDetail={handleViewAccountDetail}
+                isEmployee={isEmployeeCustomer}
               />
             </>
           )}

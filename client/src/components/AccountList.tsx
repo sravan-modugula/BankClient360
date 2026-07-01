@@ -45,6 +45,7 @@ interface AccountTableProp {
   onViewAccountDetail?: (accountId: number) => void;
   onRowClick?: (account: Account) => void;
   showOwnershipType?: boolean;
+  isEmployee?: boolean;
 }
 
 export function AccountTable({
@@ -56,6 +57,7 @@ export function AccountTable({
   onViewAccountDetail,
   onRowClick,
   showOwnershipType = true,
+  isEmployee = false,
 }: AccountTableProp) {
   const theme = useTheme();
   const [, setLocation] = useLocation();
@@ -339,7 +341,7 @@ export function AccountTable({
                     key={account.accountId}
                     hover
                     onClick={() => { 
-                      if (canViewBalances) {
+                      if (canViewBalances || !isEmployee) {
                         handleRowClick(account)
                       }
                     }}
@@ -476,6 +478,7 @@ interface AccountListProps {
   selectedAccountId?: number | null;
   onViewAccountDetail?: (accountId: number) => void;
   onRowClick?: (account: Account) => void;
+  isEmployee?: boolean;
 }
 
 export default function AccountList({
@@ -484,12 +487,12 @@ export default function AccountList({
   onAccountSelect,
   selectedAccountId = null,
   onViewAccountDetail,
-  onRowClick
+  onRowClick,
+  isEmployee = false,
 }: AccountListProps) {
   const theme = useTheme();
 
   const canViewBalances = useHasPermission('account.view.balances');
-
 
   // Fetch accounts from API only when no pre-supplied accounts and customerId is provided
   const { data: fetchedAccounts = [], isLoading: queryLoading, error: queryError } = useQuery<Account[]>({
@@ -550,6 +553,7 @@ export default function AccountList({
         selectedAccountId={selectedAccountId}
         onViewAccountDetail={onViewAccountDetail}
         onRowClick={onRowClick}
+        isEmployee={isEmployee}
       />
       {secondaryAccount.length > 0 && (
         <AccountTable
@@ -560,6 +564,7 @@ export default function AccountList({
           selectedAccountId={selectedAccountId}
           onViewAccountDetail={onViewAccountDetail}
           onRowClick={onRowClick}
+          isEmployee={isEmployee}
         />
       )}
     </>

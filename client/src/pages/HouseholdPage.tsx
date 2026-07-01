@@ -215,6 +215,9 @@ export default function HouseholdPage() {
     enabled: !!actualHouseholdId,
   });
 
+  const isEmployeeHousehold = (members ?? []).some((x) => x?.isEmployee);
+  
+
   // Members table: reset page when filters/sort change
   useEffect(() => {
     setMemberPage(0);
@@ -864,6 +867,7 @@ export default function HouseholdPage() {
               title="Aggregated Accounts"
               canViewBalances={canViewBalances}
               showOwnershipType={false}
+              isEmployee={isEmployeeHousehold}
               onRowClick={(account) => {
                 const customerIdForRow = (account as unknown as { customerId: number }).customerId;
                 setLocation(`/ciq/accounts?accountId=${account.accountId}&customerId=${customerIdForRow}`);

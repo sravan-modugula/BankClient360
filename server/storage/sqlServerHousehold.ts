@@ -90,6 +90,7 @@ export async function getHouseholdMembersSqlServer(
         c.customer_status,
         c.date_of_birth,
         c.customer_since,
+        c.is_employee,
         hm.relationship_role,
         hm.ownership_percentage,
         hm.is_primary_member,
