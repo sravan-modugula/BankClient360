@@ -64,7 +64,7 @@ function downArrow(y0, y1) {
 
 // ---- layout ----
 const bands = [
-  { label: 'Web / Edge', h: 84, alt: true, items: [{ title: 'IIS on Windows Server: TLS termination and reverse proxy to Node on port 5000', sub: '' }] },
+  { label: 'Web / Edge', h: 84, alt: true, items: [{ title: 'IIS on Windows Server: TLS 1.3 termination and reverse proxy to Node on port 5000', sub: '' }] },
   { label: 'Presentation', h: 150, items: [
     { title: 'ClientIQ SPA', sub: 'React 18, TypeScript, Material-UI' },
     { title: 'Client-side routing', sub: 'Wouter, URL-driven navigation' },
@@ -97,7 +97,7 @@ downArrow(positions[positions.length - 1].y + positions[positions.length - 1].h,
 rect(BX, dataY, BW, dataH, C.band, 6);
 text(LBL0, dataY + dataH / 2 + 8, 'Data', 25, C.label, 'bold', 'start');
 const flow = [
-  { title: 'SOR', sub: 'Core banking SOR' },
+  { title: 'SOR', sub: 'Core banking, Synapse' },
   { title: 'VAULT', sub: 'Landing zone' },
   { title: 'SPOT', sub: 'Data platform' },
   { title: 'ClientIQ', sub: 'SQL Server DB', db: true },
@@ -133,6 +133,17 @@ text(idX + idW / 2, idMid + 4, 'RSA SecurID Access (SAML)', 13, C.sub, 'normal',
 text(idX + idW / 2, idMid + 24, 'Active Directory', 13, C.sub, 'normal', 'middle');
 S += `<line x1="${BX + BW}" y1="${idMid}" x2="${idX}" y2="${idMid}" stroke="${C.sideBd}" stroke-width="1.5" stroke-dasharray="4,4"/>`;
 text((BX + BW + idX) / 2, idMid - 8, 'SAML / AD', 11.5, C.sub, 'normal', 'middle');
+
+// ---- side: Observability (cross-cutting, spanning Data Access + Data bands) ----
+const dacB = positions[3];
+const obX = RIGHT, obW = 232, obY = dacB.y + 14, obBottom = dataY + dataH - 12, obH = obBottom - obY, obMid = obY + obH / 2;
+rect(obX, obY, obW, obH, C.side, 8, C.sideBd, 1.5, '5,4');
+text(obX + obW / 2, obMid - 30, 'Observability', 16, C.txt, 'bold', 'middle');
+text(obX + obW / 2, obMid - 6, 'Audit tables, application logs', 12.5, C.sub, 'normal', 'middle');
+text(obX + obW / 2, obMid + 14, 'Health checks, alerting', 12.5, C.sub, 'normal', 'middle');
+const dacMid = dacB.y + dacB.h / 2;
+S += `<line x1="${BX + BW}" y1="${dacMid}" x2="${obX}" y2="${dacMid}" stroke="${C.sideBd}" stroke-width="1.5" stroke-dasharray="4,4"/>`;
+text((BX + BW + obX) / 2, dacMid - 8, 'logs / audit', 11.5, C.sub, 'normal', 'middle');
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#ffffff"/>${S}</svg>`;
 
