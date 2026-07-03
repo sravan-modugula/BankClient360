@@ -15,21 +15,6 @@
 
 The ClientIQ platform is an enterprise-grade customer intelligence system deployed on Farmers and Merchants Bank's on-premise Windows Server infrastructure. The system provides a unified 360-degree view of customer relationships, accounts, transactions, and household information, consolidating data from FMB's System of Record (SOR) through the Vault and SPOT data platforms into a high-performance application database.
 
-**Deployment Architecture:**
-- Infrastructure: On-premise Windows Server 2019+ hosts
-- Database: Microsoft SQL Server 2019+ (Always On Availability Groups in production)
-- Reverse Proxy: IIS on Windows Server for TLS 1.3 termination and load balancing
-- Authentication: RSA SAML 2.0 SSO integration (preprod and production)
-- Environments: Development, Test, Pre-production, Production
-- Data Pipeline: SOR to Vault to SPOT to ClientIQ application database (initial bulk load plus daily delta updates)
-
-**Key Technology Stack:**
-- Frontend: React 18 + TypeScript + Material-UI
-- Backend: Express.js + Node.js hosted on Windows Server
-- Database: Microsoft SQL Server (case-insensitive search over the unified `full_name` column)
-- Session Management: SQL Server session store
-- Authentication: RSA Identity Provider via SAML 2.0
-
 ---
 
 ## 1. Introduction
@@ -37,6 +22,8 @@ The ClientIQ platform is an enterprise-grade customer intelligence system deploy
 ### 1.1 System Overview
 
 The ClientIQ platform consolidates customer data from FMB's System of Record through the Vault and SPOT data platforms, delivering a comprehensive 360-degree view of customer relationships, accounts, transactions, and household information. The system is designed specifically for FMB's on-premise Windows Server infrastructure, using Microsoft SQL Server as the primary data store.
+
+![ClientIQ layered architecture. Bands top to bottom: Web / Edge (IIS on Windows Server, TLS 1.3 termination and reverse proxy to Node on port 5000), Presentation (React 18 + MUI SPA, Wouter routing, TanStack Query), Application and Business (middleware chain, REST API, domain services), Data Access (row-to-DTO adapters, SqlServerSearchProvider, parameterized mssql), and Data (the SOR to VAULT to SPOT to ClientIQ SQL Server daily data-load flow). The RSA SecurID / Active Directory identity provider connects to the Application tier, and an Observability element (audit tables, application logs, health checks, alerting) spans the Data Access and Data tiers.](images/architecture-layered.png)
 
 **Core Capabilities:**
 - **Customer Intelligence:** Unified customer profiles with household relationships, account aggregation, and transaction history
@@ -54,11 +41,7 @@ The ClientIQ platform consolidates customer data from FMB's System of Record thr
 
 ### 1.2 High Level Architecture Overview
 
-The solution is built as a responsive web application that supports Single Sign-On (SSO) for secure access. The application architecture is organized into logical layers, fronted by IIS and backed by SQL Server, with data delivered from the FMB core-banking pipeline.
-
-![ClientIQ layered architecture. Bands top to bottom: Web / Edge (IIS on Windows Server, TLS 1.3 termination and reverse proxy to Node on port 5000), Presentation (React 18 + MUI SPA, Wouter routing, TanStack Query), Application and Business (middleware chain, REST API, domain services), Data Access (row-to-DTO adapters, SqlServerSearchProvider, parameterized mssql), and Data (the SOR to VAULT to SPOT to ClientIQ SQL Server daily data-load flow). The RSA SecurID / Active Directory identity provider connects to the Application tier, and an Observability element spans the Data Access and Data tiers.](images/architecture-layered.png)
-
-The application architecture is organized into multiple logical layers:
+The solution is built as a responsive web application that supports Single Sign-On (SSO) for secure access. The application architecture is organized into multiple logical layers, fronted by IIS and backed by SQL Server, with data delivered from the FMB core-banking pipeline:
 
 - **Interface Layer:** Web user interface supporting responsive design and secure client interactions.
 - **Application Services Layer:** Implements business logic for client data presentation, entitlement enforcement, and user management.
@@ -76,7 +59,7 @@ The architecture includes foundational components for security, reliability, and
 **Layered Architecture Pattern:** The system employs a clear separation of concerns across five layers:
 
 1. **Presentation Layer:** React components with Material-UI, responsive design
-2. **API Layer:** RESTful endpoints (unversioned today; URL versioning is a roadmap item, see [§5.2](#52-integration-architecture))
+2. **API Layer:** RESTful endpoints (unversioned today; URL versioning is a roadmap item, see §5.2)
 3. **Business Logic Layer:** Service adapters with PII masking, permission checks
 4. **Data Access Layer:** SQL Server parameterized queries, connection pooling
 5. **Integration Layer:** Scheduled data loads (SOR to Vault to SPOT), SAML authentication
@@ -166,53 +149,41 @@ The platform is architected according to enterprise-grade principles ensuring sc
 
 ---
 
-## 2. System Context
+## 2. Logical Component Architecture
 
-### 2.1 System Context Diagram
+### 2.1 Component Structure and Responsibilities
+
+The platform follows a layered architecture pattern with clear separation of concerns. Each layer exposes a narrow contract to the layer above it, and the data-access layer is the only tier that talks to SQL Server.
+
+![ClientIQ component structure. Presentation Layer (Customer Dashboard, Household Management, Account Summary, Transaction History, Notes, Customer Overview; React 18, TypeScript, Material-UI, TanStack Query, Wouter, React Hook Form + Zod) over HTTPS/JSON to the API Layer (Express routes with Zod validation, authentication middleware, authorization middleware), to the Business Logic Layer (customer adapter, domain services), to the Data Access Layer (parameterized mssql queries, case-insensitive LIKE search, SQL Server session store), to SQL Server.](images/arch-component.png)
+
+**Layer responsibilities:**
+- **Presentation:** Customer Dashboard, Household Management, Account Summary, Transaction History, Notes, and Customer Overview screens. Technology: React 18, TypeScript, Material-UI, TanStack React Query (server state), Wouter (routing), React Hook Form + Zod (forms).
+- **API:** Express route definitions, Zod request validation, standardized error handling; SAML authentication middleware (session validation, employee lookup/upsert from SAML assertions); authorization middleware (RBAC checks, ABAC conditional evaluation, privilege-level verification).
+- **Business Logic:** Customer adapter (PII masking, DTO mapping), Account/Household/Transaction/Search services, Permission service (ABAC evaluation, audit logging), Note service (versioning, soft delete).
+- **Data Access:** SQL Server access via the `mssql` driver with parameterized queries and connection pooling; case-insensitive `LIKE` search over `full_name`; SQL Server session store with automatic cleanup.
+
+---
+
+## 3. System Context
+
+### 3.1 System Context Diagram
 
 The ClientIQ system operates within FMB's on-premise datacenter environment. FMB staff reach the application over HTTPS on the corporate network; the application integrates with the core-banking data pipeline and the RSA identity provider.
 
-```mermaid
-flowchart TB
-  U["FMB Bank Employees<br/>Tellers, Relationship Managers, Branch Managers, Executives, System Administrators, IT Operations"]
-  PERIM["FMB Datacenter Perimeter<br/>Firewall, IDS/IPS, port 443 only, source-IP allowlisting"]
-  IIS["IIS Reverse Proxy<br/>TLS 1.3 termination, load balancing, health checks"]
-  APP["Application Servers<br/>Windows Server, Node.js + Express (port 5000), React SPA"]
-  DB[("SQL Server<br/>App DB, session store, audit; Always On AG in production")]
-  SOR["FMB SOR (Jack Henry)<br/>Symitar, Silverlake core banking, Synapse"]
-  VAULT["FMB Vault<br/>data warehouse (cleansed)"]
-  SPOT["SPOT<br/>data platform (curated views)"]
-  RSA["RSA Identity Provider<br/>SAML 2.0 SSO"]
-  U -->|HTTPS 443, corporate network / VPN| PERIM
-  PERIM --> IIS --> APP --> DB
-  SOR --> VAULT --> SPOT -->|daily data load| DB
-  APP -. SAML assertion .- RSA
-```
+![ClientIQ system context. FMB bank employees reach the system over HTTPS 443 on the corporate network / VPN, through the datacenter perimeter (firewall, IDS/IPS, port 443 only, source-IP allowlisting), to the IIS reverse proxy (TLS 1.3 termination), to the application servers (Windows Server, Node.js + Express on port 5000, React SPA), to SQL Server (App DB, session store, audit; Always On AG in production). The FMB SOR (Jack Henry Symitar, Silverlake core banking, Synapse) flows to the FMB Vault data warehouse, to SPOT, and is loaded daily into SQL Server. The RSA Identity Provider (SAML 2.0 SSO) connects to the application servers.](images/arch-system-context.png)
 
-### 2.2 FMB Data Pipeline Architecture (SOR to Vault to SPOT to App DB)
+### 3.2 FMB Data Pipeline Architecture (SOR to Vault to SPOT to App DB)
 
 The application database is populated through a multi-stage pipeline. Source records originate in the FMB System of Record (Jack Henry Symitar and Silverlake core banking, plus Synapse), land in the Vault data warehouse, are curated into SPOT, and are then loaded into the ClientIQ SQL Server database on a daily cadence (initial bulk load followed by daily deltas).
 
-```mermaid
-flowchart LR
-  JH["Jack Henry<br/>Symitar / Silverlake core banking"]
-  SYN["Synapse"]
-  VAULT["FMB Vault<br/>data warehouse (cleansed)"]
-  SPOT["SPOT<br/>data platform (curated views)"]
-  CIQ[("ClientIQ<br/>SQL Server database")]
-  APP["ClientIQ application"]
-  JH --> VAULT
-  SYN --> VAULT
-  VAULT --> SPOT
-  SPOT -->|initial bulk load + daily delta| CIQ
-  CIQ --> APP
-```
+![ClientIQ data pipeline. Jack Henry (Symitar / Silverlake core banking) and Synapse feed the FMB Vault data warehouse (cleansed), which feeds SPOT (curated views), which performs an initial bulk load plus daily delta into the ClientIQ SQL Server database, which serves the ClientIQ application.](images/arch-data-pipeline.png)
 
 In the current implementation, the SPOT feed surfaces as the Jack Henry views (`TheSpot`, `TheSpotPreProd`, and the `TheVault` landing view), and the loads are scheduled SQL scripts executed in foreign-key dependency order with idempotent `MERGE` / `NOT EXISTS` guards. There is no SSIS orchestration or staging-table layer committed in the application repository.
 
 > **[CONFIRM]** The scheduled orchestration (SQL Agent job or equivalent) and the refresh window that drives the daily delta loads in preprod and production.
 
-### 2.3 External System Interfaces
+### 3.3 External System Interfaces
 
 | System | Integration Type | Protocol | Data Flow | Authentication |
 |---|---|---|---|---|
@@ -222,7 +193,7 @@ In the current implementation, the SPOT feed surfaces as the Jack Henry views (`
 | FMB Vault / SPOT | Scheduled load | SQL Server views | Inbound (SPOT to App DB) | Windows Auth |
 | RSA Identity Provider | SAML 2.0 | HTTPS / XML | Bidirectional (auth) | X.509 Certificate |
 
-### 2.4 Stakeholder Analysis
+### 3.4 Stakeholder Analysis
 
 | Stakeholder Group | Primary Needs | System Interaction | Success Metrics |
 |---|---|---|---|
@@ -232,45 +203,6 @@ In the current implementation, the SPOT feed surfaces as the Jack Henry views (`
 | Executives | Strategic analytics, portfolio insights | Dashboards, executive reports (read-only) | Strategic insight availability |
 | System Administrators | User management, system configuration | Full administrative access, role assignment | System availability |
 | IT Operations | Monitoring, incident response | Infrastructure management, log analysis | Fast MTTR |
-
----
-
-## 3. Logical Component Architecture
-
-### 3.1 Component Structure and Responsibilities
-
-The platform follows a layered architecture pattern with clear separation of concerns. Each layer exposes a narrow contract to the layer above it, and the data-access layer is the only tier that talks to SQL Server.
-
-```mermaid
-flowchart TB
-  subgraph PRES["Presentation Layer"]
-    P["Customer Dashboard, Household Management, Account Summary,<br/>Transaction History, Notes, Customer Overview<br/>React 18, TypeScript, Material-UI, TanStack Query, Wouter, React Hook Form + Zod"]
-  end
-  subgraph API["API Layer (Express.js on Windows Server)"]
-    G["API routes (/api/customers, /api/accounts, ...) with Zod request validation"]
-    AUTHN["Authentication middleware: SAML 2.0 SSO (RSA IdP), session validation, employee upsert"]
-    AUTHZ["Authorization middleware: RBAC permission checks, ABAC evaluation, privilege levels"]
-    G --- AUTHN --- AUTHZ
-  end
-  subgraph BIZ["Business Logic Layer"]
-    ADPT["Customer adapter: PII masking, DTO mapping"]
-    SVC["Account, Household, Transaction, Search, Permission, and Note services"]
-    ADPT --- SVC
-  end
-  subgraph DAL["Data Access Layer"]
-    MSSQL["Parameterized mssql queries, connection pooling"]
-    SEARCH["Case-insensitive LIKE search over full_name"]
-    SESS["SQL Server session store"]
-    MSSQL --- SEARCH --- SESS
-  end
-  PRES -->|HTTPS / JSON| API --> BIZ --> DAL --> DB[("SQL Server: App DB, sessions, audit")]
-```
-
-**Layer responsibilities:**
-- **Presentation:** Customer Dashboard, Household Management, Account Summary, Transaction History, Notes, and Customer Overview screens. Technology: React 18, TypeScript, Material-UI, TanStack React Query (server state), Wouter (routing), React Hook Form + Zod (forms).
-- **API:** Express route definitions, Zod request validation, standardized error handling; SAML authentication middleware (session validation, employee lookup/upsert from SAML assertions); authorization middleware (RBAC checks, ABAC conditional evaluation, privilege-level verification).
-- **Business Logic:** Customer adapter (PII masking, DTO mapping), Account/Household/Transaction/Search services, Permission service (ABAC evaluation, audit logging), Note service (versioning, soft delete).
-- **Data Access:** SQL Server access via the `mssql` driver with parameterized queries and connection pooling; case-insensitive `LIKE` search over `full_name`; SQL Server session store with automatic cleanup.
 
 ---
 
@@ -293,20 +225,7 @@ flowchart TB
 
 ### 4.2 Search Implementation
 
-Customer search is a case-insensitive substring match on the unified `full_name` column (and tax id / core-banking identifiers), using `COLLATE Latin1_General_CI_AS`. Non-clustered indexes on the search and join columns back the queries.
-
-```sql
--- Customer search (case-insensitive LIKE over the unified full_name column)
-SELECT customer_id, full_name, customer_type
-FROM customer
-WHERE full_name COLLATE Latin1_General_CI_AS LIKE '%' + @term + '%'
-   OR tax_identifier LIKE @term + '%'
-ORDER BY customer_id;
-
--- Supporting indexes (see scripts/create_performance_indexes.sql)
-CREATE INDEX idx_customer_full_name ON customer(full_name);
-CREATE INDEX idx_customer_tax_id ON customer(tax_identifier);
-```
+Customer search is a case-insensitive substring match on the unified `full_name` column (and tax id / core-banking identifiers), using a case-insensitive collation. Non-clustered indexes on the search and join columns back the queries, and the search service returns exact, partial, and fuzzy indicators for the caller.
 
 > **[CONFIRM]** If phonetic or similarity ranking is required, SQL Server `SOUNDEX` / `DIFFERENCE` (2019) or `STRING_SIMILARITY` (2022+) can be introduced; the production endpoint currently uses substring `LIKE`.
 
@@ -314,154 +233,15 @@ CREATE INDEX idx_customer_tax_id ON customer(tax_identifier);
 
 The core entity relationships are shown below (customers, households, employees, accounts, debit cards, and their junctions). The complete 40-table model is maintained in the companion ERD document.
 
-```mermaid
-erDiagram
-    region ||--o{ branch : "region_id"
-    address ||--o{ branch : "address_id"
-    branch ||--o{ customer : "branch_id"
-    branch ||--o{ account : "branch_id"
-    employee ||--o{ household : "relationship_manager_id"
-    household ||--o{ household : "parent_household_id (self)"
-    customer ||--o{ household_membership : "customer_id"
-    household ||--o{ household_membership : "household_id"
-    account ||--o{ account_ownership : "account_id"
-    customer ||--o{ account_ownership : "customer_id"
-    employee ||--o{ employee_branch : "employee_id"
-    branch ||--o{ employee_branch : "branch_id"
-    customer ||--o{ customer_officer_assignment : "customer_id"
-    account ||--o{ debit_card : "account_id"
-    customer ||--o{ debit_card : "customer_id"
-    debit_card_limit_profile ||--o{ debit_card : "limit_profile_id"
+![ClientIQ core data model (entity-relationship diagram). Customer relates to household (via household membership), to account (via account ownership), to debit card, and to a relationship-manager employee; account relates to branch and to debit card; debit card relates to a debit-card limit profile; branch relates to region and address. Key attributes shown as SQL Server types (bigint IDENTITY primary keys, varchar, nvarchar(max), datetime2).](images/arch-core-erd.png)
 
-    customer {
-        bigint customer_id PK "IDENTITY"
-        varchar first_name "nullable"
-        varchar last_name "nullable"
-        varchar business_name "nullable"
-        varchar full_name "generated/derived"
-        varchar tax_identifier UK
-        varchar customer_type "default regular"
-        bigint branch_id FK "-> branch"
-        varchar jack_henry_cif_number
-        varchar silverlake_customer_id
-    }
-    household {
-        bigint household_id PK "IDENTITY"
-        varchar household_name
-        varchar household_type "default family"
-        bigint relationship_manager_id FK "-> employee"
-        bigint parent_household_id FK "-> household (self)"
-    }
-    employee {
-        bigint employee_id PK "IDENTITY"
-        varchar employee_number UK
-        varchar officer_code UK
-        varchar sso_subject UK "SAML subject"
-        nvarchar(max) last_seen_saml_role
-        datetime2 deleted_at "soft delete"
-    }
-    account {
-        bigint account_id PK "IDENTITY"
-        varchar account_number UK
-        varchar account_type
-        varchar account_status "default active"
-        decimal balance
-        bigint branch_id FK "-> branch"
-        varchar jack_henry_account_id
-    }
-    debit_card {
-        bigint card_id PK "IDENTITY"
-        bigint account_id FK "NOT NULL -> account"
-        bigint customer_id FK "NOT NULL -> customer"
-        bigint limit_profile_id FK "-> debit_card_limit_profile"
-        varchar last_four_digits "PCI: last 4 only"
-    }
-    debit_card_limit_profile {
-        bigint profile_id PK "IDENTITY"
-        decimal daily_purchase_limit
-        decimal daily_atm_limit
-    }
-```
-
-### 4.4 Database Schema Highlights (SQL Server)
-
-Representative DDL for the `customer` table. Conditional name requirements (individual vs business/trust) are enforced in application code (Zod discriminated union), not by a database CHECK constraint.
-
-```sql
-CREATE TABLE customer (
-  customer_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
-
-  -- Individual customer fields
-  first_name             NVARCHAR(100),
-  last_name              NVARCHAR(100),
-  middle_name            NVARCHAR(100),
-  date_of_birth          DATE,
-
-  -- Business customer fields
-  business_name          NVARCHAR(200),
-  dba_name               NVARCHAR(200),
-
-  -- Unified search field (populated by the load)
-  full_name              NVARCHAR(200),
-
-  -- Identification (masked in UI)
-  tax_identifier         NVARCHAR(20) UNIQUE,
-  government_id          NVARCHAR(50),
-
-  -- Classification
-  customer_type          NVARCHAR(20) NOT NULL DEFAULT 'regular',
-  customer_status        NVARCHAR(20) DEFAULT 'active',
-
-  -- Compliance
-  kyc_status             NVARCHAR(20),
-  risk_rating            NVARCHAR(20),
-
-  -- Flags
-  is_employee            BIT DEFAULT 0,
-  vip_customer           BIT DEFAULT 0,
-  is_deceased            BIT DEFAULT 0,
-
-  -- Core banking integration
-  jack_henry_cif_number  NVARCHAR(20),
-  silverlake_customer_id NVARCHAR(20)
-);
-
--- Supporting indexes
-CREATE INDEX idx_customer_full_name ON customer(full_name);
-CREATE INDEX idx_customer_tax_id    ON customer(tax_identifier);
-CREATE INDEX idx_customer_status    ON customer(customer_status);
-CREATE INDEX idx_customer_type      ON customer(customer_type);
-```
-
-The SQL Server session store is a `sessions` table (`session_id`, `session_data`, `expires_at`); expired rows are cleaned up automatically by the application session layer on a short interval.
-
-### 4.5 Data Loading (Vault / SPOT to App DB)
+### 4.4 Data Loading (Vault / SPOT to App DB)
 
 The application database is loaded from the SPOT curated views on a scheduled cadence. Loads run in foreign-key dependency order: lookups first (`branch`, `note_category`, `transaction_category`), then `customer` and `employee`, then `address`, `contact_info`, `account`, and ownership/household/transaction tables. Loaders are idempotent via `MERGE` or `NOT EXISTS` guards, keyed on `jack_henry_cif_number`, `account_number`, `officer_code`, or `branch_code`. Transaction history is loaded for a rolling recent window.
 
 RBAC tables are not part of the data load. SQL Server environments bootstrap RBAC separately via the role-provisioning scripts (`ensure_branch_manager_role.sql`, `ensure_rbac_provenance_columns.sql`).
 
 > **[CONFIRM]** Whether a staging-table and data-quality-validation layer is desired between SPOT and the App DB; the current loaders read SPOT views directly.
-
-### 4.6 Data Retention and Privacy
-
-| Data Type | Retention | Deletion Method | Regulatory Basis |
-|---|---|---|---|
-| Customer PII | Per policy after account closure | Purge after retention | GLBA, state banking laws |
-| Account Data | Per policy after closure | Archival then purge | Reg CC, Reg E, UCC |
-| Transactions | Per policy | Archival then purge | Regulatory requirements |
-| Debit Card Data | Per policy after cancellation | Store last 4 only; purge after retention | PCI DSS |
-| Audit Logs | Long-term (regulatory) | Indexed storage in SQL Server | Regulatory requirements |
-| Customer Notes | Per policy (legal hold) | Soft delete (`is_deleted` flag) | Internal policy |
-| Session Data | Standard session duration | Automatic cleanup | Security policy |
-
-**PII Handling:**
-- **At Rest:** SQL Server TDE (Transparent Data Encryption) for database files
-- **In Transit:** TLS 1.3 for all network communication (IIS reverse proxy)
-- **In Use:** PII fields masked in the UI (tax id rendered as `XXX-XX-1234`)
-- **In Logs:** PII fields redacted (never log tax id, account numbers, or passwords)
-
-> **[CONFIRM]** Exact retention periods per data type against FMB's records-retention schedule.
 
 ---
 
@@ -579,34 +359,18 @@ RBAC tables are not part of the data load. SQL Server environments bootstrap RBA
 
 ClientIQ runs in four environments: dev, test, preprod, and prod. Dev, test, and preprod each run a single application server and a single SQL Server database. Production is the high-availability tier: an IIS reverse-proxy pair fronts two application servers, backed by a SQL Server Always On Availability Group. SAML SSO is enabled in preprod and production only; dev and test use local mock authentication.
 
-```mermaid
-flowchart TB
-  subgraph DEV["Development (branch: develop)"]
-    D1["App server (1 instance)"] --> D2[("SQL Server (standalone)")]
-  end
-  subgraph TEST["Test (branch: test)"]
-    T1["App server (1 instance)"] --> T2[("SQL Server (standalone)")]
-  end
-  subgraph PRE["Pre-production (branch: preprod, SSO on)"]
-    R1["App server (1 instance)"] --> R2[("SQL Server (standalone)")]
-  end
-  subgraph PROD["Production (branch: prod, SSO on)"]
-    direction TB
-    PLB["IIS reverse proxy (HA pair)<br/>TLS 1.3, load balancing, health checks"]
-    PA["App servers (2 instances)"]
-    PDB[("SQL Server Always On AG (2 nodes)<br/>synchronous commit, automatic failover")]
-    PLB --> PA --> PDB
-  end
-```
+Data classification differs by environment: development uses synthetic data, test uses masked / obfuscated data, and preprod and production carry production data (preprod access is restricted to bankers, with RSA SSO enabled).
+
+![ClientIQ deployment topology across four environments. Development (branch develop, synthetic data), Test (branch test, masked / obfuscated data), and Pre-production (branch preprod, SSO on, production data restricted to bankers) each run a single app server and a standalone SQL Server. Production (branch prod, SSO on, production data) runs an IIS reverse-proxy HA pair fronting two app servers, backed by a SQL Server Always On Availability Group (2 nodes, synchronous commit, automatic failover).](images/arch-deployment.png)
 
 **Environment Specifications:**
 
-| Environment | App Servers | SQL Server | IIS | SSO | Purpose |
-|---|---|---|---|---|---|
-| Development | 1 | Standalone | Single | Off (mock) | Feature dev, integration testing |
-| Test | 1 | Standalone | Single | Off (mock) | QA and regression testing |
-| Pre-production | 1 | Standalone | Single | On (RSA) | Pre-production validation |
-| Production | 2 | Always On AG (2-node) | HA pair | On (RSA) | Live system, high-availability SLA |
+| Environment | App Servers | SQL Server | IIS | SSO | Data classification | Purpose |
+|---|---|---|---|---|---|---|
+| Development | 1 | Standalone | Single | Off (mock) | Synthetic data | Feature dev, integration testing |
+| Test | 1 | Standalone | Single | Off (mock) | Masked / obfuscated data | QA and regression testing |
+| Pre-production | 1 | Standalone | Single | On (RSA) | Production data, bankers only | Pre-production validation |
+| Production | 2 | Always On AG (2-node) | HA pair | On (RSA) | Production data | Live system, high-availability SLA |
 
 > **[CONFIRM]** Host FQDNs, IIS binding and ARR configuration, TLS certificate owners/paths, the production load-balancer product, and SQL Server Always On node sizing.
 
@@ -627,18 +391,7 @@ Deployment is performed by PowerShell remoting from the Azure DevOps pipeline: c
 
 The pipeline triggers on the `develop`, `test`, `preprod`, and `prod` branches. Pushing to GitHub `main` does not deploy to any environment.
 
-```mermaid
-flowchart TB
-  subgraph BUILD["Build (Azure DevOps, on-prem agents)"]
-    B1["npm install, lint, tsc type-check, unit tests, build"]
-    B2["SonarQube SAST (develop)"]
-    B1 --> B2
-  end
-  BUILD --> DDEV["Deploy Dev (branch: develop)"]
-  DDEV --> DTEST["Deploy Test (branch: test)<br/>OWASP ZAP DAST"]
-  DTEST --> DPRE["Deploy PreProd (branch: preprod)"]
-  DPRE --> DPROD["Deploy Prod (branch: prod)<br/>two app servers, Windows Service restart"]
-```
+![ClientIQ CI/CD pipeline. The build stage (Azure DevOps, on-prem agents) runs npm install, lint, TypeScript type-check, unit tests, and build, with SonarQube SAST on develop. It then promotes through Deploy Dev (branch develop), Deploy Test (branch test, with OWASP ZAP DAST), Deploy PreProd (branch preprod), and Deploy Prod (branch prod, two app servers, Windows Service restart).](images/arch-cicd.png)
 
 **Quality Gates:** all tests passing (unit, integration), no critical security findings, successful TypeScript compilation, SonarQube SAST on `develop`, and OWASP ZAP DAST after the Test deploy.
 
@@ -650,25 +403,7 @@ flowchart TB
 
 **Authentication Flow (RSA SAML 2.0 SSO):** SAML SSO is enabled in preprod and production. The flow: a browser launches ClientIQ from the RSA portal; the IdP posts a SAML Response to `/saml/acs` through IIS to the Node application on port 5000; the application validates the assertion, regenerates the session, upserts the employee, maps AD groups to application roles, synchronizes roles, and issues a secure session cookie.
 
-```mermaid
-sequenceDiagram
-  participant U as Browser
-  participant IIS as IIS
-  participant APP as ClientIQ (Node)
-  participant RSA as RSA SecurID (IdP)
-  participant DB as SQL Server
-  U->>RSA: Launch ClientIQ tile from RSA portal
-  RSA->>U: SAML Response (HTTP-POST)
-  U->>IIS: POST /saml/acs
-  IIS->>APP: forward :5000
-  APP->>APP: Validate assertion (signature, clock skew)
-  APP->>APP: Regenerate session (fixation defense)
-  APP->>DB: upsertEmployeeFromSaml (find/create employee)
-  APP->>APP: Map AD groups to role names (adGroupRoleMap)
-  APP->>DB: Enforced role sync (assign/revoke AD-derived roles)
-  APP->>DB: Load permissions, then ensure Branch Manager fallback
-  APP->>U: 302 to / with clientiq.sid session cookie
-```
+![ClientIQ SAML 2.0 SSO sequence. The browser launches ClientIQ from the RSA SecurID portal; RSA returns a SAML Response (HTTP-POST); the browser posts to /saml/acs, which IIS forwards to the Node app on port 5000; the app validates the assertion (signature, clock skew), regenerates the session, upserts the employee in SQL Server, maps AD groups to role names, performs enforced role sync, loads permissions and ensures the Branch Manager fallback, then redirects the browser to the home page with a clientiq.sid session cookie.](images/arch-saml-sequence.png)
 
 **Authorization (RBAC + ABAC):** The authentication middleware validates the session against the SQL Server session table. The authorization middleware calls `permissionService.checkPermission(employeeId, permissionCode)`, evaluating RBAC (does the user's role grant the permission) and ABAC (do attributes match, for example a branch restriction). Denials are logged to the audit tables and return HTTP 403; grants proceed and the action is logged.
 
