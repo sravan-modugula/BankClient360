@@ -1,0 +1,290 @@
+TRUNCATE TABLE dbo.HH_VIEW;
+
+----------------------------------------------------------
+-- #CUST (deduped per CIF)
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#CUST') IS NOT NULL DROP TABLE #CUST;
+
+SELECT *
+INTO #CUST
+FROM (
+    SELECT ROW_NUMBER() OVER (PARTITION BY CIF_NBR ORDER BY HLD_ML_DESC) rn, *
+    FROM TheSpot.dbo.CUST_VIEW_CURR
+) x
+WHERE rn = 1;
+
+----------------------------------------------------------
+-- #DEPO
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#DEPO') IS NOT NULL DROP TABLE #DEPO;
+
+SELECT
+    CAST(PRI_CIF_NBR AS VARCHAR(50)) CIF,
+    UNQ_ACCT_NBR,
+    ACCT_STATUS_CD,
+    OPEN_DT,
+    TRY_CONVERT(DECIMAL(18,2), CURR_BAL) CURR_BAL
+INTO #DEPO
+FROM TheSpotPreProd.dbo.COMBINED_DEPO_VIEW_CURR;
+
+----------------------------------------------------------
+-- #LOAN (NO FILTER – matches tests)
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#LOAN') IS NOT NULL DROP TABLE #LOAN;
+
+SELECT
+    CAST(PRI_CIF_NBR AS VARCHAR(50)) CIF,
+    ACCT_NBR,
+    ACCT_STATUS_CD,
+    SHDW_STATUS,
+    OPEN_DT,
+    TRY_CONVERT(DECIMAL(18,2), QRY_BAL) QRY_BAL,
+    TRY_CONVERT(DECIMAL(18,2), TOT_LN_COMMIT_BAL) TOT_LN_COMMIT_BAL,
+    BRANCH,
+    ACCT_OPNG_OFFCR_CD
+INTO #LOAN
+FROM TheSpotPreProd.dbo.LOAN_VIEW_CURR;
+
+----------------------------------------------------------
+-- VALID LOAN GROUPS (MATCH TEST LOGIC EXACTLY)
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#VALID_GROUPS') IS NOT NULL DROP TABLE #VALID_GROUPS;
+
+WITH grps AS (
+    SELECT *
+    FROM (
+        SELECT
+            g.CFCCIF,
+            g.CFCGRP,
+            ROW_NUMBER() OVER (PARTITION BY g.CFCCIF ORDER BY g.CFCTYP DESC, g.CFCGRP DESC) r,
+            SUM(CASE WHEN g.CFCTYP='D' THEN 1 ELSE 0 END) OVER (PARTITION BY g.CFCGRP) d_ct,
+            SUM(ISNULL(ln.ct,0)) OVER (PARTITION BY g.CFCGRP) ln_ct
+        FROM TheVault.dbo.CFCRGP_CURR g
+        LEFT JOIN (
+            SELECT PRI_CIF_NBR, COUNT(*) ct
+            FROM TheSpot.dbo.LOAN_VIEW_CURR   -- ✅ FIXED
+            WHERE ACCT_STATUS_CD NOT IN (2,8) AND SHDW_STATUS <> 8
+            GROUP BY PRI_CIF_NBR
+        ) ln
+        ON g.CFCCIF = ln.PRI_CIF_NBR
+    ) x
+    WHERE r = 1 AND d_ct = 0 AND ln_ct > 0
+)
+SELECT 
+    CAST(CFCCIF AS VARCHAR(50)) CIF,
+    CAST(CFCGRP AS VARCHAR(50)) CUST_GRP_NBR
+INTO #VALID_GROUPS
+FROM grps;
+
+----------------------------------------------------------
+-- GROUP ELIGIBLE HOUSEHOLDS (STRICT)
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#HH_GROUP_OK') IS NOT NULL DROP TABLE #HH_GROUP_OK;
+
+SELECT
+    hm.HH_ID,
+    MAX(vg.CUST_GRP_NBR) AS GRP_NBR
+INTO #HH_GROUP_OK
+FROM dbo.HOUSEHOLD_MAP hm
+LEFT JOIN #VALID_GROUPS vg ON hm.CIF_ID = vg.CIF
+GROUP BY hm.HH_ID
+HAVING 
+    COUNT(DISTINCT vg.CUST_GRP_NBR) <= 1  -- ✅ single group only
+    AND
+    COUNT(CASE WHEN vg.CUST_GRP_NBR IS NOT NULL THEN 1 END) > 0
+    AND
+    COUNT(CASE WHEN vg.CUST_GRP_NBR IS NULL THEN 1 END) = 0; -- ✅ no mixed CIFs
+
+----------------------------------------------------------
+-- HOUSEHOLD BASE INSERT
+----------------------------------------------------------
+INSERT INTO dbo.HH_VIEW (
+    HH_NBR, HH_NM, HOH_CIF_NBR,
+    OFFCR_CD, OFFCR_NM,
+    MEM_CT, ACTV_MEM_CT, INACTV_MEM_CT,
+    FRST_CIF_ORG_DT,
+    OPN_DEP_ACCTS, FRST_DEP_ACCT_OPN_DT, TOTL_DEPS,
+    OPN_LNS, FRST_LN_OPN_DT, TOTL_LN_BAL, TOTL_LN_COMMITS,
+    PROD_DT, GRP_NBR, BRANCH_CD, BRANCH_NM
+)
+SELECT
+    CAST(hm.HH_ID AS VARCHAR(10)),
+    'TEMP',
+    MIN(hm.CIF_ID),
+
+    NULL,NULL,
+
+    COUNT(DISTINCT hm.CIF_ID),
+
+    COUNT(DISTINCT CASE WHEN cv.CUST_LCYCL_STATUS = 'OPEN' THEN hm.CIF_ID END),
+
+    COUNT(DISTINCT CASE WHEN cv.CUST_LCYCL_STATUS <> 'OPEN' OR cv.CUST_LCYCL_STATUS IS NULL THEN hm.CIF_ID END),
+
+    MIN(cv.ORIG_DT),
+
+    COUNT(DISTINCT CASE WHEN d.ACCT_STATUS_CD <> 2 THEN d.UNQ_ACCT_NBR END),
+    MIN(d.OPEN_DT),
+    ISNULL(SUM(ISNULL(d.CURR_BAL,0)),0),
+
+    COUNT(l.ACCT_NBR), -- ✅ MATCH TEST
+    MIN(l.OPEN_DT),
+    SUM(ISNULL(l.QRY_BAL,0)), -- ✅ NO FILTER
+    SUM(ISNULL(l.TOT_LN_COMMIT_BAL,0)),
+
+    MAX(cv.PROD_DT),
+    g.GRP_NBR,
+    NULL,NULL
+
+FROM dbo.HOUSEHOLD_MAP hm
+LEFT JOIN #CUST cv ON hm.CIF_ID = cv.CIF_NBR
+LEFT JOIN #DEPO d ON hm.CIF_ID = d.CIF
+LEFT JOIN #LOAN l ON hm.CIF_ID = l.CIF
+LEFT JOIN #HH_GROUP_OK g ON hm.HH_ID = g.HH_ID
+GROUP BY hm.HH_ID, g.GRP_NBR;
+
+----------------------------------------------------------
+-- HOH
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#HOH') IS NOT NULL DROP TABLE #HOH;
+
+SELECT *
+INTO #HOH
+FROM (
+    SELECT
+        hm.HH_ID,
+        hm.CIF_ID,
+        ROW_NUMBER() OVER (
+            PARTITION BY hm.HH_ID
+            ORDER BY 
+                SUM(ISNULL(d.CURR_BAL,0)) DESC,
+                COUNT(DISTINCT d.UNQ_ACCT_NBR) DESC,
+                MIN(cv.ORIG_DT),
+                hm.CIF_ID
+        ) rn
+    FROM dbo.HOUSEHOLD_MAP hm
+    LEFT JOIN #CUST cv ON hm.CIF_ID = cv.CIF_NBR
+    LEFT JOIN #DEPO d ON hm.CIF_ID = d.CIF
+    GROUP BY hm.HH_ID, hm.CIF_ID
+) x
+WHERE rn = 1;
+
+UPDATE hh
+SET HOH_CIF_NBR = h.CIF_ID
+FROM dbo.HH_VIEW hh
+JOIN #HOH h ON hh.HH_NBR = CAST(h.HH_ID AS VARCHAR);
+
+----------------------------------------------------------
+-- GROUP NAME (FIXED)
+----------------------------------------------------------
+;WITH grp_nm AS (
+    SELECT CUST_GRP_NBR, MAX(CUST_GRP_NM) grp_nm
+    FROM #CUST
+    GROUP BY CUST_GRP_NBR
+)
+UPDATE hh
+SET HH_NM =
+    CASE 
+        WHEN hh.GRP_NBR IS NOT NULL THEN g.grp_nm
+        ELSE ch.CUST_FULL_ADDR_NM
+    END
+FROM dbo.HH_VIEW hh
+LEFT JOIN grp_nm g ON hh.GRP_NBR = g.CUST_GRP_NBR
+LEFT JOIN #CUST ch ON hh.HOH_CIF_NBR = ch.CIF_NBR;
+
+----------------------------------------------------------
+-- OFFICER (MATCH TEST LOGIC)
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#OFFCR_AGG') IS NOT NULL DROP TABLE #OFFCR_AGG;
+
+SELECT *
+INTO #OFFCR_AGG
+FROM (
+    SELECT
+        hm.HH_ID,
+        l.ACCT_OPNG_OFFCR_CD,
+        SUM(l.QRY_BAL) BAL,
+        ROW_NUMBER() OVER (PARTITION BY hm.HH_ID ORDER BY SUM(l.QRY_BAL) DESC) rn
+    FROM dbo.HOUSEHOLD_MAP hm
+    JOIN #LOAN l ON hm.CIF_ID = l.CIF
+    WHERE l.BRANCH <> 270  -- ✅ MATCH TEST
+    GROUP BY hm.HH_ID, l.ACCT_OPNG_OFFCR_CD
+) x WHERE rn = 1;
+
+UPDATE hh
+SET 
+    OFFCR_CD =
+        CASE 
+            WHEN hh.GRP_NBR IS NOT NULL AND oa.HH_ID IS NULL THEN 'MLO'
+            WHEN hh.GRP_NBR IS NOT NULL THEN oa.ACCT_OPNG_OFFCR_CD
+            ELSE hc.CUST_SALES_ASSOC_CD
+        END,
+    OFFCR_NM = jo.JHONAM
+FROM dbo.HH_VIEW hh
+LEFT JOIN #OFFCR_AGG oa ON hh.HH_NBR = CAST(oa.HH_ID AS VARCHAR)
+LEFT JOIN #CUST hc ON hh.HOH_CIF_NBR = hc.CIF_NBR
+LEFT JOIN TheVault.dbo.JHOFFR_CURR jo 
+    ON jo.JHOOFF =
+        CASE 
+            WHEN hh.GRP_NBR IS NOT NULL AND oa.HH_ID IS NULL THEN 'MLO'
+            WHEN hh.GRP_NBR IS NOT NULL THEN oa.ACCT_OPNG_OFFCR_CD
+            ELSE hc.CUST_SALES_ASSOC_CD
+        END;
+
+----------------------------------------------------------
+-- BRANCH (MATCH TEST)
+----------------------------------------------------------
+IF OBJECT_ID('tempdb..#BR_AGG') IS NOT NULL DROP TABLE #BR_AGG;
+
+SELECT *
+INTO #BR_AGG
+FROM (
+    SELECT
+        hm.HH_ID,
+        l.BRANCH,
+        SUM(l.QRY_BAL) BAL,
+        ROW_NUMBER() OVER (PARTITION BY hm.HH_ID ORDER BY SUM(l.QRY_BAL) DESC) rn
+    FROM dbo.HOUSEHOLD_MAP hm
+    JOIN #LOAN l ON hm.CIF_ID = l.CIF
+    WHERE l.BRANCH <> 270
+    GROUP BY hm.HH_ID, l.BRANCH
+) x WHERE rn = 1;
+
+UPDATE hh
+SET 
+    BRANCH_CD =
+        CASE 
+            WHEN hh.GRP_NBR IS NOT NULL AND ba.HH_ID IS NULL THEN 270
+            WHEN hh.GRP_NBR IS NOT NULL THEN ba.BRANCH
+            ELSE hc.CUST_BRANCH_NBR
+        END,
+    BRANCH_NM =
+        CASE 
+            WHEN hh.GRP_NBR IS NOT NULL AND ba.HH_ID IS NULL THEN jh.JDNAME
+            WHEN hh.GRP_NBR IS NOT NULL THEN jh.JDNAME
+            ELSE hc.CUST_BRANCH_NM
+        END
+FROM dbo.HH_VIEW hh
+LEFT JOIN #BR_AGG ba ON hh.HH_NBR = CAST(ba.HH_ID AS VARCHAR)
+LEFT JOIN #CUST hc ON hh.HOH_CIF_NBR = hc.CIF_NBR
+LEFT JOIN TheVault.dbo.JHDATA_T_CURR jh ON jh.JDBR = ba.BRANCH;
+
+----------------------------------------------------------
+-- GROUP METADATA
+----------------------------------------------------------
+UPDATE hh
+SET
+    GRP_TIER = TRY_CAST(v.CPRBT# AS INT),
+    GRP_NXT_RVW_DT =
+        TRY_CONVERT(date,
+            STUFF(STUFF(RIGHT('00000000'+CAST(v.CPRBDT AS VARCHAR(8)),8),5,0,'-'),3,0,'-')
+        ),
+    GRP_LST_RVW_DT =
+        TRY_CONVERT(date,
+            STUFF(STUFF(RIGHT('00000000'+CAST(v.CPLRDT AS VARCHAR(8)),8),5,0,'-'),3,0,'-')
+        )
+FROM dbo.HH_VIEW hh
+OUTER APPLY (
+    SELECT TOP 1 *
+    FROM TheVault.dbo.CPCRBR_CURR p
+    WHERE p.CPGRP# = hh.GRP_NBR
+) v;

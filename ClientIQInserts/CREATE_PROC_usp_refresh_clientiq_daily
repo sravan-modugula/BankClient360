@@ -1,0 +1,103 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_refresh_clientiq_daily]    Script Date: 6/29/2026 1:32:18 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE PROCEDURE [dbo].[usp_refresh_clientiq_daily]
+    @FullRefresh BIT = 0  -- 1 = full truncate/reload, 0 = daily incremental
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @StartTime DATETIME = GETDATE();
+    DECLARE @StepStart DATETIME;
+    
+    PRINT 'ClientIQ Daily Refresh Started: ' + CONVERT(VARCHAR, @StartTime, 121);
+
+    -- PRE-JOB: Truncate all tables (except delta tables)
+    IF @FullRefresh = 0
+    BEGIN
+        SET @StepStart = GETDATE();
+        EXEC dbo.usp_Truncate_ClientIQ_Tables;
+        PRINT 'PRE-JOB Truncate completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    END
+
+    -- GROUP 1: JOB_00 + JOB_01 (can run in parallel)
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Account_Maintenance @FullRefresh = @FullRefresh;
+    PRINT 'JOB_00 (Maintenance History) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Base_Tables;
+    PRINT 'JOB_01 (Base Tables) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+
+    -- GROUP 2: JOB_02 + JOB_03
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Branch;
+    PRINT 'JOB_02 (Branch) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Household;
+    PRINT 'JOB_03 (Household) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+
+    -- GROUP 3: JOB_04 + JOB_05
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Customer;
+    PRINT 'JOB_04 (Customer) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Account;
+    PRINT 'JOB_05 (Account) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+
+    -- GROUP 4: JOB_06 to JOB_11
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Entity_Address;
+    PRINT 'JOB_06 (Entity Address) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Contact_Info;
+    PRINT 'JOB_07 (Contact Info) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Customer_Officer_Assignment;
+    PRINT 'JOB_08 (Customer Officers) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Contact_History;
+    PRINT 'JOB_09 (Contact History) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Household_Membership;
+    PRINT 'JOB_10 (Household Membership) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Account_Ownership;
+    PRINT 'JOB_11 (Account Ownership) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+
+    -- GROUP 5: JOB_12 + JOB_13
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Entity_Contact;
+    PRINT 'JOB_12 (Entity Contact) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+    
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Debit_Card;
+    PRINT 'JOB_13 (Debit Card) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+
+    -- GROUP 6: JOB_14 (Financial Transactions - Delta)
+    SET @StepStart = GETDATE();
+    EXEC dbo.usp_Load_Financial_Transactions @FullRefresh = @FullRefresh;
+    PRINT 'JOB_14 (Financial Transactions) completed in ' + CAST(DATEDIFF(SECOND, @StepStart, GETDATE()) AS VARCHAR) + ' seconds';
+
+    PRINT 'ClientIQ Daily Refresh COMPLETED. Total time: ' + CAST(DATEDIFF(SECOND, @StartTime, GETDATE()) AS VARCHAR) + ' seconds';
+
+END;
+GO
+
+

@@ -1,0 +1,42 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Truncate_ClientIQ_Tables]    Script Date: 6/29/2026 1:32:50 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+CREATE PROCEDURE [dbo].[usp_Truncate_ClientIQ_Tables]
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- Truncate in reverse dependency order
+    -- EXCLUDES: financial_transactions, customer_account_maintenance, loan_account_maintenance (delta loads)
+    
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[debit_card];
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[entity_contact];
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[account_ownership];
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[household_membership];
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[contact_history];
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[customer_officer_assignment];
+     DELETE FROM [ClientIQPreProd].[dbo].[contact_info];
+    TRUNCATE TABLE [ClientIQPreProd].[dbo].[entity_address];
+    DELETE FROM [ClientIQPreProd].[dbo].[account];
+    DELETE FROM [ClientIQPreProd].[dbo].[household];
+    DELETE FROM [ClientIQPreProd].[dbo].[customer];
+    DELETE FROM [ClientIQPreProd].[dbo].[branch];
+    --TRUNCATE TABLE [ClientIQPreProd].[dbo].[transaction_category];
+    --TRUNCATE TABLE [ClientIQPreProd].[dbo].[note_category];
+    --DELETE FROM [ClientIQPreProd].[dbo].[employee] where employee_id <> 1
+    DELETE FROM [ClientIQPreProd].[dbo].[address];
+    
+END;
+GO
+
+

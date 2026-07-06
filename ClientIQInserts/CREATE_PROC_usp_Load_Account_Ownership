@@ -1,0 +1,32 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Load_Account_Ownership]    Script Date: 6/29/2026 10:26:03 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE PROCEDURE [dbo].[usp_Load_Account_Ownership]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    /* Source: TheSpotPreProd.dbo.CUST_ACCT_RELS_VIEW */
+    INSERT INTO [ClientIQPreProd].[dbo].[account_ownership] (
+        account_id, customer_id, ownership_type, is_primary_owner
+    )
+    SELECT
+        a.account_id, c.customer_id,
+        ctar.REL_TYP_DESC AS ownership_type,
+        CASE WHEN ctar.REL_TYP_DESC = 'Primary account owner' THEN 1 ELSE 0 END AS is_primary_owner
+    FROM [TheSpotPreProd].[dbo].[CUST_ACCT_RELS_VIEW] ctar
+    JOIN [ClientIQPreProd].[dbo].[account] a ON a.unique_act_number = ctar.UNQ_ACCT_NBR
+    JOIN [ClientIQPreProd].[dbo].[customer] c ON c.jack_henry_cif_number = ctar.CIF_NBR;
+END;
+GO
+
+

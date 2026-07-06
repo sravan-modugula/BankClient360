@@ -1,9 +1,3 @@
-# macOS
-.DS_Store
-
-# Microsoft Office lock/owner files
-~$*
-
 # Logs
 logs
 *.log

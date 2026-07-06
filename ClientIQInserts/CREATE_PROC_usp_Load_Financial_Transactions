@@ -1,0 +1,120 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Load_Financial_Transactions]    Script Date: 6/29/2026 1:28:40 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE PROCEDURE [dbo].[usp_Load_Financial_Transactions]
+    @FullRefresh BIT = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    /* 
+       Source: TheSpotPreProd.dbo.COMBINED_DEPO_TXN_VIEW, LOAN_TXN_VIEW
+       
+       Delta Load Logic:
+       1. Get LAST transaction_date from target (for delta cutoff)
+       2. Delete FIRST transaction_date's data daily (re-processing)
+       3. Insert only records > last transaction_date
+    */
+    
+    DECLARE @LastTxnDate DATE;
+    DECLARE @FirstTxnDate DATE;
+    DECLARE @RowCount INT = 0;
+    
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        
+        -- Get the LAST transaction date for delta loading
+        SELECT @LastTxnDate = MAX(transaction_date)
+        FROM [ClientIQPreProd].[dbo].[financial_transaction];
+        
+        -- Get the FIRST transaction date (to delete for re-processing)
+        SELECT @FirstTxnDate = MIN(transaction_date)
+        FROM [ClientIQPreProd].[dbo].[financial_transaction];
+        
+        -- Delete FIRST transaction date's data daily (for clean re-processing)
+        IF @FirstTxnDate IS NOT NULL AND @FullRefresh = 0
+        BEGIN
+            DELETE FROM [ClientIQPreProd].[dbo].[financial_transaction]
+            WHERE transaction_date = @FirstTxnDate;
+        END
+        
+        -- Full refresh: truncate everything
+        IF @FullRefresh = 1
+        BEGIN
+            TRUNCATE TABLE [ClientIQPreProd].[dbo].[financial_transaction];
+            SET @LastTxnDate = NULL;
+        END
+        
+        -- ===== DEPOSIT TRANSACTIONS =====
+        INSERT INTO [ClientIQPreProd].[dbo].[financial_transaction] (
+            account_id, account_number, amount, transaction_code, transaction_type, status,
+            transaction_date, posting_date, description, category_id,
+            ledger_balance_after, available_balance_after, source_system, source_transaction_id
+        )
+        SELECT a.account_id, a.account_number,
+            s.[TRANSACTION AMOUNT] AS amount, s.[TRANSACTION_CD] AS transaction_code,
+            COALESCE(s.[TRANSACTION_TYP], 'UNKNOWN') AS transaction_type,
+            s.[TRANSACTION_STATUS] AS status, s.[TRANSACTION_DT] AS transaction_date,
+            COALESCE(s.[POST_DATE], s.[PROD_DATE], s.[TRANSACTION_DT]) AS posting_date,
+            s.[TRN_DESC] AS description, tc.category_id,
+            s.[ACCOUNT_BAL_AFTER] AS ledger_balance_after,
+            s.[ACCOUNT_BAL_AFTER] AS available_balance_after,
+            'TheSpotPreProd' AS source_system, s.[TRANSACTION_ID] AS source_transaction_id
+        FROM [TheSpotPreProd].[dbo].[COMBINED_DEPO_TXN_VIEW] s
+        JOIN [ClientIQPreProd].[dbo].[account] a ON a.unique_act_number = CAST(s.[UNQ_ACCT_NBR] AS VARCHAR(50))
+        LEFT JOIN [ClientIQPreProd].[dbo].[transaction_category] tc ON tc.category_code = s.[TRANSACTION_CD]
+        WHERE s.[TRANSACTION_DT] >= DATEADD(MONTH, -13, CAST(GETDATE() AS DATE))
+          AND (@LastTxnDate IS NULL OR s.[TRANSACTION_DT] > @LastTxnDate)
+          AND NOT EXISTS (SELECT 1 FROM [ClientIQPreProd].[dbo].[financial_transaction] ft
+              WHERE ft.source_system = 'TheSpotPreProd' AND ft.source_transaction_id = s.[TRANSACTION_ID]);
+        
+        SET @RowCount = @RowCount + @@ROWCOUNT;
+
+        -- ===== LOAN TRANSACTIONS =====
+        INSERT INTO [ClientIQPreProd].[dbo].[financial_transaction] (
+            account_id, account_number, amount, transaction_code, transaction_type, status,
+            transaction_date, posting_date, description, category_id,
+            ledger_balance_after, available_balance_after, source_system, source_transaction_id
+        )
+        SELECT a.account_id, a.account_number,
+            s.[TRANSACTION_AMOUNT] AS amount, s.[TRANSACTION_CD] AS transaction_code,
+            COALESCE(s.[TRANSACTION_TYP], 'UNKNOWN') AS transaction_type,
+            s.[TRANSACTION_STATUS] AS status, s.[TRANSACTION_DT] AS transaction_date,
+            COALESCE(s.[POST_DATE], s.[PROD_DATE], s.[TRANSACTION_DT]) AS posting_date,
+            s.[TRN_DESC] AS description, tc.category_id,
+            s.[ACCOUNT_BAL_AFTER] AS ledger_balance_after,
+            s.[ACCOUNT_BAL_AFTER] AS available_balance_after,
+            'TheSpotPreProd' AS source_system, s.[TRANSACTION_ID] AS source_transaction_id
+        FROM [TheSpotPreProd].[dbo].[LOAN_TXN_VIEW] s
+        JOIN [ClientIQPreProd].[dbo].[account] a ON a.unique_act_number = CAST(s.[UNQ_ACCT_NBR] AS VARCHAR(50))
+        LEFT JOIN [ClientIQPreProd].[dbo].[transaction_category] tc ON tc.category_code = s.[TRANSACTION_CD]
+        WHERE s.[TRANSACTION_DT] >= DATEADD(MONTH, -13, CAST(GETDATE() AS DATE))
+          AND (@LastTxnDate IS NULL OR s.[TRANSACTION_DT] > @LastTxnDate)
+          AND NOT EXISTS (SELECT 1 FROM [ClientIQPreProd].[dbo].[financial_transaction] ft
+              WHERE ft.source_system = 'TheSpotPreProd' AND ft.source_transaction_id = s.[TRANSACTION_ID]);
+        
+        SET @RowCount = @RowCount + @@ROWCOUNT;
+        
+        COMMIT TRANSACTION;
+        
+        PRINT 'Financial Transactions loaded. Rows inserted: ' + CAST(@RowCount AS VARCHAR(20));
+        
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END
+GO
+
+

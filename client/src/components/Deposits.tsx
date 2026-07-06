@@ -134,7 +134,7 @@ interface DepositsProps {
 
 export default function Deposits({ customerId }: DepositsProps) {
   const theme = useTheme();
-  const [timeRange, setTimeRange] = useState<'monthly' | 'quarterly' | 'ytd'>('ytd');
+  const [timeRange, setTimeRange] = useState<'monthly' | 'quarterly' | 'ytd'>('monthly');
   
   // Use consistent PST date formatting
   const { formatCurrency, formatDate } = useDateFormatter();
@@ -234,7 +234,7 @@ export default function Deposits({ customerId }: DepositsProps) {
       return 0;
     }
 
-    return ((end - start) / start) * 100;
+    return ((end - start) / Math.abs(start)) * 100;
   };
 
   const growth = calculateGrowth();

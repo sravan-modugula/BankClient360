@@ -1,0 +1,84 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Load_Base_Tables]    Script Date: 6/29/2026 10:26:42 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+CREATE PROCEDURE [dbo].[usp_Load_Base_Tables]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    /* =========================
+       ADDRESS (from TheSpot.dbo.cust_view_curr)
+       ========================= */
+    -- Primary Address
+    INSERT INTO [ClientIQPreProd].[dbo].[address] (
+        address_type, address_line1, address_line2, city, state, postal_code
+    )
+    SELECT DISTINCT 'PRIMARY', STREET_ADDR_1, STREET_ADDR_2, CITY, STATE, ZIP_CD
+    FROM [TheSpot].[dbo].[cust_view_curr]
+    WHERE STREET_ADDR_1 IS NOT NULL;
+
+    -- PF Address
+    INSERT INTO [ClientIQPreProd].[dbo].[address] (
+        address_type, address_line1, address_line2, city, state, postal_code
+    )
+    SELECT DISTINCT 'PF', PF_ADDR1, PF_ADDR2, PF_ADDR_CITY, PF_ADDR_ST, PF_ADDR_ZIP
+    FROM [TheSpot].[dbo].[cust_view_curr]
+    WHERE PF_ADDR1 IS NOT NULL;
+
+    -- IRS Address
+    INSERT INTO [ClientIQPreProd].[dbo].[address] (
+        address_type, address_line1, address_line2, city, state, postal_code
+    )
+    SELECT DISTINCT 'IRS', IRS_ADDR, NULL, IRS_CITY, IRS_STATE, IRS_ZIP
+    FROM [TheSpot].[dbo].[cust_view_curr]
+    WHERE IRS_ADDR IS NOT NULL;
+
+    /* =========================
+       EMPLOYEE (from TheSpotPreProd.dbo.EMPL_VIEW + fallback sources)
+       ========================= */
+    --INSERT INTO [ClientIQPreProd].[dbo].[employee] (
+    --    employee_number, officer_code, first_name, last_name, title
+    --)
+    --SELECT e.employee_number, e.officer_code, e.first_name, e.last_name, e.title
+    --FROM (
+    --    SELECT src.employee_number, src.officer_code, src.first_name, src.last_name, src.title,
+    --           ROW_NUMBER() OVER (PARTITION BY src.officer_code ORDER BY src.source_priority) AS rn
+    --    FROM (
+    --        -- SOURCE 1: EMPL_VIEW (authoritative)
+    --        SELECT ev.OFFFCR_CD AS employee_number, ev.OFFFCR_CD AS officer_code,
+    --               ev.FRST_NM AS first_name, ev.LST_NM AS last_name,
+    --               COALESCE(ev.POSTN, ev.TITLE) AS title, 1 AS source_priority
+    --        FROM [TheSpotPreProd].[dbo].[EMPL_VIEW] ev
+    --        WHERE ev.OFFFCR_CD IS NOT NULL
+    --        UNION ALL
+    --        -- SOURCE 2: Branch Officers (fallback)
+    --        SELECT LTRIM(RTRIM(cvc.BRANCH_OFFCR_CD)), LTRIM(RTRIM(cvc.BRANCH_OFFCR_CD)),
+    --               cvc.BRANCH_OFFICER_NM, '', 'Branch Officer', 2
+    --        FROM [TheSpot].[dbo].[CUST_VIEW_CURR] cvc
+    --        WHERE cvc.BRANCH_OFFCR_CD IS NOT NULL
+    --        UNION ALL
+    --        -- SOURCE 3: Sales Associates (fallback)
+    --        SELECT CAST(cvc.CUST_SALES_ASSOC_CD AS VARCHAR(50)), CAST(cvc.CUST_SALES_ASSOC_CD AS VARCHAR(50)),
+    --               cvc.CUST_SALES_ASSOC_NM, '', 'Sales Associate', 2
+    --        FROM [TheSpot].[dbo].[CUST_VIEW_CURR] cvc
+    --        WHERE cvc.CUST_SALES_ASSOC_CD IS NOT NULL
+    --    ) src
+    --) e WHERE e.rn = 1;
+
+
+
+END;
+GO
+
+

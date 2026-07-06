@@ -11,9 +11,8 @@ export interface AccountMetadata {
 
 export interface AccountTransaction {
   account_number: string;
-  ledger_balance_after: number | string;
   transaction_date: Date | string;
-  transaction_amount?: number | string;
+  transaction_amount: number | string;
 }
 
 // ─── Output types ─────────────────────────────────────────────────────────────
@@ -26,6 +25,8 @@ export interface AggregatedEntry {
   checking: number;
   cd: number;
   savings: number;
+  loan: number;
+  loanBalance: number;
 }
 
 export interface AggregatedAccountData {
@@ -42,14 +43,6 @@ export interface AggregatedAccountData {
 /** All dates are stored as 'YYYY-MM-DD' strings — no timestamps. */
 type DateKey = string;
 
-interface NormalisedTxn {
-  account_number: string;
-  account_type: string;
-  balance: number;
-  amount: number;
-  date: DateKey;
-}
-
 interface BalanceRecord {
   balance: number;
   type: string;
@@ -60,7 +53,7 @@ interface Snapshot {
   cd: number;
   savings: number;
   balance: number;
-  loan: number; 
+  loan: number;
   loanBalance: number;
 }
 
@@ -70,172 +63,151 @@ export function aggregateAccountData(
   accountMetadata: AccountMetadata[],
   accountTransactions: AccountTransaction[],
 ): AggregatedAccountData {
-  // 1. Build lookup: account_number → normalised account_type
-  const accountTypeMap: Record<string, string> = {};
-  for (const acct of accountMetadata) {
-    accountTypeMap[acct.account_number] = (acct.account_type ?? '').toLowerCase();
-  }
-
-  // 2. Normalise & sort transactions ascending by date string
-  const txns: NormalisedTxn[] = accountTransactions
-    .map((t) => ({
-      account_number: t.account_number,
-      account_type:   accountTypeMap[t.account_number] ?? 'unknown',
-      balance:        Number(t.ledger_balance_after),
-      amount:         Number(t.transaction_amount ?? 0),
-      date:           toDateKey(t.transaction_date),
-    }))
-    .filter((t) => t.date !== '')
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  // 3. Index: last balance per account per day
-  const dailyLastBalance: Record<DateKey, Record<string, BalanceRecord>> = {};
-  for (const t of txns) {
-    if (!dailyLastBalance[t.date]) dailyLastBalance[t.date] = {};
-    dailyLastBalance[t.date][t.account_number] = { balance: t.balance, type: t.account_type };
-  }
-
   const today = todayDateKey();
 
-  // 4. MONTH – daily snapshots, last 30 days
-  const monthStart = addDays(today, -29);
-  const month: AggregatedEntry[] = [];
-  walkWindow(
-    txns, dailyLastBalance, monthStart, today,
-    () => true,
-    (dk, snap) => month.push({ xAxis: formatDay(dk), ...snap }),
-  );
+  // 1. Window boundaries
+  const monthStart   = addDays(today, -29);
+  const currentQuarter = getQuarterStart(today);
+  const oneMonthInto = addMonths(currentQuarter, 1, false)
+  const effectiveQuarter = today < oneMonthInto
+    ? addMonths(currentQuarter, -3, true)
+    : currentQuarter;
+  const quarterStart = getMondayOf(effectiveQuarter);
+  const yearStart    = addMonths(today, -11, true);
 
-  // 5. QUARTER – weekly snapshots (Mondays), current quarter to today
-  const quarterMonday = getMondayOf(getQuarterStart(today));
+  // Earliest date we need to reach (yearStart is always the furthest back)
+  const windowStart = yearStart < quarterStart ? yearStart : quarterStart;
+
+  // 2. Seed running balances from current_balance in AccountMetadata
+  const running: Record<string, BalanceRecord> = {};
+  for (const acct of accountMetadata) {
+    running[acct.account_number] = {
+      balance: Number(acct.current_balance),
+      type: (acct.account_type ?? '').toLowerCase(),
+    };
+  }
+
+  // 3. Index: sum of transaction_amounts per account per day
+  const dailyAmounts: Record<DateKey, Record<string, number>> = {};
+  for (const t of accountTransactions) {
+    const dk = toDateKey(t.transaction_date);
+    if (dk === '') continue;
+    const amount = Number(t.transaction_amount ?? 0);
+    if (!dailyAmounts[dk]) dailyAmounts[dk] = {};
+    if (!dailyAmounts[dk][t.account_number]) dailyAmounts[dk][t.account_number] = 0;
+    dailyAmounts[dk][t.account_number] += amount;
+  }
+
+  // 4. Single backwards walk from today → windowStart.
+  //    Snapshot into each view when the day meets that view's criteria.
+  //    After snapshotting, undo the day's transactions to reveal
+  //    the previous day's closing balance.
+  const month:   AggregatedEntry[] = [];
   const quarter: AggregatedEntry[] = [];
-  walkWindow(
-    txns, dailyLastBalance, quarterMonday, today,
-    (dk) => isDayOfWeek(dk, 1),
-    (dk, snap) => quarter.push({ xAxis: formatDay(dk), ...snap }),
-  );
+  const year:    AggregatedEntry[] = [];
 
-  // 6. YEAR – monthly snapshots (1st of month), last 12 months
-  const yearStart = addMonths(today, -11, true);
-  const year: AggregatedEntry[] = [];
-  walkWindow(
-    txns, dailyLastBalance, yearStart, today,
-    (dk) => dk.endsWith('-01'),
-    (dk, snap) => year.push({ xAxis: formatMonth(dk), ...snap }),
-  );
+  let dk = today;
+  while (dk >= windowStart) {
+    const snap = takeSnapshot(running);
+
+    // MONTH – every day within the last 30 days
+    if (dk >= monthStart) {
+      month.push({ xAxis: formatDay(dk), ...snap });
+    }
+
+    // QUARTER – Mondays within the current quarter window
+    if (dk >= quarterStart) { //  && isDayOfWeek(dk, 1)) {
+      quarter.push({ xAxis: formatDay(dk), ...snap });
+    }
+
+    // YEAR – 1st of month within the last 12 months
+    if (dk >= yearStart && isDayOfWeek(dk, 1)) { // dk.endsWith('-01')) {
+      year.push({ xAxis: formatMonth(dk), ...snap });
+    }
+
+    // Undo this day's transactions to step back one day.
+    // Subtracting reverses both credits (+amount) and debits (−amount).
+    const dayAmounts = dailyAmounts[dk];
+    if (dayAmounts) {
+      for (const [acctNum, amount] of Object.entries(dayAmounts)) {
+        if (running[acctNum]) {
+          running[acctNum] = {
+            ...running[acctNum],
+            balance: running[acctNum].balance - amount,
+          };
+        }
+      }
+    }
+
+    dk = addDays(dk, -1);
+  }
+
+  // Walked backwards, so reverse all three into chronological order
+  month.reverse();
+  quarter.reverse();
+  year.reverse();
 
   return { month, quarter, year };
 }
 
-// ─── Seed builder ─────────────────────────────────────────────────────────────
+// ─── Snapshot helper ──────────────────────────────────────────────────────────
 
-/**
- * For a given windowStart, returns a seed map: account_number → BalanceRecord.
- *
- * Per-account logic (txns must be sorted ascending by date key):
- *   1. Account has transactions BEFORE windowStart → use the last
- *      ledger_balance_after before the window (true opening balance).
- *   2. Account's first transaction is AT or AFTER windowStart →
- *      reverse-engineer: opening = ledger_balance_after − transaction_amount.
- *   3. Account has no transactions → not in txns, contributes nothing.
- */
-function buildSeed(
-  txns: NormalisedTxn[],
-  windowStart: DateKey,
-): Record<string, BalanceRecord> {
-  const seed: Record<string, BalanceRecord> = {};
+function takeSnapshot(running: Record<string, BalanceRecord>): Snapshot {
+  let checking = 0, cd = 0, savings = 0, loan = 0;
 
-  const byAccount: Record<string, NormalisedTxn[]> = {};
-  for (const t of txns) {
-    if (!byAccount[t.account_number]) byAccount[t.account_number] = [];
-    byAccount[t.account_number].push(t);
-  }
-
-  for (const [accountNumber, acctTxns] of Object.entries(byAccount)) {
-    const type = acctTxns[0].account_type;
-
-    let lastBefore: NormalisedTxn | null = null;
-    for (const t of acctTxns) {
-      if (t.date < windowStart) lastBefore = t;
-      else break;
-    }
-
-    if (lastBefore) {
-      seed[accountNumber] = { balance: lastBefore.balance, type };
-    } else {
-      const first = acctTxns[0];
-      seed[accountNumber] = { balance: first.balance - first.amount, type };
+  for (const { balance, type } of Object.values(running)) {
+    if (type === 'checking' || type === 'deposit checking') {
+      checking += balance;
+    } else if (type === 'cd' || type === 'time deposit') {
+      cd += balance;
+    } else if (type === 'savings' || type === 'christmas club depo') {
+      savings += balance;
+    } else if (type === 'loan') {
+      loan += balance;
     }
   }
 
-  return seed;
-}
-
-// ─── Carry-forward walker ─────────────────────────────────────────────────────
-
-/**
- * Walks from windowStart to endDate one day at a time, applying
- * transactions and carrying balances forward. At each sample date
- * (determined by the predicate), takes a snapshot and calls onSnapshot.
- */
-function walkWindow(
-  txns: NormalisedTxn[],
-  dailyLastBalance: Record<DateKey, Record<string, BalanceRecord>>,
-  windowStart: DateKey,
-  endDate: DateKey,
-  isSampleDate: (dk: DateKey) => boolean,
-  onSnapshot: (dk: DateKey, snap: Snapshot) => void,
-): void {
-  const running: Record<string, BalanceRecord> = buildSeed(txns, windowStart);
-
-  let dk = windowStart;
-  while (dk <= endDate) {
-    const dayTxns = dailyLastBalance[dk];
-    if (dayTxns) Object.assign(running, dayTxns);
-
-    if (isSampleDate(dk)) {
-      let checking = 0, cd = 0, savings = 0, loan = 0;
-      for (const { balance, type } of Object.values(running)) {
-        if (type === 'checking' || type === 'deposit checking') {
-          checking += balance;
-        }
-        else if (type === 'cd' || type === 'time deposit') {
-          cd       += balance;
-        } else if (
-          type === 'savings' ||
-          type === 'christmas club depo'
-        ) { 
-          savings  += balance;
-        } else if (
-          type === 'loan'
-        ) {
-          loan += balance;
-        }
-      }
-      onSnapshot(dk, { checking, cd, savings, loan, balance: checking + cd + savings, loanBalance: loan});
-    }
-
-    dk = addDays(dk, 1);
-  }
+  return {
+    checking,
+    cd,
+    savings,
+    loan,
+    balance: checking + cd + savings,
+    loanBalance: loan,
+  };
 }
 
 // ─── Date-key helpers (all pure string / simple arithmetic) ──────────────────
 
+
+function formatFlatDate(dateString: string | undefined): string {
+    if (!dateString) return 'N/A';
+
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+        return 'N/A';
+    }
+
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'UTC' // Essential for Z-ending strings
+    });;
+};
+
+
+
 /** Converts any Date or date-like string into a 'YYYY-MM-DD' key. Returns '' on failure. */
 function toDateKey(input: Date | string): DateKey {
   if (typeof input === 'string') {
-    // Already looks like YYYY-MM-DD? Keep it.
     if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
-    // Otherwise try to extract the date portion from an ISO string or similar.
     if (/^\d{4}-\d{2}-\d{2}/.test(input)) return input.slice(0, 10);
   }
-  // Date object or other parseable string — extract Y/M/D components directly.
   const d = typeof input === 'string' ? new Date(input) : input;
   if (isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  // Use toISOString so a UTC midnight date doesn't shift back a day in local time
+  return d.toISOString().slice(0, 10);
 }
 
 /** Returns today as a DateKey. */
@@ -251,10 +223,7 @@ function addDays(dk: DateKey, n: number): DateKey {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-/**
- * Returns a DateKey offset by n months.
- * If snapToFirst is true, returns the 1st of that month.
- */
+/** Returns a DateKey offset by n months. If snapToFirst is true, returns the 1st of that month. */
 function addMonths(dk: DateKey, n: number, snapToFirst: boolean = false): DateKey {
   const [y, m, d] = dk.split('-').map(Number);
   const date = new Date(y, m - 1 + n, snapToFirst ? 1 : d);
@@ -270,8 +239,7 @@ function isDayOfWeek(dk: DateKey, dow: number): boolean {
 /** Returns the Monday (DateKey) of the week containing the given DateKey. */
 function getMondayOf(dk: DateKey): DateKey {
   const [y, m, d] = dk.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  const dow = date.getDay();
+  const dow = new Date(y, m - 1, d).getDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   return addDays(dk, diff);
 }

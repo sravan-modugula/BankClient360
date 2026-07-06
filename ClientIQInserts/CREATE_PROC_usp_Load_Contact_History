@@ -1,0 +1,66 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Load_Contact_History]    Script Date: 6/29/2026 10:29:48 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE PROCEDURE [dbo].[usp_Load_Contact_History]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    /* 
+       Source: TheSpotPreProd.dbo.CUST_COMMS_VIEW (NOT CONTACT_HISTORY_VIEW)
+       
+       Column Mappings:
+       - CNTCT_OCCR_DT → occurred_at (was CONTACT_DT)
+       - CNTCT_TYPE_DESC → contact_type (was CONTACT_TYPE)
+       - CNTCT_CHANNEL → channel (was CONTACT_METHOD)
+       
+       ⚠️ MISSING columns in source (not available):
+       - SUBJECT → summary (will be NULL or use CNTCT_SUMMARY if exists)
+       - NOTES → no equivalent
+       - FOLLOW_UP_REQ → no equivalent
+       - FOLLOWUP_DT → no equivalent
+    */
+    
+    INSERT INTO [ClientIQPreProd].[dbo].[contact_history] (
+        customer_id,
+        employee_id,
+        contact_type,
+        occurred_at,
+        employee_name,
+        summary,
+        channel,
+        outcome,
+        created_at,
+        updated_at
+    )
+    SELECT
+        cust.customer_id,
+        emp.employee_id,
+        comms.CNTCT_TYPE_DESC AS contact_type,
+        comms.CNTCT_OCCR_DT AS occurred_at,
+        comms.CNTCT_EMP_NM AS employee_name,
+        comms.CNTCT_SUMMARY AS summary,  -- ⚠️ Using CNTCT_SUMMARY if available, otherwise NULL
+        comms.CNTCT_CHANNEL AS channel,
+        comms.CNTCT_OUTCOME AS outcome,
+        comms.CNTCT_CRTD_DT AS created_at,
+        comms.CNTCT_UPDTD_DT AS updated_at
+    FROM [TheSpotPreProd].[dbo].[CUST_COMMS_VIEW] comms
+    JOIN [ClientIQPreProd].[dbo].[customer] cust 
+        ON cust.jack_henry_cif_number = comms.CIF_NBR
+    LEFT JOIN [TheSpotPreProd].[dbo].[EMPL_VIEW] ev 
+        ON ev.FMB_ID = comms.CNTCT_EMP_ID
+    LEFT JOIN [ClientIQPreProd].[dbo].[employee] emp 
+        ON emp.officer_code = ev.OFFFCR_CD;
+END;
+GO
+
+

@@ -1,0 +1,30 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Load_Entity_Contact]    Script Date: 6/29/2026 1:27:44 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE PROCEDURE [dbo].[usp_Load_Entity_Contact]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    /* Source: ClientIQPreProd.dbo.contact_info */
+    INSERT INTO [ClientIQPreProd].[dbo].[entity_contact] (
+        entity_type, entity_id, contact_id, contact_purpose
+    )
+    SELECT 'CUSTOMER', ci.customer_id, ci.contact_id, 'COMMUNICATION'
+    FROM [ClientIQPreProd].[dbo].[contact_info] ci
+    LEFT JOIN [ClientIQPreProd].[dbo].[entity_contact] ec
+        ON ec.entity_id = ci.customer_id AND ec.contact_id = ci.contact_id
+    WHERE ci.customer_id IS NOT NULL AND ec.contact_id IS NULL;
+END;
+GO
+
+

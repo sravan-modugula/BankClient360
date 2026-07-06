@@ -1,0 +1,126 @@
+/* ================= QRY BAL ================= */
+UPDATE l
+SET l.QRY_BAL = TRY_CONVERT(DECIMAL(13,2), m.QRYBAL)
+FROM dbo.LOAN_VIEW_CURR l
+JOIN TheVault.dbo.LNMAST_CURR m
+    ON l.ACCT_NBR = m.ACCTNO;
+/* ================= TOTAL COMMIT ================= */
+UPDATE l
+SET TOT_LN_COMMIT_BAL =
+    (CASE WHEN m.SHADOW = 'Y' THEN m.SHGLPR ELSE m.QRYBAL END)
+  + (CASE WHEN m.RSTADV <> 'B' THEN ln.LNLAVL ELSE 0 END)
+  + ln.LNLFRZ
+FROM dbo.LOAN_VIEW_CURR l
+JOIN TheVault.dbo.LNMAST_CURR m
+    ON l.ACCT_NBR = m.ACCTNO
+LEFT JOIN TheVault.dbo.LNLINE_CURR ln
+    ON l.ACCT_NBR = ln.LNLACT;
+/* ================= RCRS  ================= */
+UPDATE l
+SET l.RCRS = NULLIF(LTRIM(RTRIM(t.SPCCFE6)), '')
+FROM dbo.LOAN_VIEW_CURR l
+JOIN TheVault.dbo.LNSMTG_CURR t
+    ON l.ACCT_NBR = t.ACCTNO;
+/* ================= MLA    ================= */
+UPDATE l
+SET l.MLA_TYP_CD =
+    CASE 
+        WHEN LEN(t.USFVAL) < 1 THEN NULL
+        ELSE t.USFVAL
+    END
+FROM TheSpotPreProd.dbo.LOAN_VIEW_CURR l
+JOIN (
+    SELECT *
+    FROM TheVault.dbo.LNUSRFLDS_CURR
+    WHERE USFNAM = 'IN01A4'
+) t
+    ON l.ACCT_NBR = t.ACCTNO;
+/* ================= ALT CIF ================= */
+WITH x AS (
+    SELECT 
+        t.ACCT_NBR,
+        NULLIF(s.CFNA1, '') AS CFNA1,
+        ROW_NUMBER() OVER (
+            PARTITION BY t.ACCT_NBR
+            ORDER BY 
+                CASE WHEN t.PRI_CIF_NBR = s.CFCIF# THEN 0 ELSE 1 END,
+                t.ACCT_NBR
+        ) AS r
+    FROM dbo.LOAN_VIEW_CURR t
+    LEFT JOIN TheVault.dbo.CFALTN_CURR s
+        ON t.ACCT_NBR = s.CFAACT
+       AND t.ACCT_TYP_CD = s.CFATYP
+)
+UPDATE l
+SET ALT_CIF_NM = x.CFNA1
+FROM dbo.LOAN_VIEW_CURR l
+JOIN x 
+    ON l.ACCT_NBR = x.ACCT_NBR
+WHERE x.r = 1;
+/* ================= GROUP REL ================= */
+UPDATE c
+SET 
+    c.CUST_GRP_REL_CD   = g.CFCTYP,
+    c.CUST_GRP_REL_DESC = d.CPFDSC
+FROM TheSpotPreProd.dbo.CUST_VIEW_CURR c
+JOIN TheVault.dbo.CFCRGP_CURR g
+    ON g.CFCCIF = c.CIF_NBR
+   AND g.CFCGRP = c.CUST_GRP_NBR
+LEFT JOIN TheVault.dbo.CFPARF_HIST d
+    ON g.CFCTYP = d.CPFREL
+   AND g.PROD_DATE = CONVERT(DATE, d.InsertDate)
+WHERE c.CUST_GRP_NBR IS NOT NULL;
+
+/* ================= MTD AVG ================= */
+UPDATE d
+SET d.MTD_AVG_LEDGER_BAL =
+CAST(
+    ROUND(s.MTD_AVG_LEDGER_BAL, 2)
+AS DECIMAL(13,2))
+FROM dbo.COMBINED_DEPO_VIEW_CURR d
+LEFT JOIN (
+    SELECT
+        x.ACTYPE,
+        x.ACCTNO,
+        CASE 
+            WHEN SUM(x.AGGDAY) = 0 THEN NULL
+            ELSE 
+                CONVERT(DECIMAL(21,8), SUM(x.BAL) / NULLIF(SUM(x.AGGDAY), 0))
+        END AS MTD_AVG_LEDGER_BAL
+    FROM (
+        
+        SELECT
+            ACTYPE,
+            ACCTNO,
+            AGGDAY,
+            CONVERT(DECIMAL(21,8), AGGBAL) AS BAL
+        FROM TheVault.dbo.CDMAST_CURR
+
+        UNION ALL
+
+    
+        SELECT
+            ACTYPE,
+            ACCTNO,
+            AGGDAY,
+            CONVERT(DECIMAL(21,8), AGGAMT) AS BAL
+        FROM TheVault.dbo.DDMAST_CURR
+    ) x
+    GROUP BY x.ACTYPE, x.ACCTNO
+) s
+    ON s.ACTYPE = d.ACCT_TYP_CD
+   AND s.ACCTNO = d.ACCT_NBR;
+/* ================= MN LINE ================= */
+
+UPDATE l
+SET l.MN_LNL_NBR = ln.LNLMLN
+FROM dbo.LOAN_VIEW_CURR l
+LEFT JOIN TheVault.dbo.LNLINE_CURR ln
+    ON l.ACCT_NBR = ln.LNLACT;
+
+
+UPDATE c
+SET c.HH_NBR = hh.HH_NBR
+FROM TheSpotPreProd.dbo.CUST_VIEW_CURR c
+JOIN dbo.HOUSEHOLD_MAP hm ON c.CIF_NBR = hm.CIF_ID
+JOIN dbo.HH_VIEW hh ON hm.HH_ID = hh.HH_NBR;

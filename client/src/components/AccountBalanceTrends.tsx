@@ -36,7 +36,7 @@ interface AccountBalanceTrendsProps {
 
 export default function AccountBalanceTrends({ accountId, currentBalance, accountType}: AccountBalanceTrendsProps) {
   const theme = useTheme();
-  const [timeRange, setTimeRange] = useState<'monthly' | 'quarterly' | 'ytd'>('ytd');
+  const [timeRange, setTimeRange] = useState<'monthly' | 'quarterly' | 'ytd'>('monthly');
   const { formatCurrency } = useDateFormatter();
 
   const isLoan = accountType === "loan";
@@ -73,7 +73,7 @@ export default function AccountBalanceTrends({ accountId, currentBalance, accoun
       return 0;
     }
 
-    return ((end - start) / start) * 100;
+    return ((end - start) / Math.abs(start)) * 100;
   };
 
   const growth = calculateGrowth();

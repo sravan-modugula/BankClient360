@@ -1,0 +1,127 @@
+USE [ClientIQPreProd]
+GO
+
+/****** Object:  StoredProcedure [dbo].[usp_Load_Search]    Script Date: 6/29/2026 1:31:02 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE PROC [dbo].[usp_Load_Search] 
+
+as 
+
+BEGIN
+
+TRUNCATE TABLE dbo.search
+
+INSERT INTO dbo.search (
+    entity_type,
+    entity_id,
+    search_field,
+    search_value,
+    customer_id,
+    account_id,
+    household_id
+)
+
+-- ✅ Customer - First Name
+SELECT 
+    2,
+    c.customer_id,
+    3,
+    c.first_name,
+    c.customer_id,
+    ao.account_id,
+    NULL
+FROM dbo.customer c
+LEFT JOIN dbo.account_ownership ao 
+    ON c.customer_id = ao.customer_id
+WHERE c.first_name IS NOT NULL
+
+UNION ALL
+
+-- ✅ Customer - Last Name
+SELECT 
+    2,
+    c.customer_id,
+    4,
+    c.last_name,
+    c.customer_id,
+    ao.account_id,
+    NULL
+FROM dbo.customer c
+LEFT JOIN dbo.account_ownership ao 
+    ON c.customer_id = ao.customer_id
+WHERE c.last_name IS NOT NULL
+
+UNION ALL
+
+-- ✅ Customer - CIF
+SELECT 
+    2,
+    c.customer_id,
+    1,
+    c.jack_henry_cif_number,
+    c.customer_id,
+    ao.account_id,
+    NULL
+FROM dbo.customer c
+LEFT JOIN dbo.account_ownership ao 
+    ON c.customer_id = ao.customer_id
+WHERE c.jack_henry_cif_number IS NOT NULL
+
+UNION ALL
+
+-- ✅ Customer - Tax Identifier
+SELECT 
+    2,
+    c.customer_id,
+    6,
+    c.tax_identifier,
+    c.customer_id,
+    ao.account_id,
+    NULL
+FROM dbo.customer c
+LEFT JOIN dbo.account_ownership ao 
+    ON c.customer_id = ao.customer_id
+WHERE c.tax_identifier IS NOT NULL
+
+UNION ALL
+
+-- ✅ Account - Account Number
+SELECT
+    1,
+    a.account_id,
+    2,
+    a.account_number,
+    ao.customer_id,
+    a.account_id,
+    NULL
+FROM dbo.account a
+LEFT JOIN dbo.account_ownership ao
+    ON a.account_id = ao.account_id
+WHERE a.account_number IS NOT NULL
+
+UNION ALL
+
+-- ✅ Household - Household Name
+SELECT
+    3,
+    h.household_id,
+    5,
+    h.household_name,
+    hm.customer_id,
+    NULL,
+    h.household_id
+FROM dbo.household h
+LEFT JOIN dbo.household_membership hm
+    ON h.household_id = hm.household_id
+WHERE h.household_name IS NOT NULL;
+
+END 
+GO
+
+
