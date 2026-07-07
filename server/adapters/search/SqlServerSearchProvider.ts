@@ -488,7 +488,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         convert(varchar(100), customer.jack_henry_cif_number) as field_8
       from search
       join customer
-      on customer.jack_henry_cif_number = search.customer_id
+      on customer.customer_id = search.customer_id
       where search.search_value like '%' + @query + '%' and search.entity_type = 2
 
       /* 
@@ -525,7 +525,7 @@ class SqlServerSearchProvider implements ISearchProvider {
         null as field_8
       from search
       join household
-      on household.jack_henry_household_number = search.household_id
+      on household.household_id = search.household_id
       where search.search_value like '%' + @query + '%' and search.entity_type = 3
 
       /* 
