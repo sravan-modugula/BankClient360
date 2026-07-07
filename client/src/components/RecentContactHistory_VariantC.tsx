@@ -119,11 +119,17 @@ export default function RecentContactHistoryVariantC({ customerId }: RecentConta
   };
 
   const formatRelativeDate = (dateTime: string) => {
-    // Date comes from API already formatted in PST
+    // API sends an ISO-8601 timestamp
     const date = new Date(dateTime);
+
+    // Guard against an unparseable/empty value so we never render "Invalid Date"
+    if (!dateTime || isNaN(date.getTime())) {
+      return 'None';
+    }
+
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays}d ago`;

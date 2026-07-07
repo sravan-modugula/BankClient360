@@ -1915,11 +1915,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const contacts = await storage.getContactHistory(customerId, 5);
 
-      // Transform to DTO with PST formatting
+      // Transform to DTO
       const contactsDTO: ContactHistoryType = {
         recentContacts: contacts.map(contact => ({
           contactType: contact.contactType,
-          occurredAt: DateFormatter.formatDateTimeWithTZ(contact.occurredAt),
+          // ISO-8601 (machine-readable) so the client can reliably new Date() it.
+          // formatDateTimeWithTZ emits a localized string whose timezone token
+          // renders as an unparseable long name under Windows/IIS ICU -> "Invalid Date".
+          occurredAt: DateFormatter.formatISO(contact.occurredAt),
           employeeName: contact.employeeName,
           contactDescription: contact.contactDescription || undefined
         }))

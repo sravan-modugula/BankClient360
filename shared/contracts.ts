@@ -179,7 +179,7 @@ export type RelationshipSummaryDTO = z.infer<typeof RelationshipSummaryDTO>;
 // Contact History Item DTO - Individual contact record
 export const ContactHistoryItemDTO = z.object({
   contactType: z.string(), // phone, email, in_person, meeting
-  occurredAt: z.string(), // PST formatted date/time
+  occurredAt: z.string(), // ISO-8601 timestamp (machine-readable); client formats for display
   employeeName: z.string(),
   contactDescription: z.string().optional()
 });

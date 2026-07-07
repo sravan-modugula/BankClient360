@@ -83,6 +83,20 @@ export class DateFormatter {
   }
 
   /**
+   * Format as a machine-readable ISO-8601 string with numeric offset, in PST
+   * (e.g., "2024-12-30T15:30:00-08:00"). Use for API response fields the client
+   * re-parses with `new Date()`. Unlike formatDateTimeWithTZ, this never emits a
+   * localized timezone name, so it stays parseable regardless of the server's
+   * ICU build (Windows/IIS renders the `zzz` token as the unparseable long name
+   * "Pacific Daylight Time", which breaks new Date() in the browser).
+   */
+  static formatISO(date: Date | string | null | undefined): string {
+    const parsed = DateFormatter.parseDate(date);
+    if (!parsed) return '';
+    return formatInTimeZone(parsed, APP_TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
+  }
+
+  /**
    * Format for transaction display (e.g., "12/30/2024") - ALWAYS in PST
    */
   static formatTransactionDate(date: Date | string | null | undefined): string {
