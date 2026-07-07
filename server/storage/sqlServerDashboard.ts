@@ -659,7 +659,11 @@ export async function getContactHistorySqlServer(
     const result = await request.query(`
       SELECT TOP (@limit)
         contact_type,
-        occurred_at,
+        -- The ETL load does not populate occurred_at (its source CNTCT_OCCR_DT is
+        -- missing), so it is NULL on-prem. created_at holds the contact date
+        -- (CNTCT_CRTD_DT); surface it as occurred_at. Do not switch to the
+        -- occurred_at column until the ETL populates it.
+        created_at as occurred_at,
         employee_name,
         summary
       FROM contact_history
