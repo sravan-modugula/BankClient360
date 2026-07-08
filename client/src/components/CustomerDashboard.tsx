@@ -36,7 +36,6 @@ import {
   Summarize
 } from '@mui/icons-material';
 
-import clientIQLogo from '@assets/ClientIQ Gold Logo_1761713299490.png';
 import CustomerSearch from './CustomerSearch';
 import CustomerOverview from './CustomerOverview';
 import AccountSummaryTableVersion from './AccountSummaryTableVersion';
