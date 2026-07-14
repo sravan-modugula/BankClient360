@@ -22,7 +22,7 @@
  * RoleToken (as it appears in the group name) -> application role name.
  * The right-hand values MUST match rows in the `role` table:
  *   System Admin, Branch Manager, BRS, Teller, Loan Officer, Risk Analyst,
- *   Compliance Officer.
+ *   Compliance Officer, Support, TMS, Validators, Marketing, Learning Development.
  *
  * Authoritative mapping confirmed by the bank (preprod/prod entitlement list):
  *   APPSVCS / AppAdmin                       -> System Admin       (priv 4)
@@ -32,6 +32,11 @@
  *   Risk                                     -> Risk Analyst
  *   Compliance                               -> Compliance Officer
  *   Teller / DataAnalyst                     -> Teller             (priv 1)
+ *   Support                                  -> Support            (priv 2)
+ *   OnlineBanking                            -> TMS                (priv 2)
+ *   Validators                               -> Validators         (priv 1)
+ *   Marketing                                -> Marketing          (priv 2)
+ *   LearningDevelopment                      -> Learning Development (priv 1)
  *   GEN (+ the IAM RSA access group)         -> no role (app-access entitlement only)
  *
  * Note: the admin group token differs by environment — APPSVCS in preprod
@@ -55,6 +60,17 @@ export const AD_GROUP_TOKEN_TO_ROLE: Record<string, string> = {
   // Teller tier (privilege 1)
   teller: 'Teller',
   dataanalyst: 'Teller',
+  // Associate / functional groups from the prod AD entitlement list (7/13/26).
+  // Each maps 1:1 to its AD group. NOTE: the OISC, Ops Admin, and ORD org units
+  // all share the single "Support" AD group, so they resolve to one shared
+  // "Support" role (a group grants exactly one role) — the per-unit OISC/Ops
+  // Admin/ORD role rows cannot be driven by SSO. The TMS org unit has its own
+  // group (OnlineBanking) so it maps directly to the existing TMS role.
+  support: 'Support', // OISC + Ops Admin + ORD associates (priv 2)
+  onlinebanking: 'TMS', // TMS associates (priv 2, existing role)
+  validators: 'Validators', // project team — Prod smoke-test access (priv 1)
+  marketing: 'Marketing', // Marketing specialists (priv 2)
+  learningdevelopment: 'Learning Development', // L&D staff (priv 1)
 };
 
 /** Tokens that grant app access but no role of their own. */
