@@ -27,6 +27,7 @@
  * Authoritative mapping confirmed by the bank (preprod/prod entitlement list):
  *   APPSVCS / AppAdmin                       -> System Admin       (priv 4)
  *   BranchManager                            -> Branch Manager     (priv 3)
+ *   Executives                               -> Executive          (priv 3)
  *   BusinessBanker / AsstManager             -> BRS                (priv 2)
  *   LoanOfficer                              -> Loan Officer
  *   Risk                                     -> Risk Analyst
@@ -49,6 +50,8 @@ export const AD_GROUP_TOKEN_TO_ROLE: Record<string, string> = {
   appadmin: 'System Admin',
   // Management (privilege 3)
   branchmanager: 'Branch Manager',
+  executives: 'Executive', // CTRL_PRD_APP_ClientIQ_Executives_RW (role_id 8, priv 3)
+  executive: 'Executive', // defensive alias (singular)
   // Business Relationship Specialist tier (privilege 2)
   businessbanker: 'BRS',
   assistantmanager: 'BRS',
