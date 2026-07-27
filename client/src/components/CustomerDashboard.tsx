@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Customer, HouseholdMemberWithCustomer } from '@shared/schema';
+import { formatFlatDate } from '@/helpers';
 import {
   Box,
   Container,
@@ -803,7 +804,7 @@ export default function CustomerDashboard() {
 
           {selectedCustomer && activeTab === 'client' && (
             <>
-              <SectionLabel>Client Profile</SectionLabel>
+              <SectionLabel asOfDate={customerDetails.createdAt}>Client Profile</SectionLabel>
               {/* Client profile cards with balanced container */}
               <Box sx={{ mb: 3, display: 'flex', gap: 3, '@media (max-width: 768px)': { flexDirection: 'column' } }}>
                 <Box sx={{ flex: '1' }}>
@@ -936,15 +937,23 @@ export default function CustomerDashboard() {
               {selectedDetailAccountId ? (
                 <>
                   {/* Client Info Bar */}
-                  <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                  <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, display: "flex", alignItems: "center"}}>
                     <Typography variant="body2" color="text.secondary">
                       Household: {customerHouseholds[0]?.householdName || 'N/A'} | Client: {customerDetails?.name || selectedCustomer?.name || '—'} | CIF: {customerDetails?.cifNumber || 'N/A'}
                     </Typography>
+
+                    {customerDetails.createdAt && (
+                      <Typography sx={{ fontSize: 14, fontWeight: 500, letterSpacing: "0.12em", color: "#517a5a", marginLeft: "auto"}}>
+                        Last Refresh: {formatFlatDate(customerDetails.createdAt, 1)}
+                      </Typography>
+                    )}
+
                   </Box>
 
                   {/* Account Detail inline */}
                   <AccountDetailOption2
                     accountId={String(selectedDetailAccountId)}
+                    isEmployee={isEmployeeCustomer}
                     onBack={() =>
                       navigateWithMergedSearch(navigate, "/ciq/client")
                     }

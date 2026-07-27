@@ -30,10 +30,16 @@ export const formatRelativeDate = (dateTime: string) => {
    date to be converted into the locale time. Instead, we truncate the date and
    just grab the date part of it. 
 */
-export const formatFlatDate = (dateString: string | undefined) => {
+export const formatFlatDate = (dateString: string | undefined, days : number | null = null) => {
     if (!dateString) return 'N/A';
 
     const date = new Date(dateString);
+
+    if (days) {
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() - days);
+    }
+
     if (isNaN(date.getTime())) {
         return 'N/A';
     }
@@ -45,4 +51,3 @@ export const formatFlatDate = (dateString: string | undefined) => {
         timeZone: 'UTC' // Essential for Z-ending strings
     });;
 };
-

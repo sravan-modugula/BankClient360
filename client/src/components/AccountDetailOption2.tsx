@@ -44,11 +44,12 @@ import { useHasPermission } from '@/hooks/usePermissions';
 
 interface AccountDetailOption2Props {
   accountId?: string;
+  isEmployee: boolean;
   onBack?: () => void;
   params?: Record<string, string>;
 }
 
-export default function AccountDetailOption2({ accountId, onBack, params }: AccountDetailOption2Props) {
+export default function AccountDetailOption2({ accountId, isEmployee, onBack, params }: AccountDetailOption2Props) {
   const theme = useTheme();
   const { formatCurrency, formatDate, formatPercentage } = useDateFormatter();
   const [cardModalOpen, setCardModalOpen] = useState(false);
@@ -152,7 +153,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
 
   const canViewBalances = useHasPermission('account.view.balances');
 
-  if (!canViewBalances) {
+  if (!canViewBalances && isEmployee) {
     return <div>Access Denied</div>
   }
 
@@ -411,9 +412,9 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
                   {owners.map((owner: any, idx: number) => (
                     <Box key={owner.ownerId || idx}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                        <Typography variant="body1" fontWeight={500}>
+                        <Link href={`/ciq/client?customerId=${owner.customerId}`} variant="body1" fontWeight={500}>
                           {owner.customerName || '—'}
-                        </Typography>
+                        </Link>
                         {owner.ownershipType && (
                           <Chip
                             label={owner.ownershipType.charAt(0).toUpperCase() + owner.ownershipType.slice(1)}
@@ -441,7 +442,7 @@ export default function AccountDetailOption2({ accountId, onBack, params }: Acco
       <Card elevation={2}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="h6">Recent Transactions</Typography>
+            <Typography variant="h6">Recent Transactions {transactions.length > 0 ? `(As Of: ${formatFlatDate(account.createdAt, 1)})` : "" } </Typography>
             <TextField
               size="small"
               placeholder="Search transactions..."

@@ -386,7 +386,7 @@ export default function CustomerSearch() {
   return (
     <div
       ref={wrapperRef}
-      style={{ position: 'relative', width: 400, marginLeft: 'auto' }}
+      style={{ position: 'relative', width: 400 }}
       onKeyDown={handleKeyDown}
     >
       <TextField

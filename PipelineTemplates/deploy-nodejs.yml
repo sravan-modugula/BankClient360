@@ -34,7 +34,7 @@ steps:
         Write-Host "Starting service"
         Invoke-Command -Session $session -ScriptBlock {
             Start-Service -Name $using:serviceName
-            Remove-Item $(AppPath)\Start-Server.ps1
+            Remove-Item $(appPath)\Start-Server.ps1
         }
 
         Write-Host "Closing remote session"

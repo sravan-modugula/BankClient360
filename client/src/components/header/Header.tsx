@@ -13,6 +13,7 @@ import IconButton from '@mui/material/IconButton';
 import { useLocation } from "wouter";
 import { PROJECTS } from '../../projects';
 import CustomerSearch from '../CustomerSearch';
+import HelpButton from "./HelpButton";
 
 interface AppBarProps extends MuiAppBarProps {
   open?: boolean;
@@ -136,7 +137,8 @@ export default function Header({
         >
           {breadcrumbItems}
         </Breadcrumbs>
-
+        
+        <HelpButton />
         <CustomerSearch />
       </Toolbar>
     </AppBar>

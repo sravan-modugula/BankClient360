@@ -2,6 +2,7 @@ trigger:
   - develop
   - test
   - preprod
+  - prod
   
 variables:
   - name: SonarQubeServiceConnection

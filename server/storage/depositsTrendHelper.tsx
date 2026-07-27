@@ -120,9 +120,9 @@ export function aggregateAccountData(
       quarter.push({ xAxis: formatDay(dk), ...snap });
     }
 
-    // YEAR – 1st of month within the last 12 months
+    // YEAR – get first day of week over the last year
     if (dk >= yearStart && isDayOfWeek(dk, 1)) { // dk.endsWith('-01')) {
-      year.push({ xAxis: formatMonth(dk), ...snap });
+      year.push({ xAxis: formatDay(dk), ...snap });
     }
 
     // Undo this day's transactions to step back one day.

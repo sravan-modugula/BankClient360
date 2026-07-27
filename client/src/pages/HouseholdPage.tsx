@@ -5,6 +5,7 @@ import { navigateToCustomer, navigateToHousehold } from '@/lib/navigation';
 import BackButton from '@/components/BackButton';
 import { lightTheme } from '@/lib/theme';
 import { ThemeProvider, CssBaseline } from '@mui/material';
+import { formatFlatDate } from '@/helpers';
 import {
   Container,
   Box,
@@ -520,8 +521,13 @@ export default function HouseholdPage() {
   return (
     <PageShell>
       {/* Back row - matches Accounts page placement */}
-      <Container maxWidth="xl" sx={{ pt: 3 }}>
+      <Container maxWidth="xl" sx={{ pt: 3, display: "flex", alignItems: "center" }}>
         <BackButton fallback={backFallback} />
+      {household.createdAt && (
+        <Typography sx={{ fontSize: 14, fontWeight: 500, letterSpacing: "0.12em", color: "#517a5a", marginLeft: "auto"}}>
+          Last Refresh: {formatFlatDate(household.createdAt, 1)}
+        </Typography>
+      )}
       </Container>
 
       <Container maxWidth="xl" sx={{ pt: 2, pb: 4 }}>
