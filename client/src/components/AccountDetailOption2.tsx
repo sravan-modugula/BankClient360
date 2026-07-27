@@ -177,6 +177,10 @@ export default function AccountDetailOption2({ accountId, isEmployee, onBack, pa
   const availableBalance = parseFloat(account.availableBalance) || 0;
   const collectedBalance = Math.abs(balance - availableBalance);
 
+  // COLLECTED balance is hidden until the upstream data issue is resolved (the
+  // source figure is unreliable). Set back to true to restore the card.
+  const SHOW_COLLECTED_CARD = false;
+
   return (
     <Box sx={{ p: 3, maxWidth: 1400, margin: '0 auto' }}>
       {/* Top Navigation Bar */}
@@ -227,14 +231,16 @@ export default function AccountDetailOption2({ accountId, isEmployee, onBack, pa
                 </Typography>
               </Box>
             </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
-              <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>COLLECTED</Typography>
-                <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
-                  {formatCurrency(collectedBalance)}
-                </Typography>
-              </Box>
-            </Grid>
+            {SHOW_COLLECTED_CARD && (
+              <Grid size={{ xs: 6, md: 3 }}>
+                <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
+                  <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>COLLECTED</Typography>
+                  <Typography variant="h4" fontWeight={500} sx={{ fontFamily: 'Roboto Mono' }}>
+                    {formatCurrency(collectedBalance)}
+                  </Typography>
+                </Box>
+              </Grid>
+            )}
             <Grid size={{ xs: 6, md: 3 }}>
               <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 2, textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>RATE</Typography>
